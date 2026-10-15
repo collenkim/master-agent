@@ -1,0 +1,7 @@
+{
+  "goal": "프로젝트별 업무 배정과 후행 검증 흐름을 모의 실행한다.",
+  "requestKey": "example-mission-1",
+  "mode": "simulation",
+  "scope": { "projectIds": ["example-project"], "groupIds": [] },
+  "criteria": [{ "id": "flow", "description": "구현 작업 뒤 검증 작업이 실행된다." }]
+}

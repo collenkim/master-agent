@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "summary": "수동 작성한 고정 예제 계획이며 AI 생성 결과가 아닙니다.",
+  "unresolved": [],
+  "tasks": [
+    {
+      "id": "implement",
+      "projectId": "example-project",
+      "domain": "example",
+      "kind": "implementation",
+      "goal": "구현 작업의 실행 과정을 모의 검증",
+      "rationale": "example-domain@1의 책임 프로젝트에 배정",
+      "references": ["example-domain@1"],
+      "dependsOn": [],
+      "criteria": ["flow"],
+      "allowedChanges": ["simulation-only"],
+      "exclusions": ["actual-repository"],
+      "outputs": ["implementation-report"],
+      "requiredCapabilities": ["simulation"],
+      "verification": "후행 verify 작업이 완료 조건을 확인"
+    },
+    {
+      "id": "verify",
+      "projectId": "example-project",
+      "domain": "example",
+      "kind": "verification",
+      "goal": "선행 작업의 모의 결과 확인",
+      "rationale": "완료 조건 flow를 담당 프로젝트에서 검증",
+      "references": ["example-domain@1"],
+      "dependsOn": ["implement"],
+      "criteria": ["flow"],
+      "allowedChanges": [],
+      "exclusions": ["actual-repository"],
+      "outputs": ["verification-report"],
+      "requiredCapabilities": ["simulation"],
+      "verification": "flow 조건의 모의 검증 결과 기록"
+    }
+  ]
+}

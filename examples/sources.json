@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    { "path": "POLICY.md", "kind": "policy" },
+    { "path": "example.mjs", "kind": "code" }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "name": "master-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "목표 기반 다중 프로젝트 AI 오케스트레이션 실행 기반",
+  "engines": {
+    "node": ">=24.19.0 <25"
+  },
+  "bin": {
+    "master-agent": "apps/cli/main.mjs"
+  },
+  "scripts": {
+    "start": "node apps/cli/main.mjs",
+    "demo": "node apps/cli/main.mjs demo",
+    "test": "node --test tests/*.test.mjs",
+    "check": "node scripts/check.mjs"
+  },
+  "dependencies": {
+    "@langchain/core": "1.2.17",
+    "@langchain/langgraph": "1.5.0",
+    "@langchain/langgraph-checkpoint-sqlite": "1.1.0"
+  }
+}

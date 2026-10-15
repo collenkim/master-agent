@@ -1,0 +1,10 @@
+{
+  "id": "example-project",
+  "name": "모의 예제 프로젝트",
+  "path": "examples/project",
+  "domains": ["example"],
+  "capabilities": ["simulation"],
+  "constraints": ["실제 개발 작업은 수행하지 않음"],
+  "currentPlans": [],
+  "references": ["example-domain@1"]
+}
