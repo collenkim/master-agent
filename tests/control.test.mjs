@@ -340,3 +340,15 @@ test('통신 계약 실행의 프롬프트는 선행 증거를 요약만 싣는�
   assert.ok(!control.includes('file-149.md') && !control.includes('통과\\n통과'), '파일 트리·검사 출력은 싣지 않는다');
   assert.ok(direct.includes('file-149.md') && direct.includes('통과\\n통과'), '직접 실행 호스트의 프롬프트는 바꾸지 않는다');
 });
+
+test('업무 질문 판단에는 같은 작업에서 이미 답한 질문과 답의 출처가 함께 실린다 — 앞 답을 전제로 묻는 질문을 자료 없이 판단하지 않는다', async t => {
+  const f = controlFixture(t, { questions: { two: [{ id: 'Q1', title: '기본값', body: '값은 2인가?', options: ['예', '아니오'] },
+    { id: 'Q2', title: '되감기', body: 'Q1 답에 맞게 앞 단계로 되감을까?', options: ['되감는다', '보류'] }] } });
+  const result = await new LiveWorkflow(f.store).run(f.mission.id, f.host, f.provider);
+  assert.equal(result.mission.state, 'succeeded', JSON.stringify(result.blockers));
+  const data = prompt => JSON.parse(prompt.slice(prompt.indexOf('\n{\n') + 1));
+  const asked = id => f.provider.prompts.find(p => p.includes('업무 질문') && data(p).question.id === id);
+  assert.deepEqual(data(asked('Q1')).answered, []);
+  assert.deepEqual(data(asked('Q2')).answered, [{ id: 'Q1', title: '기본값', answer: '예', source: null }]);
+  assert.match(asked('Q2'), /사람이 정한 답을 뒤집거나 넓히지 않는다/);
+});
