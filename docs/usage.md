@@ -1,13 +1,14 @@
 # 실행 기반 사용법
 
-현재 제공하는 기능은 프로젝트·그룹·목표 관리, 문서·코드 근거 수집, AI 계획 생성·재검토·검증, 판단 후 모의 실행, 영속 상태와 근거 조회, code-agent 상태 연결과 Claude 개발 호스트 배정이다. 모의 실행은 저장소를 수정하지 않고 항상 실제 결과와 구분한다. AI 연결 방법은 [AI 계획 생성 사용법](ai-planning.md), 실제 배정은 [개발 호스트 연결](live-execution.md)에 정리했다.
+프로젝트·그룹·목표 관리, 근거 수집·AI 계획, Claude 개발 호스트, code-agent 통신 계약의 위임 판단·정지·재부착, 독립 검증·반영 대조·통합 완료와 범위 내 복구를 제공한다. 전체 순서는 [README](../README.md), AI 연결은 [AI 계획 생성](ai-planning.md), 실제 접수·위임은 [code-agent 통신 계약](code-agent-control.md)을 따른다. 모의 실행은 실제 결과와 구분한다.
 
 ## 준비와 빠른 실행
 
-Node.js 24.19 이상인 24.x 환경에서 실행한다. 현재 프로젝트는 외부 패키지 의존성이 없으므로 npm install 없이 실행할 수 있다.
+Node.js 24.19 이상인 24.x와 Git이 필요하다. LangGraph 의존성을 잠금 파일 기준으로 설치한다.
 
 ```powershell
 cd C:\IdeaProjects\master-agent
+npm.cmd ci --ignore-scripts
 npm.cmd test
 npm.cmd run check
 npm.cmd run demo

@@ -1,54 +1,84 @@
 # master-agent
 
-여러 프로젝트의 code-agent를 연결해 사용자의 목표를 달성하는 **AI 오케스트레이션 시스템**입니다. master-agent가 목표와 영향 범위를 분석하고, 작업을 분해·배정하며, 실행 결과에 따라 재계획하고 통합 검증까지 수행합니다.
+여러 프로젝트의 code-agent를 연결해 목표를 분석하고, 작업을 배정·검증·인계하는 CLI 오케스트레이터입니다. LangGraph JS가 실행 흐름을 제어하고 SQLite에 판단·증거·체크포인트를 저장합니다.
 
-실행 오케스트레이션은 LangGraph JS로 통일했습니다. 계획·배정·검증·복구·재계획을 그래프 노드로 실행하고 SQLite에 체크포인트를 저장합니다. 기존 CLI 명령을 유지하며, `mission graph <ID>`로 체크포인트와 최근 실행 상태를 조회합니다. [전환 구조와 재개 규칙](docs/langgraph.md)을 참고하세요.
+2026-10-16 기준 **실제 Claude로 두 프로젝트·세 작업의 전체 흐름을 완료**했습니다. 자동 회귀 시험은 155개 통과, 실제 위임 승인은 9건, master 검사 8개는 반영 전후 모두 통과했습니다. 전체 흐름 시험은 고정 master 계획으로 시작했고 도입 TTY만 흉내냈습니다. 최초 AI 계획 생성과 앞선 답 활용은 별도 시험으로 확인했습니다. [검증 결과와 한계](docs/verification.md)를 참고하세요.
 
-현재는 **AI 계획·개발 호스트 배정·실제 검증·후행 작업 진행에 범위 내 실패 복구를 연결한 상태**입니다. 프로젝트·그룹·목표 관리, 근거 수집, Codex·Claude CLI 분석, 자동 재검토, 계획 검증, Claude 호스트 실행과 상태 관측을 제공합니다. 검증 실패 시 원인·대안·수정 단계를 기록하고 기존 세션에서 수정하거나 재검증할 수 있습니다. 외부 종료를 확인한 실패 작업은 최신 근거로 재계획합니다. 반영 커밋·동의 기록 대조, 읽기 전용 분석 적용 취소, 호스트·검증 명령 반환 후 관측 중단 복구를 지원합니다. code-agent 통신 계약 연동(`--control`)으로 원자적 접수·이벤트 수신·실행 중 정지·취소·제어권 인계와, 사람이 code-agent 에서 준 권한 범위의 위임 판단을 제공합니다([code-agent 통신 계약 연동](docs/code-agent-control.md)). 실제 AI로 두 프로젝트의 구현 → 검증 → 인계 → 통합 완료 사이클을 확인했습니다([검증 기록](docs/verification.md)). 일반 중단 복구와 UI는 후속 범위입니다.
+## 실행 프로세스
 
-실제 실행의 사용법과 현재 계약 범위는 [개발 호스트 연결](docs/live-execution.md)을 참고하세요.
-완료 판정과 `drive` 자동 진행은 [실제 검증과 자동 진행](docs/live-verification.md)에 정리했습니다.
-실패 분석·재검토·기존 세션 수정은 [자동 복구](docs/recovery.md)를 참고하세요.
-실패 작업의 종료 확인·변경 보존·새 계획 전환은 [재계획 인계](docs/replanning.md)에 정리했습니다.
-커밋·영수증 대조와 호스트 반환 후 중단 복구는 [반영 기록과 관측 복구](docs/delivery-reconciliation.md)를 참고하세요.
-읽기 전용 분석의 적용 취소와 검증 명령 반환 후 복구는 [분석·검증 중단 처리](docs/interruption.md)에 정리했습니다.
-독립 프로젝트 진행, 기존 승인 후 자동 재개와 검증 계약 재사용은 [자동 진행 보완](docs/autonomous-progress.md)을 참고하세요.
-code-agent 통신 계약(원자적 접수·이벤트·정지·재부착·위임 판단·제어권 인계)은 [code-agent 통신 계약 연동](docs/code-agent-control.md)을 참고하세요.
+| 단계 | master-agent | code-agent |
+| --- | --- | --- |
+| 1. 프로젝트 준비 | 프로젝트·도메인·정책 근거 등록, 제어자 연결 | 프로젝트 설정·검증 명령 준비, 사용자가 연동과 위임 권한 부여 |
+| 2. 목표·계획 | 목표·완료 조건·허용 범위를 받아 AI 계획 생성 및 근거·의존성 검사 | 기존 작업·상태·소유권 제공 |
+| 3. 검증 계약 | 작업별 허용 파일·독립 검사·산출물·반영 조건 등록 또는 템플릿 연결 | 프로젝트 자체 검사 설정 유지 |
+| 4. 개발 | 판단과 잠금을 저장한 뒤 접수·관측·같은 세션 이어 실행 | 요구 확정 → 분석 → 영향 조사 → 설계 → 계획·검토 → 구현 → 테스트 → 리뷰 → 깨끗한 작업 트리 통합 검증 |
+| 5. 판단·반영 | 권한 범위의 routine 승인·답변, 반영 전 독립 검사, 반영 커밋·영수증과 반영 후 검사 대조 | 권한·동의 내용·상태를 검증하고 승인 적용 및 로컬 반영 |
+| 6. 인계·통합 완료 | 증거 저장·잠금 해제 → 선행 작업을 사용하는 통합 작업 → 모든 완료 조건 대조 후 `succeeded` | 작업 종료 상태와 검증·반영 기록 제공 |
 
-Node.js 24.19 이상 24.x에서 `npm.cmd ci --ignore-scripts`로 의존성을 설치한 뒤 실행합니다.
+```mermaid
+flowchart TD
+    A["프로젝트·근거·목표"] --> B["AI 계획과 검증 계약"]
+    B --> C["접수 또는 같은 세션 이어 실행"]
+    C --> D["code-agent 개발·검토·통합 검증"]
+    D --> E["master 독립 검증"]
+    E --> F["반영 승인·커밋·영수증·반영 후 검사"]
+    F --> G["인계·잠금 해제"]
+    G --> H{"통합 작업까지 모두 완료?"}
+    H -->|아니오| C
+    H -->|예| I["mission succeeded"]
+    D --> J["필요한 승인·질문 판단"]
+    J --> D
+    E -->|실패| K["근거 분석·범위 내 수정 또는 재계획"]
+    K --> C
+```
+
+- **판단:** routine만 부여된 권한 안에서 처리합니다. ambiguous는 재검토 또는 추가 정보 요청, critical은 사람 판단으로 넘깁니다. 판단과 근거를 적용 전에 저장합니다.
+- **완료:** 모델의 완료 메시지나 호스트 종료만으로 성공 처리하지 않습니다. 파일 범위·검사 결과·현재 트리·반영 계약을 대조합니다. 로컬 완료가 원격 push·배포 완료를 뜻하지는 않습니다.
+- **실패·중단:** 확인된 실패는 범위 내 복구·재계획으로 연결합니다. 실행 여부가 불명확하면 `unknown`으로 보존하고 중복 제출하지 않습니다. 재시작 시 같은 실행에 재부착합니다.
+- **실행 순서:** 현재 외부 개발 실행은 순차 배정입니다. 막힌 작업을 건너뛰어 독립 작업을 진행할 수 있지만, 두 프로젝트를 동시에 개발하는 스케줄러는 후속 개선입니다.
+
+## 설치와 빠른 확인
+
+Node.js **24.19 이상 24.x**와 Git이 필요합니다. 실제 개발에는 빌드된 code-agent와 인증된 Claude CLI가 추가로 필요합니다. 계획·판단 provider는 Codex·Claude CLI 어댑터를 제공하며, 이번 실제 모델 검증은 Claude로 수행했습니다.
 
 ```powershell
 npm.cmd ci --ignore-scripts
-npm.cmd run demo
 npm.cmd test
 npm.cmd run check
+npm.cmd run demo
+node apps/cli/main.mjs help
 ```
 
-데모는 고정 계획으로 세 프로젝트의 모의 구현과 통합 검증을 수행합니다. 실제 개발 결과와 구분해 `simulation-complete`로 기록하며 데이터는 `.master-agent/` 아래에 저장합니다.
+데모는 세 프로젝트의 고정 계획을 모의 실행하고 `simulation-complete`로 끝납니다. 데이터는 기본 `.master-agent/master.db`에 저장하며 `--db <파일>`로 분리할 수 있습니다.
 
-- [LangGraph 실행 구조와 재개](docs/langgraph.md)
-- [요구사항 범위와 수용 기준](docs/requirements.md) — 제품 목표와 자율 수행 원칙의 기준
-- [시스템 설계 초안](docs/architecture.md)
-- [AI 오케스트레이션 핵심 설계](docs/orchestration.md)
-- [UI 구성과 화면 흐름](docs/ui.md)
-- [구현 단계와 완료 기준](docs/implementation.md)
-- [첫 구축 작업 계획](docs/build-plan.md)
-- [프로젝트 근거 수집과 AI 계획 생성](docs/ai-planning.md)
-- [CLI 사용법과 구현 경계](docs/usage.md)
-- [code-agent 통신 계약 연동](docs/code-agent-control.md)
-- [검증 기록](docs/verification.md)
+## 실제 실행과 조회
 
-구성 위치는 `C:\IdeaProjects\master-agent`입니다. `C:\Users\kai\Desktop\blog\master-agent`의 구상과 현재 `C:\IdeaProjects\code-agent`의 소스를 참고했습니다. 블로그와 code-agent 소스는 수정하지 않습니다.
+먼저 [사용법](docs/usage.md)에 따라 프로젝트를 등록하고 근거를 수집합니다. 각 프로젝트에서 사용자가 code-agent 연동과 grant를 설정한 뒤 `project control`로 연결합니다. `mode: live` 목표를 접수하고 계획 및 검증 계약을 준비합니다. 명령·JSON 형식은 [AI 계획](docs/ai-planning.md), [검증 계약](docs/live-verification.md), [통신 계약](docs/code-agent-control.md)을 따릅니다.
 
-## 핵심 사용 흐름
+```powershell
+# 연결·목표·검증 계약을 준비한 뒤 실제 실행
+node apps/cli/main.mjs mission drive <목표ID> --cli <code-agent-CLI-절대경로> --control --provider claude
 
-1. 사용자가 달성할 목표, 완료 조건과 허용 범위를 전달합니다.
-2. master가 프로젝트 카탈로그와 정책·계약·경험을 검색해 관련 프로젝트와 근거를 찾습니다.
-3. 프로젝트별 도메인·구현 가능 범위·현재 계획을 대조해 역할, 작업 의존 관계와 검증 방법을 정합니다.
-4. 판단 근거와 실행 내용을 기록한 뒤 code-agent에 자동 배정하고 상태·발견·결과를 수집합니다. 모호함은 재검토하고 사람이 결정해야 하는 중대한 사안만 판단을 요청합니다.
-5. 실패나 새로운 영향을 반영해 제한 안에서 재시도·재계획합니다.
-6. 프로젝트별 근거와 서비스 간 통합 검증을 대조해 목표 달성 여부를 판정합니다.
+# 다른 터미널에서 진행·판단·체크포인트 조회
+node apps/cli/main.mjs mission show <목표ID>
+node apps/cli/main.mjs mission escalations <목표ID>
+node apps/cli/main.mjs mission graph <목표ID>
+```
 
-개별·선택·그룹 명령은 같은 실행·소유권·검증 경로를 사용하는 보조 진입점입니다. UI 없이도 핵심 흐름을 실행하고 재개할 수 있어야 합니다. 개별 프로젝트의 외부 code-agent 작업은 별도로 관측하고 실행 충돌을 방지합니다.
+`mission pause`는 새 배정을 멈춥니다. 이미 실행 중인 호스트의 정지는 `mission stop <목표ID> <시도ID> --cli <경로> --mode pause`를 사용합니다. 재개·정지·사람 답 전달 조건은 [통신 계약](docs/code-agent-control.md)에 있습니다.
 
-운영 조건은 보류하며, 기존 설계의 예산·복구·배포 등 운영 관련 제안은 확정된 요구사항이 아닙니다. 위 핵심 사용 흐름 전체가 현재 구현됐다는 의미는 아니며 실제 제공 기능은 사용법의 구현 경계에 명시했습니다.
+두 격리 프로젝트의 실제 전체 흐름은 `scripts/smoke-full-flow.mjs`, 앞선 답의 판단 회귀는 `scripts/smoke-answer-context.mjs`로 재현합니다. 실제 모델 호출과 임시 Git 커밋을 수행하므로 일반 `npm test`에 포함하지 않습니다. 로컬 CLI 경로와 실행 방법은 [검증 기록](docs/verification.md)에 정리했습니다.
+
+## 현재 경계와 문서
+
+UI·HTTP 서버·원격 러너·운영 예산·Codex 개발 호스트는 후속 범위입니다. 실제 업무 규모의 품질, 자유 목표부터 전체 완료까지의 연속 시험, 실패 복구·프로세스 중단을 포함한 실제 모델 평가는 더 필요합니다.
+
+| 문서 | 내용 |
+| --- | --- |
+| [구현 현황과 다음 작업](docs/implementation.md) | 두 저장소별 보완 우선순위, code-agent 담당 Codex 전달 지시 |
+| [검증 기록](docs/verification.md) | 최신 결과·재현 방법·증거·미검증 범위 |
+| [CLI 사용법](docs/usage.md) | 등록·목표·실행·조회 명령 |
+| [LangGraph 구조](docs/langgraph.md) | 그래프·SQLite·재시작 규칙 |
+| [code-agent 통신 계약](docs/code-agent-control.md) | 위임 판단·이벤트·재부착·정지·제어권 인계 |
+| [복구](docs/recovery.md) / [재계획](docs/replanning.md) / [반영 대조](docs/delivery-reconciliation.md) / [중단 처리](docs/interruption.md) | 실패·중단별 처리 경계 |
+| [요구사항](docs/requirements.md) / [설계](docs/architecture.md) / [오케스트레이션](docs/orchestration.md) / [UI 구상](docs/ui.md) | 제품 목표와 미구현 제안 |

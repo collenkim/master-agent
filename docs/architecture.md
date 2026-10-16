@@ -1,6 +1,6 @@
 # master-agent 요구사항과 시스템 설계
 
-요구사항의 기준은 [요구사항 범위와 수용 기준](requirements.md)입니다. 이 문서는 시스템 설계 초안이며, 운영 조건과 기술 선택은 확정되지 않았습니다. 예산·동시성·복구·배포 관련 세부 제안은 향후 검토 대상으로 둡니다.
+요구사항의 기준은 [요구사항 범위와 수용 기준](requirements.md)입니다. 이 문서는 UI·원격 운영을 포함한 제품 설계이며 현재 구현 전체를 뜻하지 않습니다. 로컬 실행 기술은 Node.js·SQLite·LangGraph JS로 구현했습니다. 실제 제공 범위는 [구현 현황](implementation.md), 실행 구조는 [LangGraph](langgraph.md)를 따릅니다. 예산·병렬 개발·원격 배포 정책은 후속 범위입니다.
 
 master-agent의 목적은 여러 프로젝트에 걸친 사용자 목표를 AI가 분석·계획·실행·검증하는 것입니다. 핵심 실행 단위는 목표와 완료 조건을 가진 Mission입니다. master는 프로젝트 선택과 작업 순서를 제안하고, code-agent의 결과를 근거로 다음 행동을 결정합니다. 상세한 상태·계획·재계획 계약은 [AI 오케스트레이션 핵심 설계](orchestration.md)에 정의합니다.
 
@@ -103,7 +103,7 @@ master-agent의 목적은 여러 프로젝트에 걸친 사용자 목표를 AI�
 
 ## 5. code-agent 연결 계약
 
-현재 소스에서 확인한 읽기 인터페이스는 `code-agent status --json`입니다. 출력 스키마는 `code-agent.state`, 버전은 `1`입니다. CLI 실행의 작업 디렉터리를 등록된 프로젝트 루트로 지정합니다.
+읽기 인터페이스는 `code-agent status --json`이며 스키마는 `code-agent.state` v1입니다. 실제 실행은 `code-agent.master` v1의 원자적 접수·위임 판단·이벤트·정지·재부착도 지원합니다([통신 계약](code-agent-control.md)). 아래 표는 읽기 상태 모델이며 CLI의 작업 디렉터리는 등록된 프로젝트 루트입니다.
 
 | 현재 제공 값 | master에서 사용할 위치 |
 | --- | --- |
@@ -117,7 +117,7 @@ master-agent의 목적은 여러 프로젝트에 걸친 사용자 목표를 AI�
 
 재개 코드는 `stale-request`, `unobservable`, `no-work`, `ownership-conflict`, `wait`, `needs-human`, `replan-required`, `reapproval-required`, `limit-reached`, `ready`입니다. UI에서는 한국어 설명과 원래 코드를 함께 조회할 수 있게 합니다.
 
-`--expect-state`, `--expect-work`, `--expect-attempt`는 조회 결과를 기대 값과 대조하는 옵션입니다. **상태 조회와 이후 실행을 원자적으로 묶어 주는 계약은 아닙니다.** 재개 동작 자체가 같은 기대 상태·lease·승인 조건을 실행 직전에 검증하도록 연결해야 합니다. 이를 제공하지 않는 호스트 조합은 자동 재개를 비활성화하고 기존 호스트 재개 절차로 안내합니다.
+`--expect-state`, `--expect-work`, `--expect-attempt`는 조회 결과를 기대 값과 대조하는 옵션이며 조회와 이후 실행을 원자적으로 묶지는 않습니다. 통신 계약의 submit은 같은 잠금 안에서 기대 상태·소유권·임대를 검사합니다. 이 보장은 직접 실행 호스트의 별도 조회·시작에는 적용되지 않습니다.
 
 지원하지 않는 스키마, 잘못된 JSON, 시간 초과, 실행 파일 누락은 서로 다른 연결 오류로 저장합니다. 사람이 읽는 status 문자열을 파싱하는 대체 연결은 두지 않습니다. 프로세스 종료 코드, JSON 스키마 유효성, 로컬 작업 상태를 각각 판정합니다.
 

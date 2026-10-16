@@ -67,4 +67,4 @@ node apps/cli/main.mjs mission complete <목표ID> --revision <목표버전>
 - 프로세스 중단으로 verifying이 남음: mission unknown으로 미확인을 기록할 수 있다.
 - 과거 배정에 검증 계약·기준 스냅샷이 없음: 검증을 소급 승인하지 않는다. 기존 호스트 기록의 점검·복구가 필요하다.
 
-`drive/advance`에 `--provider codex|claude`를 지정하면 실패 근거를 분석하고 기존 범위에서 수정·재검증한다. 개별 명령과 한도·보류 규칙은 [자동 복구](recovery.md)에 정리했다. 호스트 반환 후 관측 실패의 제한된 복구와 반영 영수증 대조를 지원한다. 실제 code-agent의 사람 승인 위임·원자적 작업 예약·실행 중 취소·일반 unknown 복구와 관제 UI는 후속 범위다. 운영 조건은 아직 확정하지 않는다.
+`drive/advance`에 `--provider codex|claude`를 지정하면 실패 근거를 분석하고 기존 범위에서 수정·재검증한다. 개별 명령과 한도·보류 규칙은 [자동 복구](recovery.md)에 정리했다. 호스트 반환 후 관측 실패의 제한된 복구와 반영 영수증 대조를 지원한다. `--control`은 code-agent의 원자적 접수·위임 판단·실행 중 정지·재부착을 사용한다([통신 계약](code-agent-control.md)). 일반 unknown 복구와 관제 UI·운영 정책은 후속 범위다.
