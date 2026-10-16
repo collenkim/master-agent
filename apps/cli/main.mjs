@@ -48,6 +48,7 @@ const help = `master-agent — 근거 수집·AI 계획 생성·개발 호스트
   mission list                        목표 목록
   mission graph <ID>                   LangGraph checkpoint and last execution
   mission show <ID>                    계획·판단·상태·증거·이벤트
+  mission progress <ID>                작업별 실행·승인 처리·사람 답·장애와 마지막 진척
   mission plan <ID> <JSON> --revision <N>  검증 후 계획 활성화
   mission analyze <ID> --revision <N> --provider codex|claude [--ai-cli <절대경로>] [--model <모델>]
                                       AI 분석·자동 재검토·계획 검증과 활성화
@@ -112,7 +113,7 @@ async function main() {
     'mission dispatch': 4, 'mission continue': 4, 'mission recover': 4, 'mission replan': 4, 'mission reconcile': 4,
     'mission stop-analysis': 4, 'mission reconcile-verification': 4, 'mission verification-template': 4,
     'mission verification': 4, 'mission verify': 4, 'mission handoff': 4, 'mission complete': 3,
-    'mission advance': 3, 'mission drive': 3,
+    'mission advance': 3, 'mission drive': 3, 'mission progress': 3,
     'project control': 3, 'project snapshot': 3, 'project handover': 3, 'project accept': 3,
     'mission reattach': 4, 'mission stop': 4, 'mission delegate': 4, 'mission escalations': 3, 'mission relay': 5,
     'mission create': 3, 'mission list': 2, 'mission show': 3, 'mission graph': 3, 'mission plan': 4, 'mission step': 3, 'mission run': 3,
@@ -174,6 +175,7 @@ async function main() {
       case 'mission list': result = store.list('mission').map(summary); break;
       case 'mission graph': result = await graphStatus(store, store.need('mission', id).mode === 'live' ? 'mission' : 'simulation', id); break;
       case 'mission show': result = engine.describe(id); break;
+      case 'mission progress': { const m = engine.describe(id); result = { id: m.id, state: m.state, ...m.progress }; break; }
       case 'mission plan': result = engine.plan(id, json(file), revision); break;
       case 'mission analyze': {
         const provider = new CliProvider({ provider: values.provider, cliPath: values['ai-cli'], model: values.model });
@@ -239,7 +241,7 @@ async function main() {
     }
     return result;
     };
-    const result = category === 'mission' && !['list', 'show', 'graph', 'escalations'].includes(action)
+    const result = category === 'mission' && !['list', 'show', 'progress', 'graph', 'escalations'].includes(action)
       ? await runCommand(store, id, action, execute) : await execute();
     console.log(JSON.stringify(result, null, 2));
   } finally { store.close(); }

@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { hostname } from 'node:os';
+import { predecessorContracts } from '../verification/handoff-contracts.mjs';
 import { Engine } from './engine.mjs';
 import { hash, now, requireThat, string } from '../domain/contracts.mjs';
 
@@ -69,6 +71,17 @@ export class DecisionDelegation {
 
   /** 기다리는 동의·질문을 한 번 판단한다. 보낸 것이 있으면 progressed. 사람에게 넘긴 것은 blockers 에 남는다 */
   async resolve(id, attemptId, host, provider) {
+    const attempt = this.store.need('mission', id).attempts.find(a => a.id === attemptId);
+    const update = state => this.store.transaction(() => {
+      const previous = this.store.get('delegation-activity', attemptId);
+      this.store.put('delegation-activity', { id: attemptId, missionId: id, turnId: attempt?.turns.at(-1)?.id ?? null,
+        state, pid: process.pid, host: hostname(), at: now() }, previous?.revision ?? 0);
+    });
+    update('processing');
+    try { const result = await this.resolvePending(id, attemptId, host, provider); update('idle'); return result; }
+    catch (error) { update('failed'); throw error; }
+  }
+  async resolvePending(id, attemptId, host, provider) {
     requireThat(host?.transport === 'code-agent-master' && typeof host.client === 'function', 'invalid-runner', 'master 통신 계약 호스트에서만 위임 판단을 보냅니다.');
     const m = this.store.need('mission', id), attempt = m.attempts.find(a => a.id === attemptId);
     requireThat(m.mode === 'live' && m.state !== 'paused' && !m.planningHold && attempt?.mode === 'live' && ['waiting-decision', 'verified'].includes(attempt.state) &&
@@ -163,7 +176,8 @@ export class DecisionDelegation {
     const input = { action: consent.action, decision: consent.decision, summary: consent.summary,
       choices: consent.choices?.map(c => ({ ...c, delegatedAnswer: '유지' })), task: { id: task.id, goal: task.goal, kind: task.kind,
       allowedChanges: task.allowedChanges, exclusions: task.exclusions, criteria: task.criteria, verification: task.verification }, goal: m.goal, criteria: m.criteria,
-      recipe: attempt.recipe ? { allowedPaths: attempt.recipe.allowedPaths, checks: attempt.recipe.checks.map(c => ({ id: c.id, criterionIds: c.criterionIds })) } : null,
+      inputContracts: predecessorContracts(this.store, m, task),
+      recipe: attempt.recipe ? { allowedPaths: attempt.recipe.allowedPaths, exports: attempt.recipe.exports ?? [], checks: attempt.recipe.checks.map(c => ({ id: c.id, criterionIds: c.criterionIds })) } : null,
       masterVerification: verification ? { state: verification.state, checks: verification.checks.map(c => ({ id: c.id, passed: c.passed })), changedPaths: verification.changedPaths } : null,
       codeAgent: { phase: state.work?.phase ?? null, request: state.request, approval: state.approval?.status ?? null, verification: state.verification?.phases ?? null } };
     let judgment;
@@ -203,6 +217,7 @@ export class DecisionDelegation {
     // 같은 작업에서 이미 답한 질문(답과 출처) — 뒤 질문은 앞 답을 전제로 묻는다(예: 사람 답을 반영하려 되감을지)
     const answered = (view.questions ?? []).filter(q => q.answered && q.id !== target).map(q => ({ id: q.id, title: q.title, answer: String(q.answer ?? '').slice(0, 1000), source: q.source ?? null }));
     const input = { question: { id: question.id, title: question.title, body: question.body, options: question.options ?? null }, answered,
+      inputContracts: predecessorContracts(this.store, m, task), outputContracts: attempt.recipe?.exports ?? [],
       task: { id: task.id, goal: task.goal, allowedChanges: task.allowedChanges, exclusions: task.exclusions, criteria: task.criteria }, goal: m.goal, criteria: m.criteria };
     let judgment;
     try { judgment = validJudgment((await provider.generate({ prompt: answerPrompt(input), schema: answerJudgmentSchema })).data, 'answer'); }

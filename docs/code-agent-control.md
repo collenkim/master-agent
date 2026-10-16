@@ -33,6 +33,10 @@ node apps/cli/main.mjs project accept <프로젝트ID> --cli <경로> --controll
 
 `--control`은 dispatch·continue·verify·handoff·reconcile·replan·recover·advance·drive에 붙인다. reattach·stop·delegate·relay는 항상 이 경로다. `--poll-ms`(결과·이벤트 조회 주기)와 `--follow-timeout-ms`(한 실행을 기다리는 상한 — 넘으면 기다림만 멈추고 실행은 code-agent에서 계속된다)는 master 쪽 설정이다. heartbeat·연결 끊김 판단·정지 유예·실행 시간 상한 등은 code-agent 정책(`code-agent master enable --policy`, 통신 `policy`)이 정한다.
 
+`drive --control`은 독립 프로젝트를 먼저 접수하고 실행 ID를 저장한 뒤, 각 결과를 한 번씩 조회한다. 하나가 실행 중이어도 다른 프로젝트를 접수할 수 있다. 동일 프로젝트 잠금·선행 인계 조건은 유지하며 판단과 검사는 순차 수행한다. 이 경로의 관측 상한은 저장된 acceptedAt부터 계산하므로 재연결로 초기화되지 않는다. 초과·관측 불가는 unknown으로 보존하고 잠금·외부 실행은 그대로 둔다. 개별 dispatch·continue·reattach는 기존처럼 종료를 기다린다.
+
+`mission progress <ID>`는 원격 호출 없이 최근 저장 관측을 읽는다. 정상 위임 대기는 approval-pending, 판단·전송 중은 approval-processing, 사람 이관은 human-input, 실패·범위 위반·미확인은 blocked로 표시한다. 기존 state와 nextAction은 호환성을 위해 보존하며 새 관제에서는 progress.status·progress.nextAction과 작업별 phase·reason·runId·lastProgressAt을 사용한다.
+
 ## 실행 — 원자적 접수와 관찰
 
 1. 배정·계속 실행은 기존과 같이 판단·시도·잠금을 한 트랜잭션으로 저장한 뒤 시작한다.

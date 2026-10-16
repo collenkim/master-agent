@@ -21,14 +21,14 @@ npm.cmd start -- mission graph <MISSION_ID>
 
 | 그래프 | 주요 노드 |
 | --- | --- |
-| Mission | refresh → select → analyze / delegate / ready / observe / dispatch / continue / verify / handoff / recover / replan / complete |
+| Mission | refresh → select → analyze / delegate / ready / observe / dispatch / continue / reattach / poll-wait / verify / handoff / recover / replan / complete |
 | 분석 | prepare → generate → validate → record-review → next-pass 또는 finish |
 | 복구 | inspect-failure → reserve-review → review → authorize → held 또는 reserve-execution → repair / reverify → finish |
 | 재계획 | inspect-settlement → preserve-and-refresh → analyze |
 | 모의 실행 | select → prepare → execute → accept → after → select, 또는 complete |
 | 개별 Mission 명령 | 명령별 이름을 가진 노드에서 동일 도메인 서비스 또는 위 그래프 호출 |
 
-자동 진행의 분기와 반복은 LangGraph가 담당합니다. 기존 LiveWorkflow 전체를 단일 노드로 감싸는 구조가 아닙니다. 독립 작업은 막힌 작업을 건너뛰어 진행하지만 실제 외부 작업은 기존과 같이 순차 배정합니다. 병렬 외부 실행을 추가한 것은 아닙니다.
+자동 진행의 분기와 반복은 LangGraph가 담당합니다. `drive --control`은 배정 가능한 대기 작업부터 접수합니다. dispatch·continue는 code-agent의 접수와 실행 ID 저장 후 반환하고, reattach는 같은 invocationId의 결과를 한 번 조회합니다. 아직 실행 중이면 다른 작업을 선택하고, 처리할 일이 없고 실행만 남았으면 poll-wait에서 잠시 기다린 뒤 다시 조회합니다. 독립 프로젝트의 외부 실행은 겹치지만 DB 변경·위임 판단·독립 검사는 순차 처리합니다. 같은 프로젝트의 잠금과 의존성 검사는 계속 적용합니다.
 
 ## 상태 저장
 
@@ -44,6 +44,8 @@ npm.cmd start -- mission graph <MISSION_ID>
 ## 대기와 재시작
 
 진행할 수 없는 Mission은 wait 노드의 interrupt로 중단합니다. 다시 advance/drive를 실행하면 Command.resume으로 wait를 깨운 뒤 최신 도메인·외부 상태를 재검사합니다. 이 신호 자체는 질문 답변이나 승인이 아닙니다. 실제 답변·동의·grant는 기존 검증 경로를 거쳐야 합니다. 한 프로젝트의 판단 대기가 독립 프로젝트의 진행을 즉시 차단하지 않도록 선택 가능한 작업을 먼저 확인합니다.
+
+`advance --control`은 접수 또는 완료 관측 같은 한 단계의 진행 뒤 반환할 수 있습니다. 접수 직후 `running`은 정상입니다. 모든 실행이 아직 진행 중이면 interrupt로 반환하고 다음 advance/drive에서 다시 관측합니다. `drive`는 실행이 남아 있는 동안 관측을 반복합니다. pause는 새 접수를 막고 기존 실행·잠금은 보존합니다. 관측 시간 초과나 불확실한 결과는 unknown으로 남기며 재접수하지 않습니다.
 
 정상적인 wait 이외의 프로세스 중단에서는 미완료 노드에 null을 전달해 재실행하지 않습니다. START에서 기존 시도·잠금을 다시 확인합니다. code-agent 통신 계약의 실행 중 시도는 같은 invocationId로 재부착합니다. 실행 여부가 불명확한 시도는 기존 reconcile·stop-analysis 등 복구 절차를 사용하며 새 작업으로 자동 제출하지 않습니다.
 

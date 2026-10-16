@@ -106,7 +106,7 @@ test('모호한 판단은 승인하지 않고 수정 요청(재검토)만 보낸
 test('반영 동의는 master 의 독립 검증 전에는 판단하지 않는다', async t => {
   const f = controlFixture(t);
   const delegation = new DecisionDelegation(f.store);
-  await until(f, () => f.sims.one.consents.at(-1)?.action === 'deliver'); // 접수·요구·계획·구현
+  await until(f, () => f.sims.one.consents.at(-1)?.action === 'deliver' && attemptOf(f, 'edit-one')?.state === 'waiting-decision'); // 접수·요구·계획·구현·종료 관측
   const attempt = attemptOf(f, 'edit-one');
   assert.equal(attempt.state, 'waiting-decision');
   assert.equal(f.sims.one.consents.at(-1).action, 'deliver');

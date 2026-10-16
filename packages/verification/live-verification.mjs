@@ -8,6 +8,7 @@ import { snapshotTree, safeRelative, changesBetween, checkpointsCurrent, allowed
 import { Knowledge } from '../knowledge/sources.mjs';
 import { relevantSource } from '../orchestrator/scope.mjs';
 import { validateDelivery, verifyDelivery, inspectDelivery } from './delivery.mjs';
+import { validateExports, bindExports } from './handoff-contracts.mjs';
 
 const activePlan = m => m.plans.at(-1);
 const taskState = (m, id) => m.tasks.find(t => t.id === id);
@@ -30,6 +31,7 @@ export function validateRecipe(recipe, task) {
     requireThat(Number.isInteger(check.timeoutMs) && check.timeoutMs > 0 && check.timeoutMs <= 3600000, 'invalid-recipe', '명령 시간 제한은 1~3600000ms입니다.');
   }
   requireThat(task.criteria.every(c => recipe.checks.some(check => check.criterionIds.includes(c))), 'missing-verification', '모든 작업 조건을 검증 명령에 연결해야 합니다.');
+  validateExports(recipe);
   requireThat(Array.isArray(recipe.artifacts), 'invalid-recipe', '산출물의 파일 또는 검증 출력 연결이 필요합니다.');
   strings(recipe.artifacts.map(a => a.name), 'artifact.name');
   requireThat(task.outputs.every(name => recipe.artifacts.some(a => a.name === name)), 'missing-artifact', '계획의 모든 산출물을 연결해야 합니다.');
@@ -115,7 +117,7 @@ export class LiveVerification {
       current.attempt.state = 'verifying'; taskState(current.m, task.id).state = 'verifying';
       this.engine.save(current.m, 'verification-started', { runId, attemptId, decisionId: d.id });
     });
-    const checks = []; let failure, after, remoteAfter, artifacts;
+    const checks = []; let failure, after, remoteAfter, artifacts, contracts;
     try {
       for (const check of attempt.recipe.checks) {
         requireThat(this.store.need('mission', id).state !== 'paused', 'verification-paused', '일시 정지되어 새 검증 명령을 시작하지 않습니다.');
@@ -139,6 +141,7 @@ export class LiveVerification {
         return { ...a, digest: a.path ? item.digest : item.outputHash };
       });
       remoteAfter = await host.inspect(project, expectedState, session);
+      contracts = bindExports(attempt.recipe, after, checks);
       requireThat(remoteAfter.stateVersion === expectedState, 'stale-remote-state', '검증 중 원격 상태가 바뀌었습니다.');
       this.remoteReady(remoteAfter, attempt);
       this.inputsCurrent(this.store.need('mission', id), project.id, task.id);
@@ -155,6 +158,7 @@ export class LiveVerification {
       const uncertain = failure && !['provider-exit', 'verification-paused'].includes(failure.code);
       const disposition = failure ? uncertain ? 'unknown' : 'verification-failed' : 'verified';
       run.state = disposition; run.checks = checks; run.artifacts = artifacts ?? []; run.error = failure ?? null; run.after = after ?? null; run.remoteAfter = remoteAfter ?? null; run.finishedAt = now();
+      run.contracts = failure ? [] : contracts;
       run.seal = sealOf(run); this.store.put('verification-run', run, run.revision);
       a.state = disposition; a.verificationRunId = runId; taskState(current, task.id).state = disposition;
       if (disposition === 'verified' || disposition === 'verification-failed') delete a.reconciliationPending;
@@ -194,7 +198,7 @@ export class LiveVerification {
       const d = this.engine.decision(current.m, 'handoff-live', { reason: '검증된 파일 내용과 code-agent의 활성 작업·임대 없음을 확인해 로컬 산출물을 인계합니다.',
         evidence: [run.id, `tree:${tree.digest}`, `state:${expectedState}`], alternatives: ['인계 보류', '검증된 작업 완료'], nextAction: 'dispatch-ready-task', verification: task.verification });
       const evidence = { id: randomUUID(), missionId: id, taskId: task.id, attemptId, planVersion: attempt.planVersion, projectId: project.id,
-        provenance: 'live-verification', verificationRunId: run.id, checks: run.checks, tree, artifacts: run.artifacts, decisionId: d.id, remote, at: now(),
+        provenance: 'live-verification', verificationRunId: run.id, checks: run.checks, tree, artifacts: run.artifacts, contracts: run.contracts ?? [], decisionId: d.id, remote, at: now(),
         delivery: delivery ? { level: 'local-commit-with-consent-record', runId: delivery.id, commit: delivery.details.commit, receiptHash: delivery.details.receiptHash } : { level: 'local-files' } };
       evidence.seal = sealOf(evidence); this.store.put('evidence', evidence);
       current.attempt.state = 'succeeded'; current.attempt.finishedAt = now();

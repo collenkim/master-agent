@@ -101,12 +101,18 @@ export class ControlHost {
       generation: binding.generation ?? undefined, timeoutMs: this.callTimeoutMs });
   }
   inspect(project, expectedState, sessionId) { return inspectState(this.cliPath, project, expectedState, sessionId); }
+  validateTicket(ticket) {
+    const prompt = hostPrompt(ticket, { control: true });
+    requireThat(prompt.length <= 20000, 'handoff-context-limit', '배정 입력이 code-agent 접수 한도 20000자를 넘습니다. 계약·범위를 나눠 다시 계획하세요. 계약을 잘라 보내지 않습니다.');
+    return prompt;
+  }
   checkInstallation(project) {
     checkClaudeInstallation(project);
     const binding = this.binding(project.id);
     requireThat(binding.owner && Number.isInteger(binding.generation), 'control-not-owner', '이 제어자는 지금 소유자가 아닙니다 — 인계를 인수(accept)한 뒤 실행합니다.');
   }
-  async execute(ticket, { beforeStart = () => {} } = {}) {
+  async execute(ticket, { beforeStart = () => {}, wait = true } = {}) {
+    const prompt = this.validateTicket(ticket);
     this.checkInstallation(ticket.project);
     await this.inspect(ticket.project, ticket.expectedState, ticket.sessionId);
     beforeStart();
@@ -114,7 +120,7 @@ export class ControlHost {
     let accepted;
     try {
       accepted = await client.result('submit', { commandId, expect: { stateVersion: ticket.expectedState }, payload: {
-        mode: ticket.sessionId ? 'continue' : 'start', ...(ticket.sessionId ? { sessionId: ticket.sessionId } : {}), prompt: hostPrompt(ticket, { control: true }),
+        mode: ticket.sessionId ? 'continue' : 'start', ...(ticket.sessionId ? { sessionId: ticket.sessionId } : {}), prompt,
         links: { missionId: ticket.missionId, taskId: ticket.taskId, attemptId: ticket.id, planVersion: String(ticket.planVersion), invocationId: ticket.invocationId } } });
     } catch (error) {
       // code-agent 가 응답으로 거부했다(ok:false) — 실행을 만들지 않았다는 확인이다. 이어 실행이면 같은 세션의 막힘으로 돌려준다(미확인이 아니다).
@@ -123,7 +129,7 @@ export class ControlHost {
       return this.rejected(ticket, error, commandId);
     }
     this.recordRun(ticket, accepted, commandId);
-    return this.follow(ticket.project, accepted.runId, ticket);
+    return wait ? this.follow(ticket.project, accepted.runId, ticket) : { status: 'pending', runId: accepted.runId };
   }
   rejected(ticket, error, commandId) {
     this.store.transaction(() => this.store.event(ticket.missionId, 'control-submit-rejected', { attemptId: ticket.id, invocationId: ticket.invocationId, commandId, code: error.controlCode, message: error.message }));
@@ -133,14 +139,29 @@ export class ControlHost {
         resume: error.detail?.resume ?? null, commits: [], files: [], verification: null } };
   }
   /** master 재시작 뒤 — 같은 호출의 실행을 commandId 로 찾아 다시 붙는다. 실행을 새로 만들지 않는다 */
-  async reattach(ticket) {
+  async reattach(ticket, { wait = true } = {}) {
     const client = this.client(ticket.project), commandId = `inv-${ticket.invocationId}`;
     const known = await client.result('command', { payload: { commandId } });
     requireThat(known.known, 'control-not-submitted', 'code-agent 가 이 호출을 받은 기록이 없습니다 — 실행되지 않았습니다. 다시 배정하려면 상태를 대조한 뒤 새 호출로 합니다.');
     requireThat(known.status === 'accepted' && known.response?.ok && known.response.result?.runId, 'control-not-started',
       `이 호출은 실행되지 않았습니다(${known.status}${known.response?.error ? `: ${known.response.error.code}` : ''}).`);
-    this.recordRun(ticket, known.response.result, commandId);
-    return this.follow(ticket.project, known.response.result.runId, ticket);
+    const runId = known.response.result.runId;
+    if (!this.store.get('control-run', runId)) this.recordRun(ticket, known.response.result, commandId);
+    return wait ? this.follow(ticket.project, runId, ticket) : this.poll(ticket.project, runId, ticket);
+  }
+  /** One observation only: independent projects can run while this invocation is pending. */
+  async poll(project, runId, ticket) {
+    const client = this.client(project);
+    await this.pump(project, client, ticket.missionId);
+    const view = await client.result('result', { payload: { runId } });
+    this.updateRun(runId, view.run);
+    if (view.final) {
+      await this.pump(project, client, ticket.missionId);
+      return this.outcome(view, runId);
+    }
+    requireThat(Date.now() - Date.parse(this.store.need('control-run', runId).acceptedAt) < this.followTimeoutMs,
+      'control-follow-timeout', '실행 관측 시간이 초과됐습니다. 실행 여부를 대조한 뒤 다시 연결하세요.');
+    return { status: 'pending', runId };
   }
   recordRun(ticket, accepted, commandId) {
     this.store.transaction(() => {

@@ -81,12 +81,23 @@ if (action === 'setup') {
       checkout: `const {checkout:c}=require(${JSON.stringify(join(root, 'invoice-app/src/checkout.js'))}); assert.equal(c([{qty:2,price:9.99},{qty:1,price:5}],10),22.48); assert.equal(c([],0),0); assert.equal(c([{qty:1,price:100}],100),0); assert.throws(()=>c(null,0),TypeError); assert.throws(()=>c([{qty:1,price:1}],NaN),RangeError); assert.throws(()=>c([{qty:2,price:1000000}],0),RangeError);`,
     };
     for (const [id, body] of Object.entries(scripts)) write(join(root, 'checks', `${id}.cjs`), `const assert=require('node:assert/strict');\n${body}\nconsole.log('${id} independent assertions passed');\n`);
+      const contracts = {
+        discount: [{ id: 'discount', path: 'src/discount.js', symbol: 'module.exports.discount',
+          inputs: [{ name: 'amount', type: 'number', range: '유한한 0~1000000' }, { name: 'percent', type: 'number', range: '유한한 0~100' }],
+          returns: { type: 'number', description: 'Math.round(amount * (1 - percent / 100) * 100) / 100' },
+          errors: [{ type: 'RangeError', when: '어느 인수든 타입 또는 범위 위반. 문자열·null·undefined·NaN·Infinity 포함' }], checkIds: ['discount-independent'] }],
+        total: [{ id: 'total', path: 'src/total.js', symbol: 'module.exports.total',
+          inputs: [{ name: 'items', type: 'Array<{qty:number,price:number}>', range: '최대 1000개. qty 정수 0~1000, price 유한한 0~1000000. 희소 배열 금지' }],
+          returns: { type: 'number', description: '모든 qty*price 합산 후 Math.round(sum*100)/100으로 한 번 반올림. 빈 배열은 0' },
+          errors: [{ type: 'TypeError', when: 'items가 배열이 아님; 원소가 객체가 아님·null·배열·빈 자리' },
+            { type: 'RangeError', when: '1000개 초과; qty·price 누락 또는 타입·범위 위반' }], checkIds: ['total-independent'] }],
+      };
     const verifier = new LiveVerification(store);
     for (const task of tasks) {
       const ids = task.id === 'checkout' ? ['checkout', 'discount', 'total'] : [task.id];
       const checks = ids.map(id => ({ id: `${id}-independent`, executable: process.execPath, args: [join(root, 'checks', `${id}.cjs`)], criterionIds: task.criteria, timeoutMs: 30000 }));
       checks.push({ id: `${task.id}-project-tests`, executable: process.execPath, args: ['--test'], criterionIds: task.criteria, timeoutMs: 30000 });
-      mission = verifier.configure(mission.id, { schemaVersion: 1, taskId: task.id, allowedPaths: task.allowedChanges, codeAgentRecords: true, delivery: { mode: 'code-agent-commit', metadataPaths: [] }, checks, artifacts: [{ name: `${task.id}-check`, checkId: `${task.id}-independent` }] }, mission.revision);
+        mission = verifier.configure(mission.id, { schemaVersion: 1, taskId: task.id, allowedPaths: task.allowedChanges, codeAgentRecords: true, delivery: { mode: 'code-agent-commit', metadataPaths: [] }, checks, exports: contracts[task.id] ?? [], artifacts: [{ name: `${task.id}-check`, checkId: `${task.id}-independent` }] }, mission.revision);
     }
     for (const p of projects) {
       const outside = join(root, 'control', p.id), tokenFile = join(outside, 'controller.token');

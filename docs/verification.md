@@ -4,13 +4,13 @@
 
 | 검증 | 최신 결과 | 근거 |
 | --- | --- | --- |
-| 자동 회귀 | 155개 통과, 실패·건너뜀 0 | `npm.cmd test`, 로컬 `.master-agent/status-review-tests.log` |
-| 구문·문서 | JavaScript 62개·Markdown 19개 검사 통과 | `npm.cmd run check` |
+| 자동 회귀 | 163개 통과, 실패·건너뜀 0 | `npm.cmd test`, 로컬 `.master-agent/improvements-tests.log` |
+| 구문·문서 | JavaScript 66개·Markdown 19개 검사 통과 | `npm.cmd run check` |
 | 실제 code-agent 통신 | 접수·중복·이벤트·재부착·협력 정지·제어권 인계 통과 | `tests/code-agent-control.test.mjs`, 빌드된 code-agent와 가짜 개발 호스트 |
 | 앞선 답의 실제 AI 판단 | 5건 통과: routine 3·ambiguous 1·critical 1 | [판단 증거](evidence/2026-10-16-answer-context.json) |
 | 실제 다중 프로젝트 개발 | 두 프로젝트·세 작업 모두 succeeded, 약 75분 | [전체 흐름 증거](evidence/2026-10-16-full-flow.json) |
 
-code-agent CLI 연동 시험은 외부 빌드가 없으면 건너뛸 수 있다. 위 155개 통과 기록에는 건너뜀이 없다. 개선 항목과 Codex 전달 지시는 [구현 현황](implementation.md)에 모았다.
+code-agent CLI 연동 시험은 외부 빌드가 없으면 건너뛸 수 있다. 위 통과 기록에는 건너뜀이 없다. 개선 항목과 Codex 전달 지시는 [구현 현황](implementation.md)에 모았다.
 
 ## 자동 회귀의 확인 범위
 
@@ -20,8 +20,13 @@ code-agent CLI 연동 시험은 외부 빌드가 없으면 건너뛸 수 있다.
 - 실패 보류·범위 내 복구·재계획·분석 취소·정상 반환 기록을 이용한 관측 복구.
 - LangGraph 체크포인트 재개, pause 유지, 동일 그래프 동시 실행 차단, 결과 저장 실패 시 중복 실행 방지.
 - 위임 권한·판단 출처·사람 이관·질문 맥락·재부착·정지·제어권 인계.
+- 구조화 계약의 검증·소스 해시 결합, 직접·간접 의존 인계, 후속 접수·계속 실행·판단 입력 전달, 변조·원본 변경·파일 누락·접수 크기 초과 차단.
+- 완료를 명시적으로 지연한 모의 전송에서 두 프로젝트의 동시 running, 후행 작업 대기, pause·DB 재연결 후 중복 접수 방지, 관측 시간 초과·잠금 유실 처리.
+- 별도 CLI 프로세스의 진행 조회, 승인 대기·판단 처리 중·사람 응답 필요·실제 장애 구분.
 
 일반 테스트의 모델·개발 호스트는 모의 응답이며 파일·Git·SQLite·자식 프로세스는 실제 실행한다. 실제 code-agent CLI 시험도 개발 모델은 호출하지 않는다.
+
+이번 master 보완 후 실제 Claude 전체 흐름을 다시 실행하지는 않았다. 아래 75분 실행은 보완 전 순차 경로의 증거다. `smoke-full-flow.mjs`의 신규 setup에는 discount·total 구조화 계약을 추가했고, 기존 DB·증거는 수정하지 않았다. code-agent의 세부 담당 입력 연결을 보완한 뒤 새 격리 프로젝트에서 실제 병렬 실행·계약 전달을 재검증한다.
 
 ## 수정 후 실제 AI 전체 흐름 재검증 — 2026-10-16
 
@@ -53,7 +58,7 @@ node scripts/smoke-full-flow.mjs drive <root>
 node scripts/smoke-full-flow.mjs status <root>
 ```
 
-원본 보고서·DB·판단 입력/응답·샘플 저장소는 `.master-agent/full-flow-4dcfaa72-08f2-4a03-b9a1-1ed0b6c20e93/`에 보존했다. 실행 전 전체 회귀 시험은 155/155 통과(`.master-agent/status-review-tests.log`)였고, 이번 변경은 검증 스크립트와 문서다.
+원본 보고서·DB·판단 입력/응답·샘플 저장소는 `.master-agent/full-flow-4dcfaa72-08f2-4a03-b9a1-1ed0b6c20e93/`에 보존했다. 이 실제 실행 전 전체 회귀 시험은 155/155 통과(`.master-agent/status-review-tests.log`)였고, 당시 변경은 검증 스크립트와 문서였다.
 
 
 ## 앞선 답을 사용하는 실제 AI 판단

@@ -1,6 +1,6 @@
 # master-agent 요구사항과 시스템 설계
 
-요구사항의 기준은 [요구사항 범위와 수용 기준](requirements.md)입니다. 이 문서는 UI·원격 운영을 포함한 제품 설계이며 현재 구현 전체를 뜻하지 않습니다. 로컬 실행 기술은 Node.js·SQLite·LangGraph JS로 구현했습니다. 실제 제공 범위는 [구현 현황](implementation.md), 실행 구조는 [LangGraph](langgraph.md)를 따릅니다. 예산·병렬 개발·원격 배포 정책은 후속 범위입니다.
+요구사항의 기준은 [요구사항 범위와 수용 기준](requirements.md)입니다. 이 문서는 UI·원격 운영을 포함한 제품 설계이며 현재 구현 전체를 뜻하지 않습니다. 로컬 실행 기술은 Node.js·SQLite·LangGraph JS로 구현했습니다. 실제 제공 범위는 [구현 현황](implementation.md), 실행 구조는 [LangGraph](langgraph.md)를 따릅니다. 독립 프로젝트 병렬 실행은 code-agent 통신 경로에 구현했고, 예산·동시 실행 수 제한·원격 배포 정책은 후속 범위입니다.
 
 master-agent의 목적은 여러 프로젝트에 걸친 사용자 목표를 AI가 분석·계획·실행·검증하는 것입니다. 핵심 실행 단위는 목표와 완료 조건을 가진 Mission입니다. master는 프로젝트 선택과 작업 순서를 제안하고, code-agent의 결과를 근거로 다음 행동을 결정합니다. 상세한 상태·계획·재계획 계약은 [AI 오케스트레이션 핵심 설계](orchestration.md)에 정의합니다.
 

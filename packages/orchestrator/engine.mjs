@@ -5,6 +5,7 @@ import { Knowledge } from '../knowledge/sources.mjs';
 import { checkpointsCurrent } from '../verification/tree.mjs';
 import { relevantSource, taskHeld, activeHolds } from './scope.mjs';
 import { assertReplanTrees } from './replan-guard.mjs';
+import { missionProgress } from './progress.mjs';
 import { requireThat, string, strings, object, hash, now, validateMission, validatePlan } from '../domain/contracts.mjs';
 
 const finished = new Set(['simulation-complete', 'succeeded', 'cancelled']);
@@ -143,8 +144,9 @@ export class Engine {
     const deliveries = events.filter(e => e.type === 'delivery-started').map(e => this.store.need('delivery-run', e.runId));
     const reconciliations = events.filter(e => e.type === 'live-reconciled').map(e => this.store.need('reconciliation', e.reconciliationId));
     const commands = this.store.list('command-run').filter(c => c.missionId === id);
+    const progress = missionProgress(this.store, m, tasks, events);
     return { ...m, recoveryHolds: activeHolds(this.store, m).map(r => ({ runId: r.id, attemptId: r.attemptId, action: r.proposal?.action, category: r.proposal?.category })), taskDetails: tasks, decisions, evidence, analyses, verifications, recoveries, replans, deliveries, reconciliations, commands, events,
-      nextAction: finished.has(m.state) ? 'none' : m.state === 'paused' ? 'resume' :
+      progress, nextAction: finished.has(m.state) ? 'none' : m.state === 'paused' ? 'resume' :
         activeHolds(this.store, m).length && !tasks.some(t => t.state === 'queued' && !t.waitingFor.length) ? 'review-recovery' : m.attempts.some(a => a.recoveryBusy) ? 'wait-for-recovery' :
         m.state === 'analyzing' ? 'wait-for-analysis' : live ? (live.state === 'unknown' ? 'reconcile-live-ownership' : live.state === 'verified' ? 'handoff-live' : live.state === 'verifying' ? 'wait-for-verification' : live.state === 'verification-failed' ? 'repair-live-task' : live.state === 'waiting-decision' ? 'answer-in-code-agent-host' : 'review-live-checkpoint') : m.planningHold ? (m.state === 'waiting-decision' ? 'human-decision' : 'review-analysis') :
         !plan ? 'provide-plan' : m.tasks.some(t => t.state === 'unknown') ? 'reconcile-unknown-attempt' :

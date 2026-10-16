@@ -4,6 +4,7 @@ import { Knowledge } from '../knowledge/sources.mjs';
 import { hash, now, requireThat, string } from '../domain/contracts.mjs';
 import { snapshotTree } from '../verification/tree.mjs';
 import { sealOf } from '../verification/seal.mjs';
+import { predecessorContracts } from '../verification/handoff-contracts.mjs';
 import { taskHeld, relevantSource } from './scope.mjs';
 
 const taskState = (m, id) => m.tasks.find(t => t.id === id);
@@ -51,7 +52,7 @@ export class LiveExecution {
       new Knowledge(this.store).assertFresh({ ...snapshot, sources: snapshot.sources.filter(s => s.kind !== 'code' || snapshot.projectId !== projectId && !mission.liveCheckpoints?.[snapshot.projectId] && relevantSource(this.store, mission, taskId, snapshot)) });
     }
   }
-  async dispatch(id, taskId, host, { expectedRevision, expectedState, workId } = {}) {
+  async dispatch(id, taskId, host, { expectedRevision, expectedState, workId, wait = true } = {}) {
     requireThat(host?.mode === 'live' && host.name === 'claude' && typeof host.inspect === 'function' && typeof host.execute === 'function', 'invalid-runner', 'Claude 개발 호스트가 필요합니다.');
     string(expectedState, 'expectedState');
     const before = this.engine.checked(id, expectedRevision);
@@ -85,28 +86,33 @@ export class LiveExecution {
       this.store.acquire(project.id, id, attempt.id);
       m.attempts.push(attempt); const t = taskState(m, taskId); t.state = 'running'; t.attemptIds.push(attempt.id);
       m.state = 'executing'; m.reason = `개발 호스트에 ${taskId} 배정`;
-      this.engine.save(m, 'live-dispatched', { attemptId: attempt.id, decisionId: d.id });
-      return { ...attempt, expectedState, task, project, goal: m.goal, criteria: m.criteria,
+      const prepared = { ...attempt, expectedState, task, project, goal: m.goal, criteria: m.criteria, inputContracts: predecessorContracts(this.store, m, task),
         inputEvidence: task.dependsOn.flatMap(dep => taskState(m, dep).evidenceIds.map(e => this.store.need('evidence', e))) };
+      host.validateTicket?.(prepared);
+      this.engine.save(m, 'live-dispatched', { attemptId: attempt.id, decisionId: d.id });
+      return prepared;
     });
-    return this.invoke(ticket, host);
+    return this.invoke(ticket, host, { wait });
   }
   /** master 재시작 뒤 실행 중으로 남은 시도에 다시 붙는다 — 같은 호출의 실행을 찾아 결과를 받고, 실행을 새로 만들지 않는다 */
-  async reattach(id, attemptId, host) {
+  async reattach(id, attemptId, host, { wait = true } = {}) {
     requireThat(host?.transport === 'code-agent-master' && typeof host.reattach === 'function', 'invalid-runner', 'master 통신 계약 호스트만 실행에 다시 붙을 수 있습니다.');
     const m = this.store.need('mission', id), attempt = m.attempts.find(a => a.id === attemptId);
     requireThat(m.mode === 'live' && attempt?.mode === 'live' && attempt.state === 'running' && this.store.lock(attempt.projectId)?.attempt_id === attemptId, 'invalid-state', '실행 중으로 기록된 현재 시도만 다시 붙습니다.');
     const task = m.plans.at(-1).proposal.tasks.find(t => t.id === attempt.taskId);
     const ticket = { ...attempt, expectedState: attempt.turns.at(-1)?.state?.stateVersion ?? attempt.initialState?.stateVersion, sessionId: attempt.turns.at(-1)?.result?.sessionId,
       task, project: this.store.need('project', attempt.projectId), goal: m.goal, criteria: m.criteria, inputEvidence: [] };
-    this.store.transaction(() => this.store.event(id, 'live-reattach', { attemptId, invocationId: attempt.invocationId }));
-    return this.invoke(ticket, host, { reattach: true });
+    if (wait || !this.store.events(id).some(e => e.type === 'live-reattach' && e.invocationId === attempt.invocationId)) {
+      this.store.transaction(() => this.store.event(id, 'live-reattach', { attemptId, invocationId: attempt.invocationId }));
+    }
+    return this.invoke(ticket, host, { reattach: true, wait });
   }
-  async invoke(ticket, host, { reattach = false } = {}) {
+  async invoke(ticket, host, { reattach = false, wait = true } = {}) {
     let result, state, error;
     try {
-      if (reattach) result = await host.reattach(structuredClone(ticket));
-      else result = await this.start(ticket, host);
+      if (reattach) result = await host.reattach(structuredClone(ticket), { wait });
+      else result = await this.start(ticket, host, { wait });
+      if (!wait && host.transport === 'code-agent-master' && result?.status === 'pending') return this.engine.describe(ticket.missionId);
       requireThat(result && ['returned', 'blocked'].includes(result.status) && typeof result.sessionId === 'string' && typeof result.summary === 'string', 'invalid-host-result', '유효한 호스트 실행 결과가 없습니다.');
       const returned = { id: ticket.invocationId, missionId: ticket.missionId, attemptId: ticket.id, planVersion: ticket.planVersion,
         codeAgentWorkId: ticket.codeAgentWorkId, result, at: now() };
@@ -119,7 +125,7 @@ export class LiveExecution {
     } catch (e) { error = { code: e.code ?? 'host-error', message: '호스트 실행 또는 결과 관측을 확인하지 못했습니다. 자동 재실행하지 않습니다.' }; }
     return this.record(ticket, result, state, error);
   }
-  start(ticket, host) {
+  start(ticket, host, { wait = true } = {}) {
     {
       const beforeStart = () => {
         if (ticket.recovery) requireThat(snapshotTree(ticket.project.path).digest === ticket.recovery.tree.digest, 'stale-recovery', '복구 시작 전 파일이 변경됐습니다.');
@@ -134,7 +140,7 @@ export class LiveExecution {
         }
       };
       beforeStart();
-      return host.execute(structuredClone(ticket), { beforeStart });
+      return host.execute(structuredClone(ticket), { beforeStart, wait });
     }
   }
   record(ticket, result, state, error) {
@@ -156,13 +162,13 @@ export class LiveExecution {
         evidence: [attempt.decisionId, `turn-sha256:${hash(turn)}`], alternatives: ['후속 검증', '기존 호스트에서 질문·동의 처리', '실행 소유권 확인'],
         nextAction: disposition, verification: ticket.task.verification,
       });
-      if (m.state !== 'paused') m.state = disposition === 'waiting-decision' ? 'waiting-decision' : 'blocked';
+      if (m.state !== 'paused') m.state = m.tasks.some(t => t.state === 'running') ? 'executing' : disposition === 'waiting-decision' ? 'waiting-decision' : 'blocked';
       m.reason = d.reason;
       this.engine.save(m, 'live-observed', { attemptId: attempt.id, turnId: turn.id, disposition, decisionId: d.id });
       return this.engine.describe(m.id);
     });
   }
-  async continue(id, attemptId, host, { expectedRevision, expectedState, recoveryRunId, automatic = false } = {}) {
+  async continue(id, attemptId, host, { expectedRevision, expectedState, recoveryRunId, automatic = false, wait = true } = {}) {
     requireThat(host?.mode === 'live' && host.name === 'claude' && typeof host.inspect === 'function' && typeof host.execute === 'function', 'invalid-runner', 'Claude 개발 호스트가 필요합니다.');
     string(expectedState, 'expectedState');
     const before = this.engine.checked(id, expectedRevision), attempt = before.attempts.find(a => a.id === attemptId);
@@ -198,13 +204,15 @@ export class LiveExecution {
       const d = this.engine.decision(m, 'continue-live', { reason: '기존 작업 ID와 현재 code-agent 실행 가능 상태를 확인했습니다.', automatic,
         evidence: [current.decisionId, `code-agent-state:${state.stateVersion}`], alternatives: ['현재 상태 유지', '기존 작업 계속'], nextAction: task.goal, verification: task.verification });
       current.invocationId = randomUUID(); current.state = 'running'; taskState(m, current.taskId).state = 'running'; m.state = 'executing'; m.reason = '개발 호스트 계속 실행';
-      this.engine.save(m, 'live-continued', { attemptId, decisionId: d.id });
-      return { ...current, decisionId: d.id, expectedState, sessionId, task, project, goal: m.goal, criteria: m.criteria,
+      const prepared = { ...current, decisionId: d.id, expectedState, sessionId, task, project, goal: m.goal, criteria: m.criteria, inputContracts: predecessorContracts(this.store, m, task),
         ...(recovery ? { recovery: { runId: recovery.id, proposal: recovery.proposal, tree: recovery.tree } } : {}),
         ...(delegated && current.delegationNote ? { note: `${current.delegationNote}${changeRequests(this.store, current).map(d => `\n확인 요청 ${d.target}(${d.action}) 수정 요청 전문: ${d.reason}`).join('')}\n위임 판단 결과를 확인하고 ca-next 절차대로 이어 간다.` } : {}),
         inputEvidence: task.dependsOn.flatMap(dep => taskState(m, dep).evidenceIds.map(e => this.store.need('evidence', e))) };
+      host.validateTicket?.(prepared);
+      this.engine.save(m, 'live-continued', { attemptId, decisionId: d.id });
+      return prepared;
     });
-    return this.invoke(ticket, host);
+    return this.invoke(ticket, host, { wait });
   }
 }
 
