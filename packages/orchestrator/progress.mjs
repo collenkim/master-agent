@@ -54,11 +54,18 @@ export function missionProgress(store, mission, tasks, events) {
       status = task.waitingFor.length ? 'waiting' : 'ready'; reason = task.waitingFor.join(',') || 'dispatch-ready';
       if (mission.mode === 'live' && status === 'ready' && !mission.verificationRecipes?.[task.id]) { status = 'blocked'; reason = 'verification-recipe-required'; }
     }
-    const control = events.filter(e => e.type === 'control-event' && e.projectId === task.projectId && run && e.at >= run.acceptedAt && (!e.runId || e.runId === run.id));
+    const attemptRunIds = new Set(runs.filter(r => attempt && r.attemptId === attempt.id).map(r => r.id));
+    // A delegated approval may change phase between two host runs of the same attempt.
+    const control = events.filter(e => e.type === 'control-event' && e.projectId === task.projectId && run &&
+      e.at >= (attempt.startedAt ?? run.acceptedAt) && (e.runId ? attemptRunIds.has(e.runId) :
+        e.data?.workId === attempt.codeAgentWorkId || e.data?.workId == null && e.data?.previousWork === attempt.codeAgentWorkId));
+    const phaseChange = control.filter(e => e.eventType === 'phase.changed').at(-1);
+    const phase = ['succeeded', 'cancelled'].includes(task.state) ? null :
+      phaseChange ? (phaseChange.data?.to ?? phaseChange.data?.phase ?? null) : remote?.work?.phase ?? null;
     const related = events.filter(e => (attempt && e.attemptId === attempt.id) || e.taskId === task.id || (run && e.runId === run.id));
     const lastProgressAt = [attempt?.startedAt, turn?.at, run?.updatedAt, activity?.at, fault?.at, ...related.map(e => e.at), ...control.map(e => e.at)].filter(Boolean).sort().at(-1) ?? mission.createdAt;
     return { taskId: task.id, projectId: task.projectId, attemptId: attempt?.id ?? null, state: task.state, status, reason,
-      phase: control.filter(e => e.eventType === 'phase.changed').at(-1)?.data?.phase ?? remote?.work?.phase ?? null, runId: run?.id ?? null, lastProgressAt,
+      phase, runId: run?.id ?? null, lastProgressAt,
       nextAction: actions[status] ?? 'review-blockers', escalations: human.map(e => e.id) };
   });
   const status = ['succeeded', 'simulation-complete'].includes(mission.state) ? 'completed' : mission.state === 'cancelled' ? 'cancelled' :

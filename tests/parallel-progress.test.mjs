@@ -27,6 +27,29 @@ function pendingHost(f) {
 }
 const current = f => f.store.need('mission', f.mission.id);
 
+test('progress reads actual phase event from/to fields, ignores another run and clears ended work', async t => {
+  const f = controlFixture(t); pendingHost(f);
+  await new LiveWorkflow(f.store).advance(f.mission.id, f.host);
+  const run = f.store.list('control-run')[0];
+  const record = (runId, to, workId = current(f).attempts[0].codeAgentWorkId) => f.store.event(f.mission.id, 'control-event', {
+    projectId: 'one', runId, eventType: 'phase.changed', data: { workId, previousWork: current(f).attempts[0].codeAgentWorkId, from: 'analysis', to },
+  });
+  record(run.id, 'plan');
+  record('another-run', 'review');
+  const cli = JSON.parse(execFileSync(process.execPath, [resolve('apps/cli/main.mjs'), 'mission', 'progress', f.mission.id, '--db', join(f.root, 'state.db')], { encoding: 'utf8' }));
+  assert.equal(cli.tasks[0].phase, 'plan');
+  // Approval changes phase before the continuing host is accepted; no runId is attached.
+  f.store.transaction(() => f.store.put('control-run', { ...run, acceptedAt: new Date(Date.now() + 1000).toISOString() }, run.revision));
+  record(undefined, 'implement');
+  assert.equal(f.engine.describe(f.mission.id).progress.tasks[0].phase, 'implement');
+  const beforeOtherWork = f.engine.describe(f.mission.id).progress.tasks[0].lastProgressAt;
+  record(undefined, 'design', 'different-work');
+  assert.equal(f.engine.describe(f.mission.id).progress.tasks[0].phase, 'implement');
+  assert.equal(f.engine.describe(f.mission.id).progress.tasks[0].lastProgressAt, beforeOtherWork);
+  record(undefined, null, null);
+  assert.equal(f.engine.describe(f.mission.id).progress.tasks[0].phase, null);
+});
+
 test('independent control runs overlap; dependency and project locks survive pause and a new Store connection', async t => {
   const f = controlFixture(t), release = pendingHost(f), workflow = new LiveWorkflow(f.store);
   await workflow.advance(f.mission.id, f.host, f.provider);
@@ -53,6 +76,7 @@ test('independent control runs overlap; dependency and project locks survive pau
   const result = await new LiveWorkflow(other).run(f.mission.id, f.host, f.provider);
   assert.equal(result.mission.state, 'succeeded');
   assert.equal(f.engine.describe(f.mission.id).progress.status, 'completed');
+  assert.ok(f.engine.describe(f.mission.id).progress.tasks.every(t => t.phase === null));
   const starts = f.calls.filter(c => c.type === 'submit' && c.payload.mode === 'start');
   assert.deepEqual(starts.map(c => c.payload.links.taskId), ['edit-one', 'edit-two', 'integrate']);
   assert.equal(new Set(f.calls.filter(c => c.type === 'submit').map(c => c.commandId)).size, f.calls.filter(c => c.type === 'submit').length);

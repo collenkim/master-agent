@@ -73,6 +73,7 @@ drive는 code-agent 통신 계약 호스트에서 판단기(`--provider`)가 있
 
 ## 검증·인계에서 달라지는 점
 
+- `exports[].documentPath`를 지정한 작업은 구현과 계약 문서를 함께 반영한다. master가 문서·검사·커밋을 대조한 뒤 후속 호스트에 `dependencyContracts`를 전달하고, 호스트는 첫 planning 담당 배정 전에 `code-agent planning contracts <파일>`로 등록한다. code-agent의 검증된 사본이 담당 입력과 입력 해시에 포함된다. 형식·한도·호환 조건은 [검증 계약](live-verification.md)을 따른다.
 - 검증 계약의 `codeAgentRecords: true`는 그 작업의 code-agent 기록(`doc/work/<작업ID>/`, `.code-agent/work/<작업ID>/`, `.code-agent/approvals/<작업ID>/`)을 변경 범위로 허용한다. 제품 파일·다른 작업의 기록은 여기에 들지 않는다.
 - 독립 검증은 code-agent 작업이 반영 단계에 닿은 뒤에만 한다(반영 동의를 아직 준비하지 않았거나, 반영 동의 하나가 응답을 기다리는 자리). code-agent의 check·test가 통과했어도 리뷰·통합 검증이 남아 있으면 같은 세션을 먼저 이어 간다. 반영 동의는 그 검증이 끝난 뒤에만 판단한다.
 - 검증 뒤 code-agent 작업이 반영 단계를 떠나거나(되감기) 반영 확인이 위임 수정 요청을 받으면 그 검증으로 인계하지 않는다. 같은 세션을 이어 가고 반영 단계에서 다시 검증한다 — 인계 증거는 다시 한 검증에 결합한다. 이 계속 실행은 통신 계약 호스트에만 있다.

@@ -1,5 +1,5 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -18,7 +18,7 @@ import { ControlError } from '../packages/code-agent-adapter/control.mjs';
  * reviewQuestions 의 프로젝트는 구현 회차가 check·test 를 통과한 뒤 리뷰 자리에서 질문을 남기고 멈춘다 — 다음 회차가 반영 자리로 간다.
  * rejectContinue 의 프로젝트는 이어 실행 접수를 응답으로 거부한다(invalid-state — 실행을 만들지 않는다).
  */
-export function controlFixture(t, { questions = {}, humanOnly = {}, grants, reviewQuestions = {}, rejectContinue = {} } = {}) {
+export function controlFixture(t, { questions = {}, humanOnly = {}, grants, reviewQuestions = {}, rejectContinue = {}, contractDocuments = {} } = {}) {
   const root = temporary(t), store = new Store(join(root, 'state.db')); cleanup(t, () => store.close());
   const engine = new Engine(store), verifier = new LiveVerification(store);
   const tasks = [], projects = [], sims = {}, calls = [], events = {};
@@ -27,6 +27,9 @@ export function controlFixture(t, { questions = {}, humanOnly = {}, grants, revi
     const path = join(root, id); mkdirSync(path);
     writeFileSync(join(path, 'source.mjs'), 'export const value = 1;\n');
     writeFileSync(join(path, 'policy.txt'), '검증 범위 밖 파일을 변경하지 않는다.\n');
+    for (const [file, text] of Object.entries(contractDocuments[id] ?? {})) {
+      mkdirSync(dirname(join(path, file)), { recursive: true }); writeFileSync(join(path, file), text);
+    }
     writeFileSync(join(path, 'check.mjs'), "import assert from 'node:assert/strict'; import { value } from './source.mjs'; assert.equal(value,2); console.log('실제 입력 검증 통과');\n");
     git(path, ['init', '--quiet']); git(path, ['add', '.']); git(path, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '--quiet', '-m', 'fixture baseline']);
     let p = engine.catalog.register({ id, name: id, path, domains: ['fixture'], capabilities: ['code-agent:claude'], constraints: [], currentPlans: [], references: ['fixture'] });
@@ -79,14 +82,14 @@ export function controlFixture(t, { questions = {}, humanOnly = {}, grants, revi
       else writeFileSync(join(project.path, 'source.mjs'), 'export const value = 2;\n');
       s.verification = { bound: { valid: true }, phases: { check: { passed: true }, test: { passed: true } } };
       if (reviewQuestions[project.id] && kind !== 'integration') {
-        s.work.phase = 'review'; emit(project.id, 'phase.changed', { phase: 'review' });
+        s.work.phase = 'review'; emit(project.id, 'phase.changed', { workId: s.work.id, from: 'implement', to: 'review' });
         s.questions.push({ ...reviewQuestions[project.id], answered: false });
       } else {
-        s.work.phase = 'deliver'; emit(project.id, 'phase.changed', { phase: 'deliver' });
+        s.work.phase = 'deliver'; emit(project.id, 'phase.changed', { workId: s.work.id, from: 'implement', to: 'deliver' });
         prepare(project.id, 'deliver', sessionId);
       }
     } else if (s.work?.phase === 'review') {
-      s.work.phase = 'deliver'; emit(project.id, 'phase.changed', { phase: 'deliver' });
+      s.work.phase = 'deliver'; emit(project.id, 'phase.changed', { workId: s.work.id, from: 'review', to: 'deliver' });
       prepare(project.id, 'deliver', sessionId);
     } else if (s.work?.phase === 'deliver') prepare(project.id, 'deliver', sessionId);
     s.lease = { state: 'idle', host: 'claude', session: sessionId };

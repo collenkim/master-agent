@@ -8,7 +8,7 @@ import { snapshotTree, safeRelative, changesBetween, checkpointsCurrent, allowed
 import { Knowledge } from '../knowledge/sources.mjs';
 import { relevantSource } from '../orchestrator/scope.mjs';
 import { validateDelivery, verifyDelivery, inspectDelivery } from './delivery.mjs';
-import { validateExports, bindExports } from './handoff-contracts.mjs';
+import { validateExports, bindExports, verifyContractDocuments } from './handoff-contracts.mjs';
 
 const activePlan = m => m.plans.at(-1);
 const taskState = (m, id) => m.tasks.find(t => t.id === id);
@@ -193,6 +193,7 @@ export class LiveVerification {
         delivery = result.record; expectedRevision = result.revision;
       }
     } else requireThat(tree.digest === run.after.digest, 'stale-evidence', '검증 이후 파일이 변경됐습니다. 인계할 수 없습니다.');
+    verifyContractDocuments(run.contracts ?? [], tree, delivery?.details.commit);
     return this.store.transaction(() => {
       const current = this.locate(id, attemptId, expectedRevision);
       const d = this.engine.decision(current.m, 'handoff-live', { reason: '검증된 파일 내용과 code-agent의 활성 작업·임대 없음을 확인해 로컬 산출물을 인계합니다.',

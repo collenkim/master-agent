@@ -21,13 +21,19 @@ const save = (file, value) => { mkdirSync(dirname(file), { recursive: true }); w
 const write = (file, value) => { mkdirSync(dirname(file), { recursive: true }); writeFileSync(file, value); };
 const git = (path, args) => execFileSync('git', ['-C', path, ...args], { encoding: 'utf8', windowsHide: true, stdio: 'pipe' }).trim();
 const hashFile = file => createHash('sha256').update(readFileSync(file)).digest('hex');
-const cli = 'C:/IdeaProjects/code-agent/dist/agent/cli.js';
-const claude = 'C:/Users/kai/.local/bin/claude.exe';
+const cli = resolve(process.env.CODE_AGENT_CLI ?? 'C:/IdeaProjects/code-agent/dist/agent/cli.js');
+const claude = resolve(process.env.CLAUDE_CLI ?? 'C:/Users/kai/.local/bin/claude.exe');
 const configFile = join(root, 'experiment.json');
+const runtimeSnapshot = executable => {
+  const file = resolve(dirname(executable), '../../snapshot.json');
+  if (!existsSync(file)) return null;
+  const { contentHash, sourceCommit, files } = JSON.parse(readFileSync(file, 'utf8'));
+  return { contentHash, sourceCommit, fileCount: files.length };
+};
 
 if (action === 'setup') {
   mkdirSync(root, { recursive: true });
-  const require = createRequire(import.meta.url), use = name => require(`C:/IdeaProjects/code-agent/dist/agent/${name}.js`);
+  const require = createRequire(import.meta.url), use = name => require(join(dirname(cli), `${name}.js`));
   const { init } = use('init'), { docsBegin, docsEnd, confirmDoc } = use('docsCommands'), { setupProject } = use('setup');
   const { withInteraction } = use('tty'), { masterEnable, masterGrant } = use('master/admin');
   const { DEFAULT_ALLOWED_TOOLS } = use('master/protocol');
@@ -41,7 +47,11 @@ if (action === 'setup') {
       mkdirSync(path);
       git(path, ['init', '-q', '-b', 'master']); git(path, ['config', 'user.name', 'full-flow-fixture']);
       git(path, ['config', 'user.email', 'fixture@example.invalid']); git(path, ['config', 'commit.gpgsign', 'false']); git(path, ['config', 'core.autocrlf', 'false']);
-      init(path, { cli, host: 'claude' }); docsBegin(path); setupProject(path, 'node'); docsEnd(path);
+      init(path, { cli, host: 'claude' }); docsBegin(path); setupProject(path, 'node');
+      const setupManifest = JSON.parse(readFileSync(join(path, 'code-agent.json'), 'utf8'));
+      setupManifest.stages.find(stage => stage.key === 'code').outputDirs.push('contracts');
+      save(join(path, 'code-agent.json'), setupManifest);
+      docsEnd(path);
       write(join(path, 'README.md'), `# ${id}\n\n격리된 실제 AI 전체 흐름 시험. node --test로 테스트한다.\n`);
       write(join(path, 'POLICY.md'), policy);
       save(join(path, 'package.json'), { name: id, version: '1.0.0', private: true, type: 'commonjs', scripts: { test: 'node --test' } });
@@ -72,8 +82,14 @@ if (action === 'setup') {
       const p = projects.find(p => p.id === (id === 'discount' ? 'price-core' : 'invoice-app'));
       return { id, projectId: p.id, domain: p.domains[0], kind: id === 'checkout' ? 'integration' : 'implementation', goal,
         rationale: '도메인별 독립 구현과 선행 산출물을 사용하는 통합', references: p.references, dependsOn: id === 'checkout' ? ['discount', 'total'] : [],
-        criteria: id === 'checkout' ? ['discount', 'total', 'checkout'] : [id], allowedChanges: [`src/${id}.js`, `tests/${id}.test.js`], exclusions: ['code-agent.json', 'package.json', 'POLICY.md', 'scripts/link-price-core.cjs', 'src/bootstrap.js', 'tests/bootstrap.test.js'], outputs: [`${id}-check`], requiredCapabilities: ['code-agent:claude'], verification: '프로젝트 node:test와 master 독립 검사 통과' };
+        criteria: id === 'checkout' ? ['discount', 'total', 'checkout'] : [id], allowedChanges: [`src/${id}.js`, `tests/${id}.test.js`, ...(id !== 'checkout' ? [`contracts/${id}.md`] : [])], exclusions: ['code-agent.json', 'package.json', 'POLICY.md', 'scripts/link-price-core.cjs', 'src/bootstrap.js', 'tests/bootstrap.test.js'], outputs: [`${id}-check`], requiredCapabilities: ['code-agent:claude'], verification: '프로젝트 node:test와 master 독립 검사 통과' };
     });
+    for (const task of tasks) {
+      const project = projects.find(p => p.id === task.projectId);
+      const manifest = JSON.parse(readFileSync(join(project.path, 'code-agent.json'), 'utf8'));
+      assert.ok(task.allowedChanges.every(file => manifest.stages.some(stage => stage.outputDirs.some(dir => file === dir || file.startsWith(`${dir}/`)))),
+        `${task.id}: 모든 제품 파일을 code-agent 단계 출력 위치에 먼저 등록해야 합니다.`);
+    }
     mission = engine.plan(mission.id, { schemaVersion: 1, summary: '두 프로젝트·세 작업 전체 흐름 검증용 고정 계획', unresolved: [], tasks }, mission.revision);
     const scripts = {
       discount: `const {discount:d}=require(${JSON.stringify(join(root, 'price-core/src/discount.js'))}); assert.equal(d(100,10),90); assert.equal(d(19.99,15),16.99); assert.equal(d(0,100),0); assert.equal(d(100,0),100); assert.equal(d(100,100),0); for(const x of [-1,1000001,NaN,Infinity,'1',null,undefined]) assert.throws(()=>d(x,10),RangeError); for(const x of [-1,101,NaN,Infinity,'1',null,undefined]) assert.throws(()=>d(100,x),RangeError);`,
@@ -81,23 +97,23 @@ if (action === 'setup') {
       checkout: `const {checkout:c}=require(${JSON.stringify(join(root, 'invoice-app/src/checkout.js'))}); assert.equal(c([{qty:2,price:9.99},{qty:1,price:5}],10),22.48); assert.equal(c([],0),0); assert.equal(c([{qty:1,price:100}],100),0); assert.throws(()=>c(null,0),TypeError); assert.throws(()=>c([{qty:1,price:1}],NaN),RangeError); assert.throws(()=>c([{qty:2,price:1000000}],0),RangeError);`,
     };
     for (const [id, body] of Object.entries(scripts)) write(join(root, 'checks', `${id}.cjs`), `const assert=require('node:assert/strict');\n${body}\nconsole.log('${id} independent assertions passed');\n`);
-      const contracts = {
-        discount: [{ id: 'discount', path: 'src/discount.js', symbol: 'module.exports.discount',
-          inputs: [{ name: 'amount', type: 'number', range: '유한한 0~1000000' }, { name: 'percent', type: 'number', range: '유한한 0~100' }],
-          returns: { type: 'number', description: 'Math.round(amount * (1 - percent / 100) * 100) / 100' },
-          errors: [{ type: 'RangeError', when: '어느 인수든 타입 또는 범위 위반. 문자열·null·undefined·NaN·Infinity 포함' }], checkIds: ['discount-independent'] }],
-        total: [{ id: 'total', path: 'src/total.js', symbol: 'module.exports.total',
-          inputs: [{ name: 'items', type: 'Array<{qty:number,price:number}>', range: '최대 1000개. qty 정수 0~1000, price 유한한 0~1000000. 희소 배열 금지' }],
-          returns: { type: 'number', description: '모든 qty*price 합산 후 Math.round(sum*100)/100으로 한 번 반올림. 빈 배열은 0' },
-          errors: [{ type: 'TypeError', when: 'items가 배열이 아님; 원소가 객체가 아님·null·배열·빈 자리' },
-            { type: 'RangeError', when: '1000개 초과; qty·price 누락 또는 타입·범위 위반' }], checkIds: ['total-independent'] }],
-      };
+    const contracts = {
+      discount: [{ id: 'discount', path: 'src/discount.js', documentPath: 'contracts/discount.md', symbol: 'module.exports.discount',
+        inputs: [{ name: 'amount', type: 'number', range: '유한한 0~1000000' }, { name: 'percent', type: 'number', range: '유한한 0~100' }],
+        returns: { type: 'number', description: 'Math.round(amount * (1 - percent / 100) * 100) / 100' },
+        errors: [{ type: 'RangeError', when: '어느 인수든 타입 또는 범위 위반. 문자열·null·undefined·NaN·Infinity 포함' }], checkIds: ['discount-independent'] }],
+      total: [{ id: 'total', path: 'src/total.js', documentPath: 'contracts/total.md', symbol: 'module.exports.total',
+        inputs: [{ name: 'items', type: 'Array<{qty:number,price:number}>', range: '최대 1000개. qty 정수 0~1000, price 유한한 0~1000000. 희소 배열 금지' }],
+        returns: { type: 'number', description: '모든 qty*price 합산 후 Math.round(sum*100)/100으로 한 번 반올림. 빈 배열은 0' },
+        errors: [{ type: 'TypeError', when: 'items가 배열이 아님; 원소가 객체가 아님·null·배열·빈 자리' },
+          { type: 'RangeError', when: '1000개 초과; qty·price 누락 또는 타입·범위 위반' }], checkIds: ['total-independent'] }],
+    };
     const verifier = new LiveVerification(store);
     for (const task of tasks) {
       const ids = task.id === 'checkout' ? ['checkout', 'discount', 'total'] : [task.id];
       const checks = ids.map(id => ({ id: `${id}-independent`, executable: process.execPath, args: [join(root, 'checks', `${id}.cjs`)], criterionIds: task.criteria, timeoutMs: 30000 }));
       checks.push({ id: `${task.id}-project-tests`, executable: process.execPath, args: ['--test'], criterionIds: task.criteria, timeoutMs: 30000 });
-        mission = verifier.configure(mission.id, { schemaVersion: 1, taskId: task.id, allowedPaths: task.allowedChanges, codeAgentRecords: true, delivery: { mode: 'code-agent-commit', metadataPaths: [] }, checks, exports: contracts[task.id] ?? [], artifacts: [{ name: `${task.id}-check`, checkId: `${task.id}-independent` }] }, mission.revision);
+      mission = verifier.configure(mission.id, { schemaVersion: 1, taskId: task.id, allowedPaths: task.allowedChanges, codeAgentRecords: true, delivery: { mode: 'code-agent-commit', metadataPaths: [] }, checks, exports: contracts[task.id] ?? [], artifacts: [{ name: `${task.id}-check`, checkId: `${task.id}-independent` }] }, mission.revision);
     }
     for (const p of projects) {
       const outside = join(root, 'control', p.id), tokenFile = join(outside, 'controller.token');
@@ -105,14 +121,15 @@ if (action === 'setup') {
       const hostFile = join(outside, 'host.json'), grantFile = join(outside, 'grant.json');
       save(hostFile, { command: [claude], permissionMode: 'acceptEdits', allowedTools: [...DEFAULT_ALLOWED_TOOLS, 'Agent', `Bash(node ${cli} *)`, `PowerShell(node ${cli} *)`, 'Bash(node --test*)', 'Bash(node --check*)', 'Bash(npm test*)'] });
       tty(() => masterEnable(p.path, { controller: 'full-flow', tokenOut: tokenFile, host: hostFile }));
-      save(grantFile, { id: `full-flow-${p.id}`, controller: 'full-flow', missions: [mission.id], actions: ['request', 'plan', 'deliver', 'answer'], paths: ['src/**', 'tests/**', 'doc/work/**', '.code-agent/work/**', '.code-agent/approvals/**'], ttlHours: 24, maxUses: 80 });
+      save(grantFile, { id: `full-flow-${p.id}`, controller: 'full-flow', missions: [mission.id], actions: ['request', 'plan', 'deliver', 'answer'], paths: ['src/**', 'tests/**', 'contracts/**', 'doc/work/**', '.code-agent/work/**', '.code-agent/approvals/**'], ttlHours: 24, maxUses: 80 });
       tty(() => masterGrant(p.path, grantFile));
       await bindControl(store, p.id, { cliPath: cli, controller: 'full-flow', tokenFile });
     }
     const preflight = Object.keys(scripts).map(id => ({ id, exitCode: spawnSync(process.execPath, [join(root, 'checks', `${id}.cjs`)], { windowsHide: true }).status }));
     assert.ok(preflight.every(c => c.exitCode !== 0), '독립 검사는 구현 전 실패해야 한다');
-    const config = { scenarioVersion: 2, root, missionId: mission.id, database: join(root, 'state.db'), cli, claude, createdAt: new Date().toISOString(), node: process.version,
-      masterCommit: git(resolve('.'), ['rev-parse', 'HEAD']), codeAgentCliHash: hashFile(cli),
+    const config = { scenarioVersion: 4, root, missionId: mission.id, database: join(root, 'state.db'), cli, claude, createdAt: new Date().toISOString(), node: process.version,
+      masterCommit: git(resolve('.'), ['rev-parse', 'HEAD']), codeAgentCliHash: hashFile(cli), codeAgentSnapshot: runtimeSnapshot(cli),
+      releaseHome: process.env.CODE_AGENT_RELEASE_HOME ?? null,
       setupEmulated: ['공통 정책 문서 확인 TTY', 'master enable TTY', 'master grant TTY'],
       scope: '고정 master 계획으로 실제 개발·위임 판단·독립 검증·반영·통합 완료. master 초기 AI 계획 생성은 별도 범위.', projects, tasks, preflight };
     save(configFile, config);
@@ -120,6 +137,7 @@ if (action === 'setup') {
   } finally { store.close(); }
 } else {
   const config = JSON.parse(readFileSync(configFile, 'utf8'));
+  if (config.releaseHome) process.env.CODE_AGENT_RELEASE_HOME = config.releaseHome;
   const store = new Store(config.database), engine = new Engine(store);
   const status = () => {
     const m = store.need('mission', config.missionId);
@@ -134,7 +152,7 @@ if (action === 'setup') {
   };
   const report = () => {
     const m = engine.describe(config.missionId);
-    const result = { ...config, recordedAt: new Date().toISOString(), mission: m, records: {} };
+    const result = { ...config, codeAgentSnapshot: config.codeAgentSnapshot ?? runtimeSnapshot(config.cli), recordedAt: new Date().toISOString(), mission: m, records: {} };
     for (const kind of ['decision', 'delegation', 'escalation', 'verification-run', 'evidence', 'control-run', 'graph-run']) result.records[kind] = store.list(kind).filter(r => r.missionId === m.id);
     result.projects = config.projects.map(p => {
       const work = join(p.path, 'doc/work');
@@ -142,23 +160,57 @@ if (action === 'setup') {
         questions: existsSync(work) ? readdirSync(work).filter(n => existsSync(join(work,n,'questions.md'))).map(n => ({ workId: n, text: readFileSync(join(work,n,'questions.md'),'utf8') })) : [] };
     });
     result.passed = m.state === 'succeeded' && m.tasks.length === 3 && m.tasks.every(t => t.state === 'succeeded');
+    result.hostIntervals = result.records['control-run'].flatMap(run => {
+      const project = config.projects.find(p => p.id === run.projectId);
+      const file = join(project.path, '.code-agent/master/runs', `${run.id}.json`);
+      if (!existsSync(file)) return [];
+      const record = JSON.parse(readFileSync(file, 'utf8'));
+      return [{ runId: run.id, taskId: record.links.taskId, projectId: run.projectId, startedAt: record.host?.startedAt, exitedAt: record.host?.exitedAt }];
+    });
+    result.parallelOverlap = result.hostIntervals.some(a => result.hostIntervals.some(b => a.projectId !== b.projectId &&
+      Date.parse(a.startedAt) < Date.parse(b.exitedAt) && Date.parse(b.startedAt) < Date.parse(a.exitedAt)));
+    if (config.scenarioVersion >= 3) {
+      const consumer = m.attempts.find(a => a.taskId === 'checkout');
+      result.contractHandoff = { passed: false };
+      if (consumer) {
+        const project = config.projects.find(p => p.id === consumer.projectId);
+        const relative = `.code-agent/work/${consumer.codeAgentWorkId}/dependency-contracts.json`;
+        const directory = join(project.path, '.code-agent/work', consumer.codeAgentWorkId);
+        const file = join(project.path, relative);
+        if (existsSync(file)) {
+          const { dependencyContracts } = createRequire(import.meta.url)(join(dirname(config.cli), 'dependencyContracts.js'));
+          const checked = dependencyContracts(project.path, consumer.codeAgentWorkId), bundleHash = hashFile(file);
+          const assignments = readdirSync(directory).filter(name => name.endsWith('.planning.json')).flatMap(name =>
+            JSON.parse(readFileSync(join(directory, name), 'utf8')).tasks.flatMap(record => record.attempts.map(a => ({
+              taskId: record.task.id, dispatchId: a.dispatchId, status: a.status, contractHash: a.inputParts?.contracts,
+              fileHash: a.inputParts?.files?.[relative], inputHash: a.inputHash,
+            }))));
+          result.contractHandoff = { workId: consumer.codeAgentWorkId, bundleHash, contracts: checked.contracts.map(({ content, ...ref }) => ref), problems: checked.problems, assignments,
+            passed: checked.problems.length === 0 && checked.contracts.length === 2 && assignments.length > 0 &&
+              assignments.every(a => a.contractHash === bundleHash && a.fileHash === bundleHash) };
+        }
+      }
+      result.passed &&= result.parallelOverlap && result.contractHandoff.passed;
+    }
     save(join(root, 'report.json'), result);
     return result;
   };
   try {
     if (action === 'stop') {
       const m = store.need('mission', config.missionId);
+      const reason = process.env.SMOKE_STOP_REASON ?? '운영자가 실제 흐름 시험을 보존 중단했습니다.';
       if (m.state !== 'paused') engine.control(m.id, 'pause', m.revision);
       const host = new ControlHost(store, { cliPath: config.cli, pollMs: 1000 });
       for (const attempt of m.attempts.filter(a => a.state === 'running')) {
-        const result = await host.stopAttempt(m.id, attempt.id, 'pause', { waitMs: 60000, reason: '시험 명세와 독립 검사 불일치로 보존 중단; 명세를 명확히 한 새 시험으로 대체' });
+        const result = await host.stopAttempt(m.id, attempt.id, 'pause', { waitMs: 60000, reason });
         console.log(JSON.stringify({ stage: 'stopped', attemptId: attempt.id, stopped: result.stopped, state: result.run?.state }));
       }
-      save(join(root, 'operator-stop.json'), { at: new Date().toISOString(), reason: '샘플 명세는 원소 형태 오류의 종류를 정하지 않았는데 독립 검사가 RangeError로 제한했다. 진행 중인 검사·판단을 바꾸지 않고 보존 중단한다.' });
+      save(join(root, 'operator-stop.json'), { at: new Date().toISOString(), reason });
     }
     else if (action === 'status') console.log(JSON.stringify(status(), null, 2));
     else if (action === 'report') { const r = report(); console.log(JSON.stringify({ passed: r.passed, state: r.mission.state, report: join(root, 'report.json') })); }
     else {
+      assert.equal(hashFile(config.cli), config.codeAgentCliHash, '준비 이후 code-agent CLI가 변경됐습니다. 고정 빌드로 새 실험을 준비하세요.');
       const host = new ControlHost(store, { cliPath: config.cli, pollMs: 2000, followTimeoutMs: 4 * 3600000 });
       const real = new CliProvider({ provider: 'claude', cliPath: config.claude, timeoutMs: 300000 });
       const provider = { name: real.name, generate: async request => {

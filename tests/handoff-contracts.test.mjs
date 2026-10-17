@@ -3,13 +3,64 @@ import assert from 'node:assert/strict';
 import { controlFixture } from './control-fixture.mjs';
 import { LiveWorkflow } from '../packages/orchestrator/drive.mjs';
 import { LiveExecution } from '../packages/orchestrator/live.mjs';
-import { predecessorContracts, validateExports, bindExports } from '../packages/verification/handoff-contracts.mjs';
+import { predecessorContracts, validateExports, bindExports, contractLines, dependencyBundle, verifyContractDocuments } from '../packages/verification/handoff-contracts.mjs';
 import { hash } from '../packages/domain/contracts.mjs';
+import { writeFileSync, existsSync, mkdirSync, realpathSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { createRequire } from 'node:module';
+import { hostPrompt } from '../packages/runner/claude-host.mjs';
 
 const contract = {
   id: 'value-api', path: 'source.mjs', symbol: 'value', inputs: [],
   returns: { type: 'number', description: '상수 2' }, errors: [], checkIds: ['check-one'],
 };
+
+const dependencyModule = resolve(process.env.CODE_AGENT_DIST ?? '../code-agent/dist', 'agent/dependencyContracts.js');
+test('committed contract documents become a code-agent bundle and verified local copy, never a fabricated claim', async t => {
+  const declaration = { ...contract, documentPath: 'contracts/value.md' };
+  const f = controlFixture(t, { contractDocuments: { one: { 'contracts/value.md': contractLines(declaration).join('\n') + '\n' } } });
+  f.verifier.configure(f.mission.id, { ...f.recipes[0], exports: [declaration] }, f.store.need('mission', f.mission.id).revision);
+  assert.equal((await new LiveWorkflow(f.store).run(f.mission.id, f.host, f.provider)).mission.state, 'succeeded');
+  const m = f.store.need('mission', f.mission.id);
+  const inputs = predecessorContracts(f.store, m, f.tasks.find(t => t.id === 'integrate'));
+  const bundle = dependencyBundle(inputs);
+  assert.equal(bundle.contracts[0].repository, realpathSync.native(f.projects[0].path));
+  assert.equal(bundle.contracts[0].commit.length, 40);
+  assert.deepEqual(bundle.contracts[0].claims.map(c => c.text), contractLines(declaration));
+  const prompt = hostPrompt({ inputContracts: inputs }, { control: true });
+  assert.match(prompt, /code-agent planning contracts/);
+  assert.match(prompt, /첫 planning 담당 배정 전에/);
+  assert.ok(prompt.length < 20000);
+  const evidence = f.store.list('evidence').find(e => e.taskId === 'edit-one');
+  assert.throws(() => bindExports({ exports: [{ ...declaration, symbol: 'different' }] }, evidence.tree, evidence.checks), { code: 'invalid-contract' });
+  const alteredTree = structuredClone(evidence.tree), alteredContracts = structuredClone(evidence.contracts);
+  alteredTree.files.find(f => f.path === declaration.documentPath).digest = '0'.repeat(64);
+  alteredContracts[0].document.sha256 = '0'.repeat(64);
+  assert.throws(() => verifyContractDocuments(alteredContracts, alteredTree, evidence.delivery.commit), { code: 'invalid-contract' });
+  const changedCheckpoint = structuredClone(m);
+  changedCheckpoint.liveCheckpoints.one.files.find(f => f.path === declaration.documentPath).digest = 'changed';
+  assert.throws(() => predecessorContracts(f.store, changedCheckpoint, f.tasks.find(t => t.id === 'integrate')), { code: 'stale-contract' });
+  await t.test('actual code-agent registration accepts the bundle and rejects tampered claims or documents', {
+    skip: !existsSync(dependencyModule) && 'code-agent dependencyContracts build absent',
+  }, () => {
+    const { registerContracts, dependencyContracts } = createRequire(import.meta.url)(dependencyModule);
+    const consumer = join(f.root, 'consumer'); mkdirSync(consumer);
+    const file = join(f.root, 'bundle.json'); writeFileSync(file, JSON.stringify(bundle));
+    registerContracts(consumer, 'contract-test', file);
+    assert.equal(dependencyContracts(consumer, 'contract-test').problems.length, 0);
+    const altered = structuredClone(bundle); altered.contracts[0].claims[0].text = 'unproven statement';
+    writeFileSync(file, JSON.stringify(altered));
+    assert.throws(() => registerContracts(consumer, 'contract-test', file), /원문 한 줄/);
+    writeFileSync(join(f.projects[0].path, declaration.documentPath), 'changed\n');
+    assert.ok(dependencyContracts(consumer, 'contract-test').problems.length);
+  });
+});
+
+test('document declarations reject uncommitted delivery, escaped paths and text that differs from the structured contract', () => {
+  assert.throws(() => validateExports({ checks: [{ id: 'check-one' }], exports: [{ ...contract, documentPath: 'contract.md' }] }), { code: 'invalid-contract' });
+  assert.throws(() => validateExports({ delivery: { mode: 'code-agent-commit' }, checks: [{ id: 'check-one' }], exports: [{ ...contract, documentPath: '../contract.md' }] }));
+  assert.throws(() => dependencyBundle([{ projectId: 'one', commit: null, contracts: [{ ...contract, document: { path: 'contract.md', sha256: '0'.repeat(64) } }] }]), { code: 'invalid-contract' });
+});
 
 test('verified contracts and their source provenance reach downstream dispatch, continuation and judgment', async t => {
   const f = controlFixture(t);
