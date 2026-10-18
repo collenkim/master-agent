@@ -4,12 +4,15 @@
 
 | 검증 | 결과 | 근거 |
 | --- | --- | --- |
-| 자동 회귀 | 173개 통과, 실패·건너뜀 0 | `npm.cmd test`, 로컬 `.master-agent/dashboard-tests.log` |
+| 자동 회귀 | 182개 통과, 실패·건너뜀 0 | `npm.cmd test`, 로컬 `.master-agent/group-full-tests.log` |
+| 설치 자동 탐색 | PATH의 실행 파일·npm shim·Windows npm 설치·명시적 override·미설치 구분, 현재 PC의 실제 설치 진입점 확인 | `tests/discovery.test.mjs` |
+| 그룹·단일 요청 | 서비스 범위 고정·구성원 변경·중복 접수 방지·실행기 중단 및 이어 실행·HTTP 쓰기 인증 | `tests/requests.test.mjs` |
+| 요청 전체 실행 | 그룹/단일 요청 각각 모의 AI 계획 → 템플릿 연결 → 실제 파일 변경·Node 검사 → 인계·succeeded | `tests/requests.test.mjs`; AI와 개발 호스트는 모의 응답 |
 | 명령 설치 | 임시 npm 전역 prefix에 로컬 패키지 설치 후 저장소 밖에서 프로젝트 조회·데모 완료 | `npm.cmd install --global --prefix <임시경로> --offline --ignore-scripts <소스경로>` |
 | 관제 서버 | 전체 등록 프로젝트·독립 작업 관측, 조회 실패·오래된 관측 구분, 중복 조회 제한, HTTP 조회 경계 | `tests/dashboard.test.mjs` 6개 |
-| 실제 브라우저 | Chrome에서 렌더링·문자열 이스케이프·검색·필터·갱신 후 상세 유지·모바일 너비·연결 끊김 통과 | 로컬 `.master-agent/dashboard-browser-ZZmzii/`의 desktop.png·mobile.png |
+| 실제 브라우저 | Chrome에서 그룹 생성·구성원 제외·그룹/단일 요청 전송, 렌더링·이스케이프·검색·필터·상세 유지·모바일·연결 끊김 통과 | 로컬 `.master-agent/dashboard-browser-mSL8N3/`의 desktop.png·mobile.png; 화면 시험의 실행기 접수는 모의 처리 |
 | 진행 상태·병렬 제어 | 5개 회귀 통과, 실제 CLI 조회에서도 확인 | `tests/parallel-progress.test.mjs` |
-| 구문·문서 | JavaScript 70개·Markdown 18개 검사 통과 | `npm.cmd run check` |
+| 구문·문서 | JavaScript 74개·Markdown 18개 검사 통과 | `npm.cmd run check` |
 | 실제 code-agent 계약 등록 | 등록 성공, 원문과 다른 claim·변경된 문서 거부 | `tests/handoff-contracts.test.mjs`의 실제 빌드 연동 |
 | 실제 code-agent 통신 | 접수·중복·이벤트·재부착·협력 정지·제어권 인계 통과 | `tests/code-agent-control.test.mjs`, 가짜 개발 호스트 |
 | 앞선 답의 실제 AI 판단 | 5건 통과: routine 3·ambiguous 1·critical 1 | [판단 증거](evidence/2026-10-16-answer-context.json) |
@@ -29,7 +32,9 @@ code-agent 연동 시험은 외부 빌드가 없으면 건너뛴다. 위 회귀 
 - 모의 전송의 독립 프로젝트 동시 실행, 후행 작업 대기, DB 재연결 후 중복 접수 방지.
 - 별도 CLI 프로세스의 승인 대기·판단 처리·사람 응답·실제 장애 구분.
 - 실제 단계 이벤트의 `from/to` 형식과 승인 후 호스트 재개 전의 단계 변경 반영, 다른 실행·후속 작업의 이벤트 제외, 완료 작업의 단계 표시 해제.
-- 대시보드의 전체 등록 프로젝트·목표 요약, 질문 ID·미검증 답변 보존, 제어 토큰 경로 제외, 관측 실패 시 과거 작업 표시, 중복·동시 조회 제한과 로컬 읽기 전용 HTTP.
+- 대시보드의 전체 등록 프로젝트·목표 요약, 질문 ID·미검증 답변 보존, code-agent 제어 토큰 경로 제외, 관측 실패 시 과거 작업 표시, 중복·동시 조회 제한.
+- 로컬 HTTP의 Origin·화면 토큰 검사, 그룹 버전 대조, 그룹/단일 요청의 원자적 접수·중복 실행 방지와 별도 CLI 실행기의 실패 영속화.
+- 자동 조회가 관측 시각만 갱신한 경우 AI 계획 유지, 실제 code-agent 상태 버전 변경 시 계획 적용 거부.
 
 일반 회귀의 모델·개발 호스트는 모의 응답이다. 파일·Git·SQLite·자식 프로세스는 실제 실행한다. 실제 code-agent CLI 연동 시험도 개발 모델은 호출하지 않는다.
 

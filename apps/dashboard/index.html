@@ -13,11 +13,39 @@
     <div class="heading"><div><p class="eyebrow">WORKSPACE OVERVIEW</p><h1>프로젝트 전체 현황</h1><p class="muted">code-agent의 현재 작업과 목표별 진행 상황을 함께 확인합니다.</p></div><button id="refresh" type="button">화면 새로고침 ↻</button></div>
     <div id="notice" role="status" class="notice">상태를 불러오고 있습니다.</div>
     <section id="metrics" class="metrics" aria-label="전체 요약"></section>
+    <p id="action-status" role="status"></p>
+    <div class="toolbar"><div><h2>서비스 그룹</h2><p class="muted">함께 유지보수할 프로젝트를 묶고 서비스 범위에 요청을 보냅니다.</p></div><div class="filters"><button id="new-group" type="button">그룹 만들기</button><button id="new-request" type="button">요청 보내기</button></div></div>
+    <section id="groups" class="projects" aria-label="서비스 그룹"></section>
+    <div class="toolbar"><h2>보낸 요청</h2><span class="muted">접수 시 확정한 대상에서 실행</span></div>
+    <section id="requests" aria-label="보낸 요청"></section>
     <div class="toolbar"><h2>프로젝트 <span id="project-count" class="muted"></span></h2><div class="filters"><label>검색 <input id="search" type="search" placeholder="프로젝트·작업·경로"></label><label>표시 <select id="filter"><option value="all">전체</option><option value="attention">판단·점검 필요</option><option value="unavailable">조회 오류·오래된 관측</option><option value="working">현재 작업 있음</option></select></label></div></div>
     <section id="projects" class="projects" aria-label="등록 프로젝트"></section>
     <div class="toolbar"><h2>목표별 진행</h2><span class="muted">저장된 master 실행 기록</span></div>
     <section id="missions" aria-label="목표별 작업"></section>
     <footer>현재 DB에 등록된 로컬 프로젝트를 표시합니다. code-agent 상태 조회는 프로세스 생존 확인을 보장하지 않습니다.</footer>
   </main>
+  <dialog id="group-dialog"><form id="group-form">
+    <h2 id="group-title">서비스 그룹 만들기</h2>
+    <label>그룹 ID<input id="group-id" required placeholder="예: commerce"></label>
+    <label>그룹 이름<input id="group-name" required placeholder="예: 커머스 서비스"></label>
+    <label>유지보수 범위<textarea id="group-description" rows="3" placeholder="이 그룹이 담당하는 서비스와 유지보수 범위"></textarea></label>
+    <fieldset><legend>소속 프로젝트</legend><div id="group-members"></div></fieldset>
+    <p class="muted">프로젝트를 제외해도 이미 접수한 요청의 대상은 바뀌지 않습니다.</p>
+    <p id="group-error" role="alert" class="error"></p>
+    <div class="dialog-actions"><button type="button" data-close="group-dialog">취소</button><button type="submit">그룹 저장</button></div>
+  </form></dialog>
+  <dialog id="request-dialog"><form id="request-form">
+    <h2>유지보수 요청 보내기</h2>
+    <label>대상 종류<select id="request-type"><option value="group">서비스 그룹</option><option value="project">단일 프로젝트</option></select></label>
+    <label>요청 대상<select id="request-target" required></select></label>
+    <p id="request-scope" class="muted"></p>
+    <label>요청 내용<textarea id="request-goal" rows="4" required placeholder="무엇을 변경하고 어떤 결과가 필요한지 설명하세요."></textarea></label>
+    <label>완료 조건<textarea id="request-criteria" rows="3" required placeholder="검증할 조건을 한 줄에 하나씩 입력하세요."></textarea></label>
+    <label>계획·판단 담당<select id="request-provider"><option value="claude">Claude</option><option value="codex">Codex</option></select></label>
+    <details><summary>검증 계약 설정</summary><p class="muted">준비한 검증 템플릿을 {"templates": [...]} 형식으로 입력할 수 있습니다. 완료 조건 ID는 criterion-1부터 부여하며, 기존 ID를 사용할 때는 criteria 배열을 함께 지정합니다.</p><textarea id="request-config" rows="6" aria-label="검증 계약 JSON" placeholder='{"templates": []}'></textarea></details>
+    <p class="muted">접수 후 AI 계획과 개발 실행을 시작합니다. 근거·연동·검증 계약·권한이 부족하면 필요한 보완 사항을 표시합니다.</p>
+    <p id="request-error" role="alert" class="error"></p>
+    <div class="dialog-actions"><button type="button" data-close="request-dialog">취소</button><button type="submit">요청 보내고 실행</button></div>
+  </form></dialog>
 </body>
 </html>

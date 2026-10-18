@@ -1,13 +1,20 @@
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { extname, isAbsolute, join } from 'node:path';
+import { extname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
 import { normalizedPath } from '../catalog/catalog.mjs';
-import { requireThat, string, now } from '../domain/contracts.mjs';
+import { requireThat, hash, now } from '../domain/contracts.mjs';
+import { findCodeAgent } from './discovery.mjs';
 
 const runFile = promisify(execFile);
 const resumeCodes = new Set(['stale-request', 'unobservable', 'no-work', 'ownership-conflict', 'wait', 'needs-human', 'replan-required', 'reapproval-required', 'limit-reached', 'ready']);
+
+/** Poll timestamps advance independently of the code-agent concurrency contract. */
+export function observationIdentity(observation) {
+  return hash({ status: observation?.status ?? 'unobserved', stateVersion: observation?.state?.stateVersion ?? null,
+    work: observation?.state?.work ?? null, resume: observation?.state?.resume ?? null });
+}
 
 export function parseState(stdout, projectPath) {
   let state;
@@ -28,10 +35,8 @@ export function parseState(stdout, projectPath) {
 
 /** 지원된 읽기 전용 명령만 호출한다. 개발 실행과 승인 전달은 제공하지 않는다. */
 export async function observeProject(store, projectId, { cliPath, timeoutMs = 30000 } = {}) {
-  string(cliPath, 'cliPath');
-  requireThat(isAbsolute(cliPath) && existsSync(cliPath), 'invalid-cli', 'code-agent의 존재하는 절대 실행 경로가 필요합니다.');
+  cliPath = findCodeAgent(cliPath);
   const extension = extname(cliPath).toLowerCase();
-  requireThat(['.js', '.cjs', '.mjs', '.exe'].includes(extension), 'invalid-cli', '.js/.cjs/.mjs/.exe 진입점을 지정하세요. 셸 래퍼는 실행하지 않습니다.');
   requireThat(Number.isInteger(timeoutMs) && timeoutMs > 0, 'invalid-input', '조회 시간 제한은 양의 정수여야 합니다.');
   const project = store.need('project', projectId);
   const observedAt = now();
@@ -44,7 +49,7 @@ export async function observeProject(store, projectId, { cliPath, timeoutMs = 30
   if (!existsSync(join(project.path, '.code-agent', 'version'))) {
     result = { status: 'not-installed', error: '.code-agent/version 설치 마커가 없습니다.' };
   } else {
-    const js = extension !== '.exe';
+    const js = ['.js', '.mjs', '.cjs'].includes(extension);
     let stdout = '', processError;
     try {
       const output = await runFile(js ? process.execPath : cliPath, [...(js ? [cliPath] : []), 'status', '--json'], {

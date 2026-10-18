@@ -6,6 +6,7 @@ import { checkpointsCurrent } from '../verification/tree.mjs';
 import { relevantSource, taskHeld, activeHolds } from './scope.mjs';
 import { assertReplanTrees } from './replan-guard.mjs';
 import { missionProgress } from './progress.mjs';
+import { observationIdentity } from '../code-agent-adapter/observe.mjs';
 import { requireThat, string, strings, object, hash, now, validateMission, validatePlan } from '../domain/contracts.mjs';
 
 const finished = new Set(['simulation-complete', 'succeeded', 'cancelled']);
@@ -17,10 +18,10 @@ const taskState = (mission, id) => {
 
 export class Engine {
   constructor(store) { this.store = store; this.catalog = new Catalog(store); }
-  create(input) {
+  create(input, { inTransaction = false } = {}) {
     validateMission(input);
     const request = structuredClone(input);
-    return this.store.transaction(() => {
+    const persist = () => {
       const fingerprint = hash(request);
       const previous = this.store.db.prepare('SELECT * FROM requests WHERE key=?').get(request.requestKey);
       if (previous) {
@@ -36,7 +37,8 @@ export class Engine {
       this.store.db.prepare('INSERT INTO requests VALUES (?,?,?)').run(request.requestKey, fingerprint, mission.id);
       this.store.event(mission.id, 'mission-created', { mode: mission.mode });
       return saved;
-    });
+    };
+    return inTransaction ? persist() : this.store.transaction(persist);
   }
   checked(id, revision) {
     const mission = this.store.need('mission', id);
@@ -78,7 +80,8 @@ export class Engine {
         requireThat(analysis.missionId === id && analysis.status === 'ready' && analysis.expectedMissionRevision === expectedRevision &&
           hash(analysis.result.plan) === hash(copy), 'invalid-analysis-binding', '현재 목표·계획과 분석 결과가 일치하지 않습니다.');
         for (const p of analysis.context.projects) requireThat(projects.some(current => current.id === p.id && current.revision === p.revision) &&
-          (this.store.get('observation', p.id)?.revision ?? 0) === p.observationRevision, 'stale-context', '분석 입력이 변경됐습니다.');
+          (p.observationIdentity ? observationIdentity(this.store.get('observation', p.id)) === p.observationIdentity :
+            (this.store.get('observation', p.id)?.revision ?? 0) === p.observationRevision), 'stale-context', '분석 입력이 변경됐습니다.');
       }
       validatePlan(copy, mission, projects);
       const version = mission.plans.length + 1;
@@ -91,7 +94,7 @@ export class Engine {
         ...(analysis ? { actor: 'ai+validator', analysisId, provider: analysis.provider, model: analysis.model, choices: analysis.result.decisions } : {}),
       });
       mission.plans.push({ version, proposal: copy, projectVersions: snapshots, sourceSnapshotIds, decisionId: decision.id,
-        ...(analysis ? { analysisId, observationVersions: analysis.context.projects.map(p => ({ id: p.id, revision: p.observationRevision })) } : {}), at: now() });
+        ...(analysis ? { analysisId, observationVersions: analysis.context.projects.map(p => ({ id: p.id, revision: p.observationRevision, identity: p.observationIdentity })) } : {}), at: now() });
       // 첫 단계에서는 증거 재사용을 추측하지 않는다. 새 계획은 모든 작업을 다시 검증한다.
       mission.tasks = copy.tasks.map(t => ({ id: t.id, state: 'queued', attemptIds: [], evidenceIds: [] }));
       mission.verificationRecipes = {}; mission.liveCheckpoints = {};
@@ -103,7 +106,7 @@ export class Engine {
   projectVersionsMatch(mission, taskId) {
     const plan = activePlan(mission);
     if (!plan.projectVersions.every(p => this.store.need('project', p.id).revision === p.revision)) return false;
-    if (mission.mode !== 'live' && !(plan.observationVersions ?? []).every(p => (this.store.get('observation', p.id)?.revision ?? 0) === p.revision)) return false;
+    if (mission.mode !== 'live' && !(plan.observationVersions ?? []).every(p => p.identity ? observationIdentity(this.store.get('observation', p.id)) === p.identity : (this.store.get('observation', p.id)?.revision ?? 0) === p.revision)) return false;
     try {
       if (!checkpointsCurrent(mission)) return false;
       for (const id of plan.sourceSnapshotIds ?? []) {

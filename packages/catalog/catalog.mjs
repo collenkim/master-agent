@@ -1,6 +1,6 @@
 import { realpathSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { validateProject, requireThat, string, strings, now } from '../domain/contracts.mjs';
+import { validateProject, requireThat, string, strings, now, object } from '../domain/contracts.mjs';
 
 export function normalizedPath(path) {
   const actual = realpathSync(resolve(path));
@@ -29,18 +29,29 @@ export class Catalog {
     });
   }
   group(input, expectedRevision = 0) {
+    object(input, 'group');
     string(input.id, 'group.id'); string(input.name, 'group.name'); strings(input.projectIds, 'group.projectIds');
+    requireThat(Number.isInteger(expectedRevision) && expectedRevision >= 0, 'invalid-input', '그룹 버전이 필요합니다.');
+    requireThat(input.description === undefined || typeof input.description === 'string', 'invalid-input', '서비스 범위 설명은 문자열이어야 합니다.');
     return this.store.transaction(() => {
       input.projectIds.forEach(id => this.store.need('project', id));
-      return this.store.put('group', { id: input.id, name: input.name, projectIds: input.projectIds }, expectedRevision);
+      return this.store.put('group', { id: input.id, name: input.name, description: input.description ?? '', projectIds: input.projectIds }, expectedRevision);
     });
+  }
+  membership(id, projectId, action, expectedRevision) {
+    requireThat(['add', 'remove'].includes(action), 'invalid-input', '그룹 구성원 추가 또는 제외가 필요합니다.');
+    const group = this.store.need('group', id);
+    requireThat(group.revision === expectedRevision, 'stale-state', '그룹이 변경되었습니다. 다시 조회하세요.');
+    this.store.need('project', projectId);
+    const projectIds = action === 'add' ? [...new Set([...group.projectIds, projectId])] : group.projectIds.filter(pid => pid !== projectId);
+    return this.group({ ...group, projectIds }, expectedRevision);
   }
   snapshot(scope) {
     const groups = scope.groupIds.map(id => this.store.need('group', id));
     const ids = [...new Set([...scope.projectIds, ...groups.flatMap(g => g.projectIds)])].sort();
     requireThat(ids.length, 'empty-scope', '대상 프로젝트가 없습니다.');
     const projects = ids.map(id => this.store.need('project', id));
-    return { projectIds: ids, projects: projects.map(p => ({ id: p.id, path: p.path })), groups: groups.map(g => ({ id: g.id, revision: g.revision, projectIds: g.projectIds })) };
+    return { projectIds: ids, projects: projects.map(p => ({ id: p.id, path: p.path })), groups: groups.map(g => ({ id: g.id, name: g.name, description: g.description ?? '', revision: g.revision, projectIds: g.projectIds })) };
   }
   status() {
     return this.store.list('project').map(p => {

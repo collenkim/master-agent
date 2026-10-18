@@ -2,7 +2,7 @@
 
 여러 프로젝트의 code-agent를 연결해 목표를 분석하고, 작업을 배정·검증·인계하는 CLI 오케스트레이터입니다. `master-agent` 명령으로 실행하고 `master-agent dashboard`로 등록 프로젝트 전체를 감시합니다. LangGraph JS가 실행 흐름을 제어하고 SQLite에 판단·증거·체크포인트를 저장합니다.
 
-2026-10-17 **실제 Claude로 두 프로젝트의 병렬 개발·계약 인계·통합 작업까지 완료**했습니다. 세 작업 모두 succeeded이며, 후속 계획 담당 배정 7건에서 두 선행 계약의 사본과 입력 해시를 대조했습니다. 위임 승인 9건, master 검사 8개는 반영 전후 통과했고 질문·사람 이관은 0건입니다. 2026-10-19 대시보드 추가 후 자동 회귀 173개와 Chrome 화면 검증을 통과했습니다. [검증 결과와 한계](docs/verification.md)를 참고하세요.
+2026-10-17 **실제 Claude로 두 프로젝트의 병렬 개발·계약 인계·통합 작업까지 완료**했습니다. 세 작업 모두 succeeded이며, 후속 계획 담당 배정 7건에서 두 선행 계약의 사본과 입력 해시를 대조했습니다. 위임 승인 9건, master 검사 8개는 반영 전후 통과했고 질문·사람 이관은 0건입니다. 2026-10-19 서비스 그룹·요청 실행 추가 후 자동 회귀 182개와 Chrome 화면 검증을 통과했습니다. 이번 요청 전체 실행 회귀의 AI·개발 호스트는 모의 응답입니다. [검증 결과와 한계](docs/verification.md)를 참고하세요.
 
 ## 실행 프로세스
 
@@ -67,17 +67,43 @@ master-agent mission list --db .master-agent/demo.db
 ## 전체 현황 대시보드
 
 ```powershell
-master-agent dashboard --db C:\workspace\control\master.db --cli C:\IdeaProjects\code-agent\dist\agent\cli.js
+master-agent dashboard --db C:\workspace\control\master.db
 ```
 
-출력된 `http://127.0.0.1:4310`을 브라우저에서 엽니다. `--port <번호>`로 포트를 바꾸고, Ctrl+C로 서버를 종료합니다. `--refresh-ms 5000`은 전체 조회가 끝난 뒤 다음 조회까지의 간격입니다.
+출력된 `http://127.0.0.1:4310`을 브라우저에서 엽니다. **설치된 code-agent는 자동 탐색**합니다. PATH의 실행 파일·npm 전역 설치와 링크를 확인하며 Windows npm 설치 경로도 확인합니다. 별도 빌드를 사용할 때만 `CODE_AGENT_CLI` 또는 `--cli`를 지정합니다. `--port <번호>`로 포트를 바꾸고, Ctrl+C로 대시보드 서버를 종료합니다. `--refresh-ms 5000`은 전체 조회가 끝난 뒤 다음 조회까지의 간격입니다.
 
 - 같은 DB에 등록된 **모든 프로젝트**를 조회합니다. master 목표에 연결되지 않은 독립 code-agent 작업도 포함합니다. 미등록 프로젝트를 디스크에서 자동 탐색하지는 않습니다.
 - 프로젝트별 작업·단계·승인·질문 대기·리뷰 차단·임대 상태, 목표별 작업 진행과 최근 이벤트를 표시합니다. 검색과 판단 필요·조회 오류 필터를 제공합니다.
-- `--cli`가 있으면 `code-agent status --json`을 자동 조회합니다. 없으면 저장된 관측과 master 기록을 표시합니다. 조회 실패·오래된 관측·이전 작업을 구분하고 프로세스 생존을 추정하지 않습니다.
-- 현재는 로컬 조회 화면입니다. 실행·정지·재개·답변은 기존 CLI에서 처리합니다. 제어 토큰과 원본 모델 입력은 화면 API에 보내지 않습니다.
+- 설치된 code-agent의 `status --json`을 자동 조회합니다. 설치를 찾지 못하거나 `--saved`로 실행하면 저장된 관측과 master 기록을 표시합니다. 조회 실패·오래된 관측·이전 작업을 구분하고 프로세스 생존을 추정하지 않습니다.
+- 서비스 그룹 생성·구성원 편집, 그룹·단일 프로젝트 요청과 기존 요청 이어 실행을 화면에서 제공합니다. code-agent 제어 토큰과 원본 모델 입력은 화면 API에 보내지 않습니다. 실행 중지·승인·답변 전달은 기존 CLI를 사용합니다.
 
 자세한 범위는 [대시보드와 UI 계획](docs/ui.md)을 참고하세요.
+
+## 서비스 그룹과 유지보수 요청
+
+프로젝트를 등록한 뒤 같은 서비스의 유지보수 범위를 그룹으로 묶습니다. 대시보드의 **그룹 만들기 → 구성 편집**에서 프로젝트를 넣고 뺄 수 있습니다. **그룹에 요청** 또는 프로젝트의 **이 프로젝트에 요청**을 누르면 요청 내용·완료 조건을 받아 AI 계획과 실제 개발 실행을 시작합니다.
+
+CLI에서도 같은 작업을 제공합니다.
+
+```powershell
+master-agent group create commerce "커머스 서비스" --description "주문·결제 유지보수"
+master-agent group add commerce order-api --revision 1
+master-agent group add commerce payment-api --revision 2
+master-agent group remove commerce payment-api --revision 3
+master-agent group show commerce
+
+master-agent group request commerce "주문 취소 오류 수정" --criterion "취소 회귀 테스트 통과"
+master-agent project request order-api "주문 조회 오류 수정" --criterion "조회 테스트 통과"
+master-agent request list
+master-agent request show <요청ID>
+master-agent request continue <요청ID> --revision <요청버전>
+```
+
+그룹 요청은 **접수 당시 소속 프로젝트·그룹 버전·서비스 범위**를 고정합니다. 이후 그룹에서 제외한 프로젝트도 이미 접수한 요청에서는 원래 범위를 유지합니다. 같은 프로젝트가 여러 요청에 포함되면 기존 프로젝트 잠금으로 중복 개발을 막습니다.
+
+요청 ID는 목표 ID와 같습니다. 요청은 별도 백그라운드 실행기에서 `AI 계획 → 검증 계약 연결 → code-agent 개발 → 독립 검증·인계`를 진행하며, 대시보드를 닫아도 계속됩니다. 재전송 중복 방지는 `--request-key`로 지정할 수 있습니다. 기본 계획·판단 provider는 Claude이며 `--provider codex`로 바꿀 수 있습니다. 개발 호스트는 Claude입니다.
+
+실제 실행에는 프로젝트 근거 수집, code-agent 연동·grant, 검증 계약이 필요합니다. 준비가 부족하면 요청을 완료로 표시하지 않고 사유를 남깁니다. 검증 템플릿은 화면의 검증 계약 설정 또는 `--input <JSON>`의 `templates`로 전달합니다. 추가 설정 후 `request continue`로 같은 목표를 이어갑니다. 상세 입력과 준비 순서는 [사용법](docs/usage.md)을 따릅니다.
 
 ## 실제 실행과 조회
 
@@ -85,7 +111,7 @@ master-agent dashboard --db C:\workspace\control\master.db --cli C:\IdeaProjects
 
 ```powershell
 # 연결·목표·검증 계약을 준비한 뒤 실제 실행
-master-agent mission drive <목표ID> --cli <code-agent-CLI-절대경로> --control --provider claude
+master-agent mission drive <목표ID> --control --provider claude
 
 # 다른 터미널에서 진행·판단·체크포인트 조회
 master-agent mission progress <목표ID>
@@ -102,7 +128,7 @@ master-agent mission graph <목표ID>
 
 ## 현재 경계와 문서
 
-웹 화면에서의 실행 제어·목표 입력, 원격 러너·운영 예산·Codex 개발 호스트는 후속 범위입니다. 실제 업무 규모의 품질, 자유 목표부터 전체 완료까지의 연속 시험, 실패 복구·프로세스 중단을 포함한 실제 모델 평가는 더 필요합니다.
+웹에서의 실행 중지·승인·답변 전달, 원격 러너·운영 예산·Codex 개발 호스트는 후속 범위입니다. 실제 업무 규모의 품질, 자유 목표부터 전체 완료까지의 연속 시험, 실패 복구·프로세스 중단을 포함한 실제 모델 평가는 더 필요합니다.
 
 | 문서 | 내용 |
 | --- | --- |
@@ -112,5 +138,5 @@ master-agent mission graph <목표ID>
 | [LangGraph 구조](docs/langgraph.md) | 그래프·SQLite·재시작 규칙 |
 | [code-agent 통신 계약](docs/code-agent-control.md) | 위임 판단·이벤트·재부착·정지·제어권 인계 |
 | [복구](docs/recovery.md) / [재계획](docs/replanning.md) / [반영 대조](docs/delivery-reconciliation.md) / [중단 처리](docs/interruption.md) | 실패·중단별 처리 경계 |
-| [대시보드와 UI 계획](docs/ui.md) | 현재 감시 화면·조회 경계와 후속 제어 화면 설계 |
+| [대시보드와 UI 계획](docs/ui.md) | 관제·그룹 관리·요청 실행과 후속 화면 설계 |
 | [요구사항](docs/requirements.md) / [설계](docs/architecture.md) / [오케스트레이션](docs/orchestration.md) | 제품 목표와 확장 설계 |

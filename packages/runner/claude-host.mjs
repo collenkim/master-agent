@@ -1,11 +1,12 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { existsSync, readFileSync } from 'node:fs';
-import { extname, isAbsolute, join } from 'node:path';
+import { extname, join } from 'node:path';
 import { findCli, runProcess } from '../reasoning/cli-provider.mjs';
 import { parseState } from '../code-agent-adapter/observe.mjs';
-import { requireThat, string, hash } from '../domain/contracts.mjs';
+import { requireThat, hash } from '../domain/contracts.mjs';
 import { dependencyBundle, contractLines } from '../verification/handoff-contracts.mjs';
+import { findCodeAgent } from '../code-agent-adapter/discovery.mjs';
 
 const runFile = promisify(execFile);
 
@@ -52,7 +53,7 @@ ${JSON.stringify(context, null, 2)}`;
 /** code-agent status --json 읽기 조회 — ClaudeHost·ControlHost 가 같이 쓴다 */
 export async function inspectState(cliPath, project, expectedState, sessionId) {
   requireThat(existsSync(join(project.path, '.code-agent/version')), 'not-installed', 'code-agent 설치가 필요합니다.');
-  const js = extname(cliPath).toLowerCase() !== '.exe';
+  const js = ['.js', '.mjs', '.cjs'].includes(extname(cliPath).toLowerCase());
   let stdout;
   try {
     ({ stdout } = await runFile(js ? process.execPath : cliPath,
@@ -83,8 +84,7 @@ export class ClaudeHost {
   mode = 'live';
   name = 'claude';
   constructor({ cliPath, hostPath, model, timeoutMs = 600000 } = {}) {
-    string(cliPath, 'cliPath');
-    requireThat(isAbsolute(cliPath) && existsSync(cliPath) && ['.js', '.mjs', '.cjs', '.exe'].includes(extname(cliPath).toLowerCase()), 'invalid-cli', 'code-agent 절대 JS 또는 exe 경로가 필요합니다.');
+    cliPath = findCodeAgent(cliPath);
     requireThat(Number.isInteger(timeoutMs) && timeoutMs > 0, 'invalid-input', '호스트 시간 제한이 잘못됐습니다.');
     this.cliPath = cliPath; this.command = findCli('claude', hostPath); this.model = model ?? 'cli-default'; this.timeoutMs = timeoutMs;
   }

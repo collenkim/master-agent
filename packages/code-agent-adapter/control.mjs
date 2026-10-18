@@ -1,7 +1,8 @@
 import { spawn } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { extname, isAbsolute } from 'node:path';
 import { DomainError, requireThat, string } from '../domain/contracts.mjs';
+import { findCodeAgent } from './discovery.mjs';
 
 /** code-agent 의 master 통신 계약(code-agent/doc/master-control.md). 같은 PC 의 CLI 호출 한 번이 요청 한 건이다. */
 export const PROTOCOL = 'code-agent.master';
@@ -18,15 +19,13 @@ function childEnv() {
 }
 
 export function validCli(cliPath) {
-  string(cliPath, 'cliPath');
-  requireThat(isAbsolute(cliPath) && existsSync(cliPath) && ['.js', '.mjs', '.cjs', '.exe'].includes(extname(cliPath).toLowerCase()), 'invalid-cli', 'code-agent 절대 JS 또는 exe 경로가 필요합니다.');
-  return cliPath;
+  return findCodeAgent(cliPath);
 }
 
 /** 요청 한 건 → 응답 한 건. 프로세스가 응답 JSON 을 내지 못하면 통신 실패(control-unavailable)다 — 명령의 실패가 아니다 */
 export function callOnce(cliPath, projectPath, request, { timeoutMs = 60000 } = {}) {
   return new Promise((resolve, reject) => {
-    const js = extname(cliPath).toLowerCase() !== '.exe';
+    const js = ['.js', '.mjs', '.cjs'].includes(extname(cliPath).toLowerCase());
     const child = spawn(js ? process.execPath : cliPath, [...(js ? [cliPath] : []), 'master', 'call'],
       { cwd: projectPath, shell: false, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'], env: childEnv() });
     let stdout = '', stderr = '', done = false;

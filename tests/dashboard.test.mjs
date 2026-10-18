@@ -91,7 +91,7 @@ test('overlapping refreshes share one bounded sweep; a failing project does not 
 test('HTTP serves local UI and saved DB, rejects writes, foreign origins and host rebinding', async t => {
   const { db, store } = setup(t);
   const before = store.list('mission');
-  const dashboard = await startDashboard({ dbPath: db, port: 0 });
+  const dashboard = await startDashboard({ dbPath: db, port: 0, observe: false });
   try {
     const page = await fetch(dashboard.url);
     assert.equal(page.status, 200);
@@ -100,7 +100,7 @@ test('HTTP serves local UI and saved DB, rejects writes, foreign origins and hos
     for (const asset of ['/app.mjs', '/style.css']) assert.equal((await fetch(dashboard.url + asset)).status, 200);
     const data = await (await fetch(dashboard.url + '/api/overview')).json();
     assert.equal(data.projects.length, 3); assert.equal(data.live, false);
-    assert.equal((await fetch(dashboard.url + '/api/overview', { method: 'POST' })).status, 405);
+    assert.equal((await fetch(dashboard.url + '/api/overview', { method: 'POST' })).status, 403);
     assert.equal((await fetch(dashboard.url + '/api/overview', { headers: { Origin: 'https://other.example' } })).status, 403);
     const foreignHost = await new Promise((resolve, reject) => {
       get(dashboard.url + '/api/overview', { headers: { Host: 'other.example' } }, response => { response.resume(); resolve(response.statusCode); }).on('error', reject);

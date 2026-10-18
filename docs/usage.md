@@ -26,7 +26,32 @@ master-agent group list
 
 모든 명령은 `--db <경로>`로 저장소를 바꿀 수 있다. 기본 DB는 현재 작업 디렉터리의 `.master-agent/master.db`이므로 같은 작업을 조회할 때 동일한 절대 경로를 권장한다. 출력은 JSON이며 오류는 표준 오류에 코드와 메시지로 출력한다. `help`는 데이터베이스를 만들지 않는다. Windows 실행 정책이 막으면 `master-agent.cmd`를 사용한다.
 
-`master-agent dashboard --db <DB 경로> --cli <code-agent 절대 JS 또는 exe 경로>`로 전체 등록 프로젝트의 로컬 웹 관제를 연다. 출력된 URL에 접속하며 Ctrl+C로 종료한다. `--cli`를 생략하면 저장된 관측만 표시한다. 자세한 조회 범위와 한계는 [대시보드](ui.md)를 따른다.
+`master-agent dashboard --db <DB 경로>`로 전체 등록 프로젝트의 로컬 웹 관제를 연다. 설치된 code-agent를 자동 탐색한다. 출력된 URL에 접속하며 Ctrl+C로 대시보드만 종료한다. 저장된 관측만 볼 때는 `--saved`를 쓴다. 모든 code-agent 연동 명령의 `--cli`는 별도 빌드 지정용 선택 옵션이며 환경 변수 `CODE_AGENT_CLI`보다 우선한다. 자세한 범위는 [대시보드](ui.md)를 따른다.
+
+## 서비스 그룹과 단일 프로젝트 요청
+
+그룹은 서비스 유지보수 범위다. `group create <ID> <이름> --description <범위>`로 만들고 `group add/remove <그룹ID> <프로젝트ID> --revision <그룹버전>`으로 소속을 바꾼다. `group show <ID>`에서 최신 버전을 확인한다. 기존 `group save <JSON> --revision <N>`도 지원하며 JSON은 id, name, description, projectIds다. 빈 그룹 저장은 가능하지만 실행 요청은 거부한다.
+
+```powershell
+master-agent group request commerce "주문 취소 오류 수정" --criterion "취소 회귀 통과" --request-key cancel-fix-001
+master-agent project request order-api "조회 오류 수정" --criterion "조회 회귀 통과" --input request-options.json
+master-agent request show <요청ID>
+master-agent mission progress <요청ID>
+master-agent request continue <요청ID> --revision <요청버전>
+```
+
+`--criterion`은 여러 번 지정할 수 있으며 criterion-1부터 ID를 부여한다. 생략하면 요청 원문을 request 완료 조건으로 보존한다. `--provider` 기본값은 claude이고 codex도 지원한다. 요청 ID는 목표 ID다. 그룹 구성은 접수 때 고정하며 같은 request-key와 같은 입력은 같은 요청을 반환한다. 동일 키의 다른 내용은 거부한다. `--revision`을 그룹 요청에 주면 접수 전 그룹 버전을 대조한다.
+
+`--input`은 선택 설정 JSON이다. 예를 들어 `{ "criteria": [{ "id": "cancel", "description": "취소 회귀 통과" }], "templates": [] }` 형태이며 검증 템플릿 배열은 [검증 계약 재사용](autonomous-progress.md)을 따른다. CLI의 --criterion, --provider, --model, --request-key, --revision을 함께 주면 해당 옵션이 우선한다. 요청 대상과 원문은 명령의 위치 인자를 사용한다. 대시보드에서도 같은 검증 설정을 전달할 수 있다.
+
+실행 전 준비는 다음과 같다.
+
+1. 각 code-agent 프로젝트를 `project add`로 등록하고 `project collect`로 정책·코드 근거를 수집한다.
+2. 프로젝트 사용자가 code-agent master 연동과 위임 grant를 설정하고 `project control`로 연결한다. 자동 탐색은 설치 경로만 찾으며 제어 권한을 대신 부여하지 않는다.
+3. 요청의 완료 조건·작업 범위·검사 명령에 맞는 templates를 전달하거나 계획 후 `mission verification` / `mission verification-template`으로 보완한다.
+4. 그룹·단일 요청을 보내면 별도 실행기가 AI 계획·검증 계약 연결·개발·검증·인계를 진행한다. 준비가 부족하면 failed 또는 waiting에 사유를 남긴다. 분석 질문은 `mission clarify`, code-agent 질문은 기존 relay로 답한다. 보완 후 `request continue`로 동일 목표를 이어간다.
+
+대시보드 종료는 접수한 작업을 중지하지 않는다. 실행 중인 작업의 중지는 기존 `mission stop`·`mission pause`를 사용한다. 실행기 로그는 DB 디렉터리의 request-logs에 저장한다. 프로세스가 사라진 요청은 interrupted로 표시하며 자동 재접수하지 않는다. 이어 실행도 기존 그래프 소유권과 프로젝트 잠금을 검사한다.
 
 ## 직접 목표와 계획 입력
 
@@ -111,4 +136,4 @@ master-agent mission stop <목표ID> <시도ID> --cli C:/IdeaProjects/code-agent
 
 규칙 판단은 Decision.actor=rule-engine, 검증된 AI 계획 활성화는 ai+validator, 사용자 질문 응답은 human, 검증 계약 등록은 operator로 기록한다. 카탈로그의 도메인·기능·수집 경로는 직접 지정하며 AI가 수집된 코드·문서를 근거로 프로젝트 역할과 계획을 생성한다. 실제 검증은 파일 스냅샷과 독립 명령의 조건별 결과·산출물 해시를 보존한다. 사용법은 [실제 검증과 자동 진행](live-verification.md)을 따른다.
 
-mode=live 목표는 등록·AI 분석·계획 검증과 Claude 호스트 배정·관측·계속 실행, 검증 계약 등록·독립 테스트·로컬 인계·완료 판정을 지원한다. `mission drive`는 가능한 배정·검증·인계·후행 작업을 자동 진행하며 `--provider` 지정 시 [검증 실패 복구](recovery.md)를 수행한다. 개별 복구는 `mission recover`로 실행한다. code-agent 통신 계약 경로(`--control`)는 사람이 준 권한 범위의 위임 판단, 실행 정지·취소, 재시작 뒤 재부착, 제어권 인계를 지원한다. 로컬 웹 관제는 조회만 제공한다. 웹 실행 제어, API 기반 모델 연결, 원격 러너·운영 예산은 구현하지 않았다.
+mode=live 목표는 등록·AI 분석·계획 검증과 Claude 호스트 배정·관측·계속 실행, 검증 계약 등록·독립 테스트·로컬 인계·완료 판정을 지원한다. `mission drive`는 가능한 배정·검증·인계·후행 작업을 자동 진행하며 `--provider` 지정 시 [검증 실패 복구](recovery.md)를 수행한다. 개별 복구는 `mission recover`로 실행한다. code-agent 통신 계약 경로(`--control`)는 사람이 준 권한 범위의 위임 판단, 실행 정지·취소, 재시작 뒤 재부착, 제어권 인계를 지원한다. 로컬 웹은 관제·그룹 편집·그룹/단일 요청·이어 실행을 제공한다. 웹 중지·승인·답변, API 기반 모델 연결, 원격 러너·운영 예산은 구현하지 않았다.

@@ -1,5 +1,6 @@
 import { Engine } from '../orchestrator/engine.mjs';
 import { observeProject } from '../code-agent-adapter/observe.mjs';
+import { requestStatus } from '../orchestrator/requests.mjs';
 
 const text = value => typeof value === 'string' ? value.slice(0, 2000) : '';
 const list = value => Array.isArray(value) ? value : [];
@@ -47,7 +48,12 @@ export function dashboardSnapshot(store, { live = false, refreshing = false, int
         ['needs-human', 'ownership-conflict', 'replan-required', 'reapproval-required', 'limit-reached'].includes(state?.resume?.code) ||
         tasks.some(t => ['human-input', 'approval-pending', 'approval-processing', 'blocked'].includes(t.status))) };
   });
-  return { generatedAt: new Date(now).toISOString(), live, refreshing, intervalMs, projects, missions,
+  const groups = store.list('group');
+  const requests = store.list('target-request').map(requestStatus).map(r => ({ id: r.id, revision: r.revision, targetType: r.targetType, targetId: r.targetId,
+    goal: text(r.goal), projectIds: r.projectIds, groupRevision: r.groupRevision, state: r.state, provider: r.provider,
+    progress: missions.find(m => m.id === r.id)?.status ?? null, reason: text(store.get('mission', r.id)?.reason),
+    createdAt: r.createdAt, updatedAt: r.updatedAt, blockers: r.blockers, error: r.error }));
+  return { generatedAt: new Date(now).toISOString(), live, refreshing, intervalMs, projects, missions, groups, requests,
     counts: { projects: projects.length, activeMissions: missions.filter(m => !['completed', 'cancelled'].includes(m.status)).length,
       attention: projects.filter(p => p.attention).length,
       unavailable: projects.filter(p => p.observation.status !== 'observed' || p.observation.stale).length } };
