@@ -18,17 +18,17 @@ code-agent가 제공하는 master 통신 계약(`code-agent.master` v1, code-age
 ## 명령
 
 ```powershell
-node apps/cli/main.mjs project control <프로젝트ID> --cli <code-agent cli.js> --controller <제어자ID> --token-file <절대경로>
-node apps/cli/main.mjs project snapshot <프로젝트ID> --cli <경로>
-node apps/cli/main.mjs mission drive <목표ID> --cli <경로> --control --provider claude [--poll-ms 2000] [--follow-timeout-ms 14400000]
-node apps/cli/main.mjs mission dispatch <목표ID> <작업ID> --revision <N> --expect-state <버전> --cli <경로> --control
-node apps/cli/main.mjs mission reattach <목표ID> <시도ID> --cli <경로>
-node apps/cli/main.mjs mission stop <목표ID> <시도ID> --cli <경로> --mode pause|cancel [--force] [--wait-ms <N>]
-node apps/cli/main.mjs mission delegate <목표ID> <시도ID> --cli <경로> --provider claude
-node apps/cli/main.mjs mission escalations <목표ID>
-node apps/cli/main.mjs mission relay <목표ID> <시도ID> <답JSON> --cli <경로>
-node apps/cli/main.mjs project handover <프로젝트ID> --cli <경로> --to <새 제어자> [--wait-ms <N>]
-node apps/cli/main.mjs project accept <프로젝트ID> --cli <경로> --controller <새 제어자> --token-file <절대경로>
+master-agent project control <프로젝트ID> --cli <code-agent cli.js> --controller <제어자ID> --token-file <절대경로>
+master-agent project snapshot <프로젝트ID> --cli <경로>
+master-agent mission drive <목표ID> --cli <경로> --control --provider claude [--poll-ms 2000] [--follow-timeout-ms 14400000]
+master-agent mission dispatch <목표ID> <작업ID> --revision <N> --expect-state <버전> --cli <경로> --control
+master-agent mission reattach <목표ID> <시도ID> --cli <경로>
+master-agent mission stop <목표ID> <시도ID> --cli <경로> --mode pause|cancel [--force] [--wait-ms <N>]
+master-agent mission delegate <목표ID> <시도ID> --cli <경로> --provider claude
+master-agent mission escalations <목표ID>
+master-agent mission relay <목표ID> <시도ID> <답JSON> --cli <경로>
+master-agent project handover <프로젝트ID> --cli <경로> --to <새 제어자> [--wait-ms <N>]
+master-agent project accept <프로젝트ID> --cli <경로> --controller <새 제어자> --token-file <절대경로>
 ```
 
 `--control`은 dispatch·continue·verify·handoff·reconcile·replan·recover·advance·drive에 붙인다. reattach·stop·delegate·relay는 항상 이 경로다. `--poll-ms`(결과·이벤트 조회 주기)와 `--follow-timeout-ms`(한 실행을 기다리는 상한 — 넘으면 기다림만 멈추고 실행은 code-agent에서 계속된다)는 master 쪽 설정이다. heartbeat·연결 끊김 판단·정지 유예·실행 시간 상한 등은 code-agent 정책(`code-agent master enable --policy`, 통신 `policy`)이 정한다.

@@ -17,7 +17,7 @@ drive는 기존 작업의 요구 확정·계획 승인이 유효하고 질문·�
 작업마다 등록하는 기존 verification 명령 외에 목표 단위로 재사용을 명시한 계약을 등록할 수 있다.
 
 ```powershell
-node apps/cli/main.mjs mission verification-template <목표ID> template.json --revision <버전>
+master-agent mission verification-template <목표ID> template.json --revision <버전>
 ```
 
 ```json

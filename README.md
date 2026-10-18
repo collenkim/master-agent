@@ -1,8 +1,8 @@
 # master-agent
 
-여러 프로젝트의 code-agent를 연결해 목표를 분석하고, 작업을 배정·검증·인계하는 CLI 오케스트레이터입니다. LangGraph JS가 실행 흐름을 제어하고 SQLite에 판단·증거·체크포인트를 저장합니다.
+여러 프로젝트의 code-agent를 연결해 목표를 분석하고, 작업을 배정·검증·인계하는 CLI 오케스트레이터입니다. `master-agent` 명령으로 실행하고 `master-agent dashboard`로 등록 프로젝트 전체를 감시합니다. LangGraph JS가 실행 흐름을 제어하고 SQLite에 판단·증거·체크포인트를 저장합니다.
 
-2026-10-17 기준 **실제 Claude로 두 프로젝트의 병렬 개발·계약 인계·통합 작업까지 완료**했습니다. 세 작업 모두 succeeded이며, 후속 계획 담당 배정 7건에서 두 선행 계약의 사본과 입력 해시를 대조했습니다. 위임 승인 9건, master 검사 8개는 반영 전후 통과했고 질문·사람 이관은 0건입니다. 최종 자동 회귀는 167개입니다. [검증 결과와 한계](docs/verification.md)를 참고하세요.
+2026-10-17 **실제 Claude로 두 프로젝트의 병렬 개발·계약 인계·통합 작업까지 완료**했습니다. 세 작업 모두 succeeded이며, 후속 계획 담당 배정 7건에서 두 선행 계약의 사본과 입력 해시를 대조했습니다. 위임 승인 9건, master 검사 8개는 반영 전후 통과했고 질문·사람 이관은 0건입니다. 2026-10-19 대시보드 추가 후 자동 회귀 173개와 Chrome 화면 검증을 통과했습니다. [검증 결과와 한계](docs/verification.md)를 참고하세요.
 
 ## 실행 프로세스
 
@@ -43,15 +43,41 @@ flowchart TD
 
 Node.js **24.19 이상 24.x**와 Git이 필요합니다. 실제 개발에는 빌드된 code-agent와 인증된 Claude CLI가 추가로 필요합니다. 계획·판단 provider는 Codex·Claude CLI 어댑터를 제공하며, 이번 실제 모델 검증은 Claude로 수행했습니다.
 
+소스 저장소에서 의존성을 준비한 뒤 로컬 패키지를 전역 명령으로 등록합니다. 현재 공개 npm 배포는 제공하지 않습니다.
+
 ```powershell
+cd C:\IdeaProjects\master-agent
 npm.cmd ci --ignore-scripts
-npm.cmd test
-npm.cmd run check
-npm.cmd run demo
-node apps/cli/main.mjs help
+npm.cmd install -g --ignore-scripts "C:\IdeaProjects\master-agent"
+master-agent help
 ```
 
-데모는 세 프로젝트의 고정 계획을 모의 실행하고 `simulation-complete`로 끝납니다. 데이터는 기본 `.master-agent/master.db`에 저장하며 `--db <파일>`로 분리할 수 있습니다.
+개발 중에는 전역 설치 대신 저장소에서 `npm.cmd link --ignore-scripts`로 연결할 수 있습니다. Windows 실행 정책이 `.ps1` 실행을 막으면 `master-agent.cmd`를 사용합니다. 명령을 찾지 못하면 npm 전역 설치 경로(`npm.cmd prefix -g`)가 PATH에 있는지 확인합니다.
+
+**데이터 위치는 명령을 실행한 디렉터리 기준** `.master-agent/master.db`입니다. 여러 터미널에서 같은 현황을 보려면 같은 작업 디렉터리에서 실행하거나 동일한 절대 `--db` 경로를 지정합니다. 설치 폴더를 작업 디렉터리로 사용할 필요는 없습니다.
+
+```powershell
+# 별도 작업 디렉터리에서 설치 확인용 모의 실행
+master-agent demo --db .master-agent/demo.db
+master-agent mission list --db .master-agent/demo.db
+```
+
+데모는 세 프로젝트의 고정 계획을 모의 실행하고 `simulation-complete`로 끝납니다. 실제 프로젝트 개발 완료와 구분합니다. 소스 검증은 저장소에서 `npm.cmd test`, `npm.cmd run check`로 수행합니다. 소스 변경은 연결된 명령에 반영됩니다. master-agent 전용 `init`·`doctor`·`update`와 단일 실행 파일 배포는 아직 없으며, 제거는 `npm.cmd uninstall -g master-agent`로 합니다. 대상 프로젝트의 code-agent 설치·초기화는 별도로 수행합니다.
+
+## 전체 현황 대시보드
+
+```powershell
+master-agent dashboard --db C:\workspace\control\master.db --cli C:\IdeaProjects\code-agent\dist\agent\cli.js
+```
+
+출력된 `http://127.0.0.1:4310`을 브라우저에서 엽니다. `--port <번호>`로 포트를 바꾸고, Ctrl+C로 서버를 종료합니다. `--refresh-ms 5000`은 전체 조회가 끝난 뒤 다음 조회까지의 간격입니다.
+
+- 같은 DB에 등록된 **모든 프로젝트**를 조회합니다. master 목표에 연결되지 않은 독립 code-agent 작업도 포함합니다. 미등록 프로젝트를 디스크에서 자동 탐색하지는 않습니다.
+- 프로젝트별 작업·단계·승인·질문 대기·리뷰 차단·임대 상태, 목표별 작업 진행과 최근 이벤트를 표시합니다. 검색과 판단 필요·조회 오류 필터를 제공합니다.
+- `--cli`가 있으면 `code-agent status --json`을 자동 조회합니다. 없으면 저장된 관측과 master 기록을 표시합니다. 조회 실패·오래된 관측·이전 작업을 구분하고 프로세스 생존을 추정하지 않습니다.
+- 현재는 로컬 조회 화면입니다. 실행·정지·재개·답변은 기존 CLI에서 처리합니다. 제어 토큰과 원본 모델 입력은 화면 API에 보내지 않습니다.
+
+자세한 범위는 [대시보드와 UI 계획](docs/ui.md)을 참고하세요.
 
 ## 실제 실행과 조회
 
@@ -59,13 +85,13 @@ node apps/cli/main.mjs help
 
 ```powershell
 # 연결·목표·검증 계약을 준비한 뒤 실제 실행
-node apps/cli/main.mjs mission drive <목표ID> --cli <code-agent-CLI-절대경로> --control --provider claude
+master-agent mission drive <목표ID> --cli <code-agent-CLI-절대경로> --control --provider claude
 
 # 다른 터미널에서 진행·판단·체크포인트 조회
-node apps/cli/main.mjs mission progress <목표ID>
-node apps/cli/main.mjs mission show <목표ID>
-node apps/cli/main.mjs mission escalations <목표ID>
-node apps/cli/main.mjs mission graph <목표ID>
+master-agent mission progress <목표ID>
+master-agent mission show <목표ID>
+master-agent mission escalations <목표ID>
+master-agent mission graph <목표ID>
 ```
 
 `mission pause`는 새 배정을 멈춥니다. 이미 실행 중인 호스트의 정지는 `mission stop <목표ID> <시도ID> --cli <경로> --mode pause`를 사용합니다. 재개·정지·사람 답 전달 조건은 [통신 계약](docs/code-agent-control.md)에 있습니다.
@@ -76,7 +102,7 @@ node apps/cli/main.mjs mission graph <목표ID>
 
 ## 현재 경계와 문서
 
-UI·HTTP 서버·원격 러너·운영 예산·Codex 개발 호스트는 후속 범위입니다. 실제 업무 규모의 품질, 자유 목표부터 전체 완료까지의 연속 시험, 실패 복구·프로세스 중단을 포함한 실제 모델 평가는 더 필요합니다.
+웹 화면에서의 실행 제어·목표 입력, 원격 러너·운영 예산·Codex 개발 호스트는 후속 범위입니다. 실제 업무 규모의 품질, 자유 목표부터 전체 완료까지의 연속 시험, 실패 복구·프로세스 중단을 포함한 실제 모델 평가는 더 필요합니다.
 
 | 문서 | 내용 |
 | --- | --- |
@@ -86,4 +112,5 @@ UI·HTTP 서버·원격 러너·운영 예산·Codex 개발 호스트는 후속 
 | [LangGraph 구조](docs/langgraph.md) | 그래프·SQLite·재시작 규칙 |
 | [code-agent 통신 계약](docs/code-agent-control.md) | 위임 판단·이벤트·재부착·정지·제어권 인계 |
 | [복구](docs/recovery.md) / [재계획](docs/replanning.md) / [반영 대조](docs/delivery-reconciliation.md) / [중단 처리](docs/interruption.md) | 실패·중단별 처리 경계 |
-| [요구사항](docs/requirements.md) / [설계](docs/architecture.md) / [오케스트레이션](docs/orchestration.md) / [UI 구상](docs/ui.md) | 제품 목표와 미구현 제안 |
+| [대시보드와 UI 계획](docs/ui.md) | 현재 감시 화면·조회 경계와 후속 제어 화면 설계 |
+| [요구사항](docs/requirements.md) / [설계](docs/architecture.md) / [오케스트레이션](docs/orchestration.md) | 제품 목표와 확장 설계 |

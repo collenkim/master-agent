@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>master-agent · 관제</title>
+  <link rel="stylesheet" href="/style.css">
+  <script type="module" src="/app.mjs"></script>
+</head>
+<body>
+  <header><div class="brand"><span class="mark">m</span><strong>master-agent</strong><span class="tag">관제</span></div><span id="connection" role="status">연결 중</span></header>
+  <main>
+    <div class="heading"><div><p class="eyebrow">WORKSPACE OVERVIEW</p><h1>프로젝트 전체 현황</h1><p class="muted">code-agent의 현재 작업과 목표별 진행 상황을 함께 확인합니다.</p></div><button id="refresh" type="button">화면 새로고침 ↻</button></div>
+    <div id="notice" role="status" class="notice">상태를 불러오고 있습니다.</div>
+    <section id="metrics" class="metrics" aria-label="전체 요약"></section>
+    <div class="toolbar"><h2>프로젝트 <span id="project-count" class="muted"></span></h2><div class="filters"><label>검색 <input id="search" type="search" placeholder="프로젝트·작업·경로"></label><label>표시 <select id="filter"><option value="all">전체</option><option value="attention">판단·점검 필요</option><option value="unavailable">조회 오류·오래된 관측</option><option value="working">현재 작업 있음</option></select></label></div></div>
+    <section id="projects" class="projects" aria-label="등록 프로젝트"></section>
+    <div class="toolbar"><h2>목표별 진행</h2><span class="muted">저장된 master 실행 기록</span></div>
+    <section id="missions" aria-label="목표별 작업"></section>
+    <footer>현재 DB에 등록된 로컬 프로젝트를 표시합니다. code-agent 상태 조회는 프로세스 생존 확인을 보장하지 않습니다.</footer>
+  </main>
+</body>
+</html>

@@ -16,8 +16,8 @@
 ## 사용
 
 ```powershell
-node apps/cli/main.mjs mission replan <목표ID> <실패시도ID> --revision <현재버전> --expect-state <상태버전> --cli C:/IdeaProjects/code-agent/dist/agent/cli.js --provider claude
-node apps/cli/main.mjs mission show <목표ID>
+master-agent mission replan <목표ID> <실패시도ID> --revision <현재버전> --expect-state <상태버전> --cli C:/IdeaProjects/code-agent/dist/agent/cli.js --provider claude
+master-agent mission show <목표ID>
 ```
 
 provider를 생략하면 인계·근거 재수집까지만 수행하고 실행 보류 상태를 유지한다. 이후 `mission analyze`로 분석할 수 있다. provider를 지정한 `drive/advance`도 재계획 보류를 발견하면 같은 경로를 사용하며, 외부 종료 전에는 대기한다. 새 계획의 검증 계약은 배정 전에 다시 설정한다. 등록된 [검증 템플릿](autonomous-progress.md)이 정확히 하나 일치하면 자동 연결하고, 그 외에는 작업별 등록이 필요하다. 이전 성공 증거는 재사용하지 않는다.

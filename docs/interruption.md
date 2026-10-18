@@ -5,7 +5,7 @@
 ## 읽기 전용 분석 적용 취소
 
 ```powershell
-node apps/cli/main.mjs mission stop-analysis <목표ID> <분석ID> --revision <현재버전>
+master-agent mission stop-analysis <목표ID> <분석ID> --revision <현재버전>
 ```
 
 현재 계획 분석 또는 실행 전 복구 분석의 결과 적용 권한을 취소한다. 분석 ID와 목표 버전을 대조하고 판단을 기록한 뒤 상태를 `interrupted`로 남긴다. 분석 결과가 저장됐지만 계획 적용 전 중단된 경우도 처리한다. 이미 적용된 계획이나 실행을 시작한 복구는 이 명령으로 취소하지 않는다.
@@ -26,8 +26,8 @@ started·unknown 기록은 프로세스 종료 증거로 취급하지 않는다.
 ## 검증 중단 대조
 
 ```powershell
-node apps/cli/main.mjs mission unknown <목표ID> <시도ID> --revision <현재버전>
-node apps/cli/main.mjs mission reconcile-verification <목표ID> <시도ID> --revision <갱신된버전> --expect-state <상태버전> --cli C:/IdeaProjects/code-agent/dist/agent/cli.js
+master-agent mission unknown <목표ID> <시도ID> --revision <현재버전>
+master-agent mission reconcile-verification <목표ID> <시도ID> --revision <갱신된버전> --expect-state <상태버전> --cli C:/IdeaProjects/code-agent/dist/agent/cli.js
 ```
 
 프로세스 중단으로 verifying 상태가 남았다면 unknown으로 기록한다. 이미 unknown이면 첫 명령은 생략한다. unknown 표시는 종료 확인을 대신하지 않는다.

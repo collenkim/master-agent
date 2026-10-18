@@ -63,8 +63,8 @@ master는 문서 원문·검증 시점의 SHA-256·반영 커밋의 일반 파�
 명령은 프로젝트 경로에서 셸 없이 실행한다. executable은 절대 실행 파일 경로이며 `.cmd`·`.bat`·`.ps1`·`.sh` 래퍼는 받지 않는다. npm 테스트는 Node 실행 파일과 npm CLI JS 진입점을 args에 지정할 수 있다. 이 기능은 명령 실행 권한을 제한하는 샌드박스가 아니므로 등록한 명령의 동작을 신뢰할 수 있어야 한다.
 
 ```powershell
-node apps/cli/main.mjs mission verification <목표ID> <계약JSON> --revision <목표버전>
-node apps/cli/main.mjs mission drive <목표ID> --cli C:/IdeaProjects/code-agent/dist/agent/cli.js
+master-agent mission verification <목표ID> <계약JSON> --revision <목표버전>
+master-agent mission drive <목표ID> --cli C:/IdeaProjects/code-agent/dist/agent/cli.js
 ```
 
 `advance`는 한 단계만 수행하고 `drive`는 가능한 전이를 반복한다. 작업 선택은 고정 계획의 의존 관계와 현재 상태에 따른다. AI 분석·재계획은 기존 analyze 경로가 담당한다. 막혔을 때 `blockers`와 `mission show`의 시도·판단·검증 기록을 확인한다. 자동으로 기존 외부 작업을 가져오거나 실패한 호스트를 반복 실행하지 않는다.
@@ -86,9 +86,9 @@ verified는 잠금 해제가 아니다. 기존 code-agent에서 작업을 마치
 no-work만으로 커밋·반영 승인을 증명할 수는 없다. 여기서 succeeded는 등록된 로컬 완료 조건과 검증된 산출물의 인계를 뜻하며, 커밋·push·배포 완료를 보증하지 않는다. 배정 전 delivery 계약을 등록하면 지정한 기록 파일의 변경, 커밋 내 영수증과 반영 후 독립 테스트를 대조한다. [반영 기록·관측 복구](delivery-reconciliation.md)의 계약을 따르며, 등록되지 않은 변경은 여전히 차단한다.
 
 ```powershell
-node apps/cli/main.mjs mission verify <목표ID> <시도ID> --revision <목표버전> --expect-state <원격버전> --cli <code-agent경로>
-node apps/cli/main.mjs mission handoff <목표ID> <시도ID> --revision <목표버전> --expect-state <원격버전> --cli <code-agent경로>
-node apps/cli/main.mjs mission complete <목표ID> --revision <목표버전>
+master-agent mission verify <목표ID> <시도ID> --revision <목표버전> --expect-state <원격버전> --cli <code-agent경로>
+master-agent mission handoff <목표ID> <시도ID> --revision <목표버전> --expect-state <원격버전> --cli <code-agent경로>
+master-agent mission complete <목표ID> --revision <목표버전>
 ```
 
 모든 계획 작업의 인계와 조건별 실제 증거, 최종 파일 내용을 확인하면 목표가 succeeded가 된다. 다중 프로젝트 계획에는 모든 선행 작업을 묶는 통합 검증이 필요하다. 검증·인계 후 파일 변경이나 증거 훼손이 발견되면 후행 배정과 목표 완료를 거부한다. 내용 해시는 변경 탐지용이며 DB 자체에 대한 서명·권한 격리 수단은 아니다.
@@ -101,4 +101,4 @@ node apps/cli/main.mjs mission complete <목표ID> --revision <목표버전>
 - 프로세스 중단으로 verifying이 남음: mission unknown으로 미확인을 기록할 수 있다.
 - 과거 배정에 검증 계약·기준 스냅샷이 없음: 검증을 소급 승인하지 않는다. 기존 호스트 기록의 점검·복구가 필요하다.
 
-`drive/advance`에 `--provider codex|claude`를 지정하면 실패 근거를 분석하고 기존 범위에서 수정·재검증한다. 개별 명령과 한도·보류 규칙은 [자동 복구](recovery.md)에 정리했다. 호스트 반환 후 관측 실패의 제한된 복구와 반영 영수증 대조를 지원한다. `--control`은 code-agent의 원자적 접수·위임 판단·실행 중 정지·재부착을 사용한다([통신 계약](code-agent-control.md)). 일반 unknown 복구와 관제 UI·운영 정책은 후속 범위다.
+`drive/advance`에 `--provider codex|claude`를 지정하면 실패 근거를 분석하고 기존 범위에서 수정·재검증한다. 개별 명령과 한도·보류 규칙은 [자동 복구](recovery.md)에 정리했다. 호스트 반환 후 관측 실패의 제한된 복구와 반영 영수증 대조를 지원한다. `--control`은 code-agent의 원자적 접수·위임 판단·실행 중 정지·재부착을 사용한다([통신 계약](code-agent-control.md)). 일반 unknown 복구와 웹 실행 제어·운영 정책은 후속 범위다. 로컬 현황 조회는 [대시보드](ui.md)에서 제공한다.

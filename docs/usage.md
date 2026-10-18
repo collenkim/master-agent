@@ -4,11 +4,12 @@
 
 ## 준비와 빠른 실행
 
-Node.js 24.19 이상인 24.x와 Git이 필요하다. LangGraph 의존성을 잠금 파일 기준으로 설치한다.
+Node.js 24.19 이상인 24.x와 Git이 필요하다. LangGraph 의존성을 잠금 파일 기준으로 설치하고 CLI를 등록한다.
 
 ```powershell
 cd C:\IdeaProjects\master-agent
 npm.cmd ci --ignore-scripts
+npm.cmd install -g --ignore-scripts "C:\IdeaProjects\master-agent"
 npm.cmd test
 npm.cmd run check
 npm.cmd run demo
@@ -17,25 +18,27 @@ npm.cmd run demo
 데모는 `.master-agent/master.db`에 프로젝트 세 개와 고정 계획을 등록하고 구현 모의 작업 세 개 뒤 통합 모의 작업을 수행한다. 프로젝트 디렉터리는 `.master-agent/demo-projects` 아래에 생성한다. 재실행할 때는 별도의 예제 목표를 만든다. 상태 `simulation-complete`는 오케스트레이션 모의 실행 완료이며 실제 주문·환불 기능 구현 완료가 아니다.
 
 ```powershell
-node apps/cli/main.mjs mission list
-node apps/cli/main.mjs mission show <목표ID>
-node apps/cli/main.mjs project list
-node apps/cli/main.mjs group list
+master-agent mission list
+master-agent mission show <목표ID>
+master-agent project list
+master-agent group list
 ```
 
-모든 명령은 `--db <경로>`로 저장소를 바꿀 수 있다. 출력은 JSON이며 오류는 표준 오류에 코드와 메시지로 출력한다. `help`는 데이터베이스를 만들지 않는다.
+모든 명령은 `--db <경로>`로 저장소를 바꿀 수 있다. 기본 DB는 현재 작업 디렉터리의 `.master-agent/master.db`이므로 같은 작업을 조회할 때 동일한 절대 경로를 권장한다. 출력은 JSON이며 오류는 표준 오류에 코드와 메시지로 출력한다. `help`는 데이터베이스를 만들지 않는다. Windows 실행 정책이 막으면 `master-agent.cmd`를 사용한다.
+
+`master-agent dashboard --db <DB 경로> --cli <code-agent 절대 JS 또는 exe 경로>`로 전체 등록 프로젝트의 로컬 웹 관제를 연다. 출력된 URL에 접속하며 Ctrl+C로 종료한다. `--cli`를 생략하면 저장된 관측만 표시한다. 자세한 조회 범위와 한계는 [대시보드](ui.md)를 따른다.
 
 ## 직접 목표와 계획 입력
 
 예제 경로는 현재 작업 디렉터리를 기준으로 해석하므로 저장소 루트에서 실행한다.
 
 ```powershell
-node apps/cli/main.mjs project add examples/project.json
-node apps/cli/main.mjs mission create examples/mission.json
-node apps/cli/main.mjs mission plan <목표ID> examples/plan.json --revision 1
-node apps/cli/main.mjs mission step <목표ID> --simulate
-node apps/cli/main.mjs mission show <목표ID>
-node apps/cli/main.mjs mission run <목표ID> --simulate
+master-agent project add examples/project.json
+master-agent mission create examples/mission.json
+master-agent mission plan <목표ID> examples/plan.json --revision 1
+master-agent mission step <목표ID> --simulate
+master-agent mission show <목표ID>
+master-agent mission run <목표ID> --simulate
 ```
 
 프로젝트 등록은 중복 경로를 거부한다. 같은 requestKey와 내용의 목표 접수는 기존 목표를 반환하며, 같은 키의 다른 내용은 오류다. 그룹 JSON은 `id`, `name`, `projectIds`로 구성해 `group save <JSON>`으로 저장한다. 그룹 수정에는 마지막 revision을 전달한다. 목표 접수 때 고정한 대상 목록은 이후 그룹 변경으로 바뀌지 않는다.
@@ -49,10 +52,10 @@ node apps/cli/main.mjs mission run <목표ID> --simulate
 ## 일시 정지와 재개
 
 ```powershell
-node apps/cli/main.mjs mission show <목표ID>
-node apps/cli/main.mjs mission pause <목표ID> --revision <조회한버전>
-node apps/cli/main.mjs mission resume <목표ID> --revision <새버전>
-node apps/cli/main.mjs mission run <목표ID> --simulate
+master-agent mission show <목표ID>
+master-agent mission pause <목표ID> --revision <조회한버전>
+master-agent mission resume <목표ID> --revision <새버전>
+master-agent mission run <목표ID> --simulate
 ```
 
 revision은 오래된 조작을 거부하는 상태 버전이며 승인 값이 아니다. 일시 정지는 새 배정을 막고 이미 실행 중인 작업의 결과는 기록한다. resume은 배정 가능 상태로 바꾸며 모의 실행을 이어가려면 run을 호출한다.
@@ -68,7 +71,7 @@ revision은 오래된 조작을 거부하는 상태 버전이며 승인 값이 �
 실제 프로젝트의 절대 경로와 도메인 정보를 JSON으로 작성해 등록한 뒤 실행한다.
 
 ```powershell
-node apps/cli/main.mjs project observe <프로젝트ID> --cli C:/IdeaProjects/code-agent/dist/agent/cli.js
+master-agent project observe <프로젝트ID> --cli C:/IdeaProjects/code-agent/dist/agent/cli.js
 ```
 
 설치 마커 `.code-agent/version`이 있어야 하며 지원하는 실행 진입점은 절대 경로의 `.js`, `.cjs`, `.mjs`, `.exe`다. `.cmd`·`.bat`는 실행하지 않는다. 마커는 조회 전 검사이며 전체 설치 무결성을 보장하지 않는다.
@@ -88,10 +91,10 @@ node scripts/smoke-code-agent.mjs C:/IdeaProjects/code-agent/dist/agent/cli.js
 사람이 대상 프로젝트에서 `code-agent master enable`로 연동을 켜고 위임 권한(`code-agent master grant`)을 준 경우에만 쓴다. 연결은 승인 권한이 아니다.
 
 ```powershell
-node apps/cli/main.mjs project control <프로젝트ID> --cli C:/IdeaProjects/code-agent/dist/agent/cli.js --controller <제어자ID> --token-file <절대경로>
-node apps/cli/main.mjs mission drive <목표ID> --cli C:/IdeaProjects/code-agent/dist/agent/cli.js --control --provider claude
-node apps/cli/main.mjs mission escalations <목표ID>
-node apps/cli/main.mjs mission stop <목표ID> <시도ID> --cli C:/IdeaProjects/code-agent/dist/agent/cli.js --mode pause
+master-agent project control <프로젝트ID> --cli C:/IdeaProjects/code-agent/dist/agent/cli.js --controller <제어자ID> --token-file <절대경로>
+master-agent mission drive <목표ID> --cli C:/IdeaProjects/code-agent/dist/agent/cli.js --control --provider claude
+master-agent mission escalations <목표ID>
+master-agent mission stop <목표ID> <시도ID> --cli C:/IdeaProjects/code-agent/dist/agent/cli.js --mode pause
 ```
 
 원자적 접수·이벤트 재동기화·재부착·정지·위임 판단·제어권 인계의 조건은 [code-agent 통신 계약 연동](code-agent-control.md)을 따른다.
@@ -108,4 +111,4 @@ node apps/cli/main.mjs mission stop <목표ID> <시도ID> --cli C:/IdeaProjects/
 
 규칙 판단은 Decision.actor=rule-engine, 검증된 AI 계획 활성화는 ai+validator, 사용자 질문 응답은 human, 검증 계약 등록은 operator로 기록한다. 카탈로그의 도메인·기능·수집 경로는 직접 지정하며 AI가 수집된 코드·문서를 근거로 프로젝트 역할과 계획을 생성한다. 실제 검증은 파일 스냅샷과 독립 명령의 조건별 결과·산출물 해시를 보존한다. 사용법은 [실제 검증과 자동 진행](live-verification.md)을 따른다.
 
-mode=live 목표는 등록·AI 분석·계획 검증과 Claude 호스트 배정·관측·계속 실행, 검증 계약 등록·독립 테스트·로컬 인계·완료 판정을 지원한다. `mission drive`는 가능한 배정·검증·인계·후행 작업을 자동 진행하며 `--provider` 지정 시 [검증 실패 복구](recovery.md)를 수행한다. 개별 복구는 `mission recover`로 실행한다. code-agent 통신 계약 경로(`--control`)는 사람이 준 권한 범위의 위임 판단, 실행 정지·취소, 재시작 뒤 재부착, 제어권 인계를 지원한다. UI·HTTP 서버, API 기반 모델 연결, 원격 러너·운영 예산은 구현하지 않았다.
+mode=live 목표는 등록·AI 분석·계획 검증과 Claude 호스트 배정·관측·계속 실행, 검증 계약 등록·독립 테스트·로컬 인계·완료 판정을 지원한다. `mission drive`는 가능한 배정·검증·인계·후행 작업을 자동 진행하며 `--provider` 지정 시 [검증 실패 복구](recovery.md)를 수행한다. 개별 복구는 `mission recover`로 실행한다. code-agent 통신 계약 경로(`--control`)는 사람이 준 권한 범위의 위임 판단, 실행 정지·취소, 재시작 뒤 재부착, 제어권 인계를 지원한다. 로컬 웹 관제는 조회만 제공한다. 웹 실행 제어, API 기반 모델 연결, 원격 러너·운영 예산은 구현하지 않았다.

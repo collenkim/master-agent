@@ -1,12 +1,15 @@
 # 검증 기록
 
-최신 기준일은 **2026-10-17**이다. Windows·Node.js 24.19.0에서 확인하며 모의 개발 호스트와 실제 모델 실행을 구분한다.
+최신 기준일은 **2026-10-19**이다. Windows·Node.js 24.19.0에서 확인하며 모의 개발 호스트와 실제 모델 실행을 구분한다. 실제 모델 전체 흐름의 최근 검증일은 2026-10-17이다.
 
 | 검증 | 결과 | 근거 |
 | --- | --- | --- |
-| 자동 회귀 | 167개 통과, 실패·건너뜀 0 | `npm.cmd test`, 로컬 `.master-agent/final-tests.log` |
+| 자동 회귀 | 173개 통과, 실패·건너뜀 0 | `npm.cmd test`, 로컬 `.master-agent/dashboard-tests.log` |
+| 명령 설치 | 임시 npm 전역 prefix에 로컬 패키지 설치 후 저장소 밖에서 프로젝트 조회·데모 완료 | `npm.cmd install --global --prefix <임시경로> --offline --ignore-scripts <소스경로>` |
+| 관제 서버 | 전체 등록 프로젝트·독립 작업 관측, 조회 실패·오래된 관측 구분, 중복 조회 제한, HTTP 조회 경계 | `tests/dashboard.test.mjs` 6개 |
+| 실제 브라우저 | Chrome에서 렌더링·문자열 이스케이프·검색·필터·갱신 후 상세 유지·모바일 너비·연결 끊김 통과 | 로컬 `.master-agent/dashboard-browser-ZZmzii/`의 desktop.png·mobile.png |
 | 진행 상태·병렬 제어 | 5개 회귀 통과, 실제 CLI 조회에서도 확인 | `tests/parallel-progress.test.mjs` |
-| 구문·문서 | JavaScript 66개·Markdown 18개 검사 통과 | `npm.cmd run check` |
+| 구문·문서 | JavaScript 70개·Markdown 18개 검사 통과 | `npm.cmd run check` |
 | 실제 code-agent 계약 등록 | 등록 성공, 원문과 다른 claim·변경된 문서 거부 | `tests/handoff-contracts.test.mjs`의 실제 빌드 연동 |
 | 실제 code-agent 통신 | 접수·중복·이벤트·재부착·협력 정지·제어권 인계 통과 | `tests/code-agent-control.test.mjs`, 가짜 개발 호스트 |
 | 앞선 답의 실제 AI 판단 | 5건 통과: routine 3·ambiguous 1·critical 1 | [판단 증거](evidence/2026-10-16-answer-context.json) |
@@ -26,6 +29,7 @@ code-agent 연동 시험은 외부 빌드가 없으면 건너뛴다. 위 회귀 
 - 모의 전송의 독립 프로젝트 동시 실행, 후행 작업 대기, DB 재연결 후 중복 접수 방지.
 - 별도 CLI 프로세스의 승인 대기·판단 처리·사람 응답·실제 장애 구분.
 - 실제 단계 이벤트의 `from/to` 형식과 승인 후 호스트 재개 전의 단계 변경 반영, 다른 실행·후속 작업의 이벤트 제외, 완료 작업의 단계 표시 해제.
+- 대시보드의 전체 등록 프로젝트·목표 요약, 질문 ID·미검증 답변 보존, 제어 토큰 경로 제외, 관측 실패 시 과거 작업 표시, 중복·동시 조회 제한과 로컬 읽기 전용 HTTP.
 
 일반 회귀의 모델·개발 호스트는 모의 응답이다. 파일·Git·SQLite·자식 프로세스는 실제 실행한다. 실제 code-agent CLI 연동 시험도 개발 모델은 호출하지 않는다.
 

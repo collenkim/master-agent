@@ -17,10 +17,10 @@ master-agent는 등록된 프로젝트의 지정 문서·코드를 읽어 근거
 ```
 
 ```powershell
-node apps/cli/main.mjs project list
-node apps/cli/main.mjs project collect <프로젝트ID> <목록JSON> --revision <프로젝트버전>
-node apps/cli/main.mjs project sources <프로젝트ID>
-node apps/cli/main.mjs project search <프로젝트ID> "주문 취소"
+master-agent project list
+master-agent project collect <프로젝트ID> <목록JSON> --revision <프로젝트버전>
+master-agent project sources <프로젝트ID>
+master-agent project search <프로젝트ID> "주문 취소"
 ```
 
 수집은 프로젝트 파일을 수정하지 않는다. DB에 UTF-8 본문, 상대 경로, 근거 종류, 줄 수와 바이트 해시를 보존한다. 같은 내용·종류의 재수집은 프로젝트 버전을 늘리지 않는다. 변경된 스냅샷은 새 참조를 만들고 이전 참조와 기록은 보존한다. 검색은 선택한 프로젝트의 최신 스냅샷에서 수행하며 줄 번호와 근거 종류를 반환한다.
@@ -34,8 +34,8 @@ node apps/cli/main.mjs project search <프로젝트ID> "주문 취소"
 먼저 모든 대상 프로젝트의 근거를 수집하고 목표를 접수한다. 모델은 현재 등록된 도메인·기능·제약·계획을 실제 근거와 함께 평가하며 프로젝트 카탈로그의 도메인 정의를 임의 변경하지 않는다.
 
 ```powershell
-node apps/cli/main.mjs mission analyze <목표ID> --revision <목표버전> --provider codex
-node apps/cli/main.mjs mission analyze <목표ID> --revision <목표버전> --provider claude
+master-agent mission analyze <목표ID> --revision <목표버전> --provider codex
+master-agent mission analyze <목표ID> --revision <목표버전> --provider claude
 ```
 
 CLI 경로를 자동 발견하지 못하면 `--ai-cli <절대경로>`로 `.exe` 또는 JS 진입점을 지정한다. 셸 래퍼 `.cmd`, `.bat`, `.ps1`은 받지 않는다. `--model <모델명>`을 생략하면 해당 CLI의 기본 모델을 사용하며 기록에는 cli-default로 표시한다. API 키와 인증 파일을 master DB에 복제하지 않고 기존 CLI 인증을 이용한다.
@@ -74,7 +74,7 @@ AI 호출 전에 판단과 분석 시작 상태를 저장한다. 결과의 모�
 ```
 
 ```powershell
-node apps/cli/main.mjs mission clarify <목표ID> <응답JSON> --revision <목표버전> --provider claude
+master-agent mission clarify <목표ID> <응답JSON> --revision <목표버전> --provider claude
 ```
 
 현재 질문의 ID와 상태 버전을 대조한 뒤 사람 판단을 기록한다. provider를 지정하면 답변을 포함해 즉시 재분석한다. 생략하면 답변만 기록하고 analyze를 별도로 호출한다. 답변은 허용 프로젝트나 완료 조건을 자동 변경하지 않고 재분석의 근거로 사용한다. 오래된 질문과 중복 답변은 거부한다.
@@ -84,15 +84,15 @@ node apps/cli/main.mjs mission clarify <목표ID> <응답JSON> --revision <목�
 ## 예제와 검증
 
 ```powershell
-node apps/cli/main.mjs project add examples/project.json
-node apps/cli/main.mjs project collect example-project examples/sources.json --revision 1
-node apps/cli/main.mjs mission create examples/mission.json
-node apps/cli/main.mjs mission analyze <반환된목표ID> --revision 1 --provider claude
-node apps/cli/main.mjs mission run <목표ID> --simulate
+master-agent project add examples/project.json
+master-agent project collect example-project examples/sources.json --revision 1
+master-agent mission create examples/mission.json
+master-agent mission analyze <반환된목표ID> --revision 1 --provider claude
+master-agent mission run <목표ID> --simulate
 ```
 
 이미 등록된 예제는 project list로 현재 버전을 확인한다. 예제 목표 접수 키는 같은 내용이면 기존 목표를 반환하므로 재분석에는 mission show의 최신 revision을 사용한다.
 
 `node scripts/smoke-planner.mjs --provider claude` 또는 `--provider codex`는 합성 정책·코드로 실제 CLI 계획 생성을 확인한다. 실제 모델 사용량이 발생하며 테스트 저장소와 계획·보고서는 `.master-agent/ai-smoke-*/`에 남는다. 일반 `npm test`는 모델을 호출하지 않는다.
 
-실제 Claude 호스트 배정과 관측은 [개발 호스트 연결](live-execution.md), 실제 테스트 검증·자동 후행 배정은 [실제 검증과 자동 진행](live-verification.md), 실패 분석·수정은 [자동 복구](recovery.md)를 따른다. [재계획 인계](replanning.md)는 종료된 실패 작업을 최신 근거의 새 계획에 연결한다. grant 범위의 위임 판단은 [code-agent 통신 계약](code-agent-control.md)에서 지원하며 UI는 후속 범위다.
+실제 Claude 호스트 배정과 관측은 [개발 호스트 연결](live-execution.md), 실제 테스트 검증·자동 후행 배정은 [실제 검증과 자동 진행](live-verification.md), 실패 분석·수정은 [자동 복구](recovery.md)를 따른다. [재계획 인계](replanning.md)는 종료된 실패 작업을 최신 근거의 새 계획에 연결한다. grant 범위의 위임 판단은 [code-agent 통신 계약](code-agent-control.md)에서 지원한다. 로컬 현황 조회는 [대시보드](ui.md)에 있고 웹 목표 입력·제어는 후속 범위다.

@@ -23,9 +23,9 @@ code-agent의 요구 확정·계획 승인·미응답 질문·동의·임대는 
 ## CLI
 
 ```powershell
-node apps/cli/main.mjs mission recover <목표ID> <시도ID> --revision <버전> --expect-state <상태버전> --cli C:/IdeaProjects/code-agent/dist/agent/cli.js --provider claude
-node apps/cli/main.mjs mission drive <목표ID> --cli C:/IdeaProjects/code-agent/dist/agent/cli.js --provider claude
-node apps/cli/main.mjs mission show <목표ID>
+master-agent mission recover <목표ID> <시도ID> --revision <버전> --expect-state <상태버전> --cli C:/IdeaProjects/code-agent/dist/agent/cli.js --provider claude
+master-agent mission drive <목표ID> --cli C:/IdeaProjects/code-agent/dist/agent/cli.js --provider claude
+master-agent mission show <목표ID>
 ```
 
 `recover`는 `--context "추가 관측이나 결정 근거"`로 정보를 받아 재분석할 수 있다. 이는 code-agent 승인이나 변경 범위 확대 권한이 아니다. 호출은 현재 mission revision과 원격 상태에 결합되며 추가 근거를 복구 기록에 보존한다. 파일이 바뀌었다면 먼저 현재 파일을 독립 검증해야 한다.

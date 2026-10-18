@@ -16,9 +16,9 @@ Claude CLI는 `--print --output-format json --permission-mode manual`로 실행�
 ## 배정과 계속 실행
 
 ```powershell
-node apps/cli/main.mjs project observe <프로젝트ID> --cli C:/IdeaProjects/code-agent/dist/agent/cli.js
-node apps/cli/main.mjs mission show <목표ID>
-node apps/cli/main.mjs mission dispatch <목표ID> <계획작업ID> --revision <목표버전> --expect-state <code-agent상태버전> --cli C:/IdeaProjects/code-agent/dist/agent/cli.js
+master-agent project observe <프로젝트ID> --cli C:/IdeaProjects/code-agent/dist/agent/cli.js
+master-agent mission show <목표ID>
+master-agent mission dispatch <목표ID> <계획작업ID> --revision <목표버전> --expect-state <code-agent상태버전> --cli C:/IdeaProjects/code-agent/dist/agent/cli.js
 ```
 
 Claude를 자동 발견하지 못하면 `--host-cli <Claude exe 또는 JS 절대경로>`를 추가한다. `--model`을 생략하면 cli-default로 기록한다. 지정된 경로는 셸 래퍼가 아닌 실행 진입점이어야 한다.
@@ -26,7 +26,7 @@ Claude를 자동 발견하지 못하면 `--host-cli <Claude exe 또는 JS 절대
 빈 프로젝트에는 `MA-<UUID>` 작업 ID를 발급해 요구 접수를 지시한다. 이미 작업 중인 프로젝트를 명시적으로 연결할 때는 `--work <code-agent작업ID>`가 필요하다. 작업 내용과 배정 계획이 일치하는지 먼저 확인한다. 다른 작업, 미완료 접수, 열린 동의·질문, 다른 세션의 임대가 있으면 새 배정을 거부한다.
 
 ```powershell
-node apps/cli/main.mjs mission continue <목표ID> <시도ID> --revision <목표버전> --expect-state <현재code-agent상태버전> --cli C:/IdeaProjects/code-agent/dist/agent/cli.js
+master-agent mission continue <목표ID> <시도ID> --revision <목표버전> --expect-state <현재code-agent상태버전> --cli C:/IdeaProjects/code-agent/dist/agent/cli.js
 ```
 
 계속 실행은 같은 code-agent 작업 ID와 기록된 Claude 세션 ID를 사용한다. `--resume`에 해당 세션을 전달하고, 임대 소유권도 그 세션과 대조한다. 질문·승인은 프로젝트 경로의 기존 Claude 세션에서 처리한 뒤 상태를 다시 조회한다. master의 `mission clarify`는 계획 분석 질문용이며 code-agent 동의 응답을 대신하지 않는다. 이미 시작된 실제 작업이 있으면 새 계획·재분석으로 시도를 덮을 수 없다.

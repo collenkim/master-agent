@@ -29,6 +29,8 @@ import { DecisionDelegation } from '../../packages/orchestrator/decisions.mjs';
 const help = `master-agent — 근거 수집·AI 계획 생성·개발 호스트 배정
 
 모든 명령: --db <파일> (기본 .master-agent/master.db)
+  dashboard [--port 4310] [--cli <code-agent경로>] [--refresh-ms 5000]
+                                      등록 프로젝트·목표의 로컬 관제 화면; --cli 지정 시 상태 자동 조회
   demo                                세 프로젝트 고정 계획 모의 실행
   project add <JSON>                   프로젝트 도메인·근거·경로 등록
   project list                        프로젝트·잠금·마지막 관측 조회
@@ -105,8 +107,19 @@ async function main() {
     'host-cli': { type: 'string' }, 'expect-state': { type: 'string' }, work: { type: 'string' },
     control: { type: 'boolean' }, controller: { type: 'string' }, 'token-file': { type: 'string' }, to: { type: 'string' }, mode: { type: 'string' },
     force: { type: 'boolean' }, 'wait-ms': { type: 'string' }, 'poll-ms': { type: 'string' }, 'follow-timeout-ms': { type: 'string' },
+    port: { type: 'string' }, 'refresh-ms': { type: 'string' },
   } });
   if (values.help || !args.length || args[0] === 'help') { console.log(help); return; }
+  if (args[0] === 'dashboard') {
+    requireThat(args.length === 1, 'usage', help);
+    const { startDashboard } = await import('../../packages/dashboard/server.mjs');
+    const dashboard = await startDashboard({ dbPath: resolve(values.db ?? '.master-agent/master.db'), cliPath: values.cli,
+      port: values.port === undefined ? 4310 : Number(values.port), intervalMs: values['refresh-ms'] === undefined ? 5000 : Number(values['refresh-ms']) });
+    console.log(JSON.stringify({ url: dashboard.url, db: resolve(values.db ?? '.master-agent/master.db'), mode: values.cli ? 'live-observation' : 'saved-observation' }));
+    const stop = () => { dashboard.close().catch(error => { console.error(error.message); process.exitCode = 1; }); };
+    process.once('SIGINT', stop); process.once('SIGTERM', stop);
+    return;
+  }
   const [category, action, id, file, extra] = args;
   const counts = { demo: 1, 'project add': 3, 'project update': 4, 'project list': 2, 'project observe': 3, 'group save': 3, 'group list': 2,
     'project collect': 4, 'project sources': 3, 'project search': 4, 'mission analyze': 3, 'mission clarify': 4,
