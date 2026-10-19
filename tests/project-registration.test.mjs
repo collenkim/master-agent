@@ -1,13 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync, readdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import { setup } from './helpers.mjs';
 import { startDashboard } from '../packages/dashboard/server.mjs';
 
 async function dashboardFixture(t) {
   const context = setup(t);
-  const dashboard = await startDashboard({ dbPath: context.db, port: 0, observe: false });
+  const dashboard = await startDashboard({ dbPath: context.db, port: 0, observe: false,
+    candidateOptions: { cwd: context.root, home: dirname(context.root) } });
   const { token } = await (await fetch(dashboard.url + '/api/overview')).json();
   const post = async (path, body, headers = {}) => {
     const response = await fetch(dashboard.url + path, { method: 'POST',
@@ -98,4 +99,21 @@ registrationTest('stale group edits and unselected drafts cannot register orphan
   assert.equal(unselected.status, 400);
   assert.equal(store.list('project').length, 3);
   assert.deepEqual(store.need('group', group.id), group);
+});
+
+registrationTest('candidate list requires dashboard authentication, ignores client scan paths and never registers automatically', async ({ root, store, post, draft }) => {
+  const project = draft('installed');
+  mkdirSync(join(project.path, '.code-agent')); writeFileSync(join(project.path, '.code-agent/version'), 'test');
+  const before = store.list('project');
+  assert.equal((await post('/api/project-candidates', {}, { 'X-Master-Token': '' })).status, 403);
+  assert.equal((await post('/api/project-candidates', {}, { Origin: 'https://other.example' })).status, 403);
+  const result = await post('/api/project-candidates', { path: dirname(root) });
+  assert.equal(result.status, 200);
+  assert.equal(result.body.projects.find(p => p.path === project.path).registeredId, null);
+  assert.deepEqual(store.list('project'), before);
+  assert.deepEqual(readdirSync(project.path), ['.code-agent']);
+  assert.equal(result.body.roots.includes(dirname(root)), false);
+  assert.equal((await post('/api/projects', { project })).status, 201);
+  const refreshed = await post('/api/project-candidates', {});
+  assert.equal(refreshed.body.projects.find(p => p.path === project.path).registeredId, project.id);
 });

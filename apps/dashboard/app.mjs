@@ -82,6 +82,26 @@ void refresh();
 
 let editingGroup = null, requestKey, requestGroupRevision;
 let groupDrafts = [], projectInGroup = false, editingDraftId = null, projectDraftId;
+let candidates = [], candidateLoading = false, candidateInfo = '';
+function renderCandidates() {
+  const query = $('candidate-search').value.trim().toLocaleLowerCase();
+  const visible = candidates.filter(p => `${p.name} ${p.path}`.toLocaleLowerCase().includes(query));
+  $('candidate-list').innerHTML = visible.map(p => {
+    const staged = groupDrafts.some(d => d.path === p.path && d.id !== editingDraftId);
+    return `<button type="button" class="candidate-pick" data-path="${escape(p.path)}" ${p.registeredId || staged ? 'disabled' : ''}><strong>${escape(p.name)}</strong><span>${p.registeredId ? '이미 등록됨 · 그룹의 소속 목록에서 선택' : staged ? '이 그룹에 등록 예정' : '선택'}</span><small class="path">${escape(p.path)}</small></button>`;
+  }).join('') || `<p class="muted">${candidateLoading ? '설치된 프로젝트를 확인하고 있습니다.' : '표시할 프로젝트가 없습니다. 경로를 직접 입력해 등록할 수 있습니다.'}</p>`;
+  $('candidate-status').textContent = candidateLoading ? '목록 조회 중…' : `${visible.length}개 표시${candidateInfo}`;
+}
+async function loadCandidates() {
+  if (candidateLoading) return;
+  candidateLoading = true; candidates = []; $('candidate-refresh').disabled = true; renderCandidates();
+  try {
+    const result = await post('/api/project-candidates', {});
+    candidates = result.projects;
+    candidateInfo = result.truncated ? ' · 조회 한도에 도달해 일부만 표시합니다. 없는 경로는 직접 입력하세요.' : ' · 알려진 작업 위치의 설치 표시 기준';
+  } catch (error) { candidateInfo = ` · 조회 실패: ${error.message}. 경로를 직접 입력할 수 있습니다.`; }
+  finally { candidateLoading = false; $('candidate-refresh').disabled = false; renderCandidates(); }
+}
 async function post(path, body) {
   const response = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Master-Token': latest.token }, body: JSON.stringify(body) });
   const result = await response.json();
@@ -123,6 +143,7 @@ function openProject(inGroup, id) {
   $('project-constraints').value = draft?.constraints.join('\n') ?? ''; $('project-references').value = draft?.references.join('\n') ?? '';
   $('project-submit').textContent = inGroup ? '그룹에 추가 예정으로 담기' : '프로젝트 등록';
   $('project-dialog').showModal();
+  $('candidate-search').value = ''; void loadCandidates();
 }
 function scopeChanged() {
   const type = $('request-type').value, id = $('request-target').value;
@@ -144,6 +165,8 @@ function openRequest(type = 'group', id) {
 $('new-group').addEventListener('click', () => latest && openGroup());
 $('new-project').addEventListener('click', () => latest && openProject(false));
 $('group-new-project').addEventListener('click', () => openProject(true));
+$('candidate-refresh').addEventListener('click', loadCandidates);
+$('candidate-search').addEventListener('input', renderCandidates);
 $('new-request').addEventListener('click', () => latest && openRequest());
 $('request-type').addEventListener('change', () => requestTargets());
 $('request-target').addEventListener('change', scopeChanged);
@@ -154,6 +177,13 @@ document.addEventListener('click', async event => {
   if (button.classList.contains('group-request')) openRequest('group', button.dataset.id);
   if (button.classList.contains('project-request')) openRequest('project', button.dataset.id);
   if (button.classList.contains('edit-draft')) openProject(true, button.dataset.id);
+  if (button.classList.contains('candidate-pick') && !button.disabled) {
+    const project = candidates.find(p => p.path === button.dataset.path);
+    if (project) {
+      $('project-name').value = project.name; $('project-path').value = project.path;
+      $('project-error').textContent = ''; $('project-domains').focus();
+    }
+  }
   if (button.classList.contains('remove-draft')) { groupDrafts = groupDrafts.filter(p => p.id !== button.dataset.id); renderDrafts(); }
   if (button.classList.contains('continue-request')) {
     button.disabled = true;

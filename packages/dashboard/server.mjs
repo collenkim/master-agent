@@ -8,8 +8,9 @@ import { findCodeAgent } from '../code-agent-adapter/discovery.mjs';
 import { Catalog } from '../catalog/catalog.mjs';
 import { acceptRequest, launchRequest, continueRequest } from '../orchestrator/requests.mjs';
 import { createMonitor } from './monitor.mjs';
+import { projectCandidates } from './project-candidates.mjs';
 
-export async function startDashboard({ dbPath, port = 4310, cliPath, intervalMs = 5000, observe = true, launch = launchRequest } = {}) {
+export async function startDashboard({ dbPath, port = 4310, cliPath, intervalMs = 5000, observe = true, launch = launchRequest, candidateOptions = {} } = {}) {
   requireThat(Number.isInteger(port) && port >= 0 && port <= 65535, 'usage', '--port는 0~65535 정수입니다.');
   requireThat(Number.isInteger(intervalMs) && intervalMs >= 1000 && intervalMs <= 3600000, 'usage', '--refresh-ms는 1000~3600000 정수입니다.');
   cliPath = observe ? findCodeAgent(cliPath, { required: false }) : null;
@@ -20,6 +21,7 @@ export async function startDashboard({ dbPath, port = 4310, cliPath, intervalMs 
   ].map(([path, [type, file]]) => [path, { type, body: readFileSync(new URL(`../../apps/dashboard/${file}`, import.meta.url)) }]));
   const store = new Store(dbPath), monitor = createMonitor(store, { cliPath, intervalMs });
   const token = randomUUID(), catalog = new Catalog(store);
+  let candidateScan;
   let origin;
   const server = createServer(async (request, response) => {
     const send = (status, body, type = 'application/json; charset=utf-8') => {
@@ -42,6 +44,10 @@ export async function startDashboard({ dbPath, port = 4310, cliPath, intervalMs 
         let input;
         try { input = JSON.parse(body); } catch { requireThat(false, 'invalid-input', 'JSON을 읽을 수 없습니다.'); }
         requireThat(input && typeof input === 'object' && !Array.isArray(input), 'invalid-input', '객체가 필요합니다.');
+        if (path === '/api/project-candidates') {
+          candidateScan ??= projectCandidates(store.list('project'), { ...candidateOptions, cliPath }).finally(() => { candidateScan = null; });
+          return send(200, JSON.stringify(await candidateScan));
+        }
         if (path === '/api/projects') return send(201, JSON.stringify(catalog.registerManual(input.project)));
         if (path === '/api/groups') return send(200, JSON.stringify(catalog.group(input.group, input.revision ?? 0, { newProjects: input.newProjects })));
         if (path === '/api/requests') {

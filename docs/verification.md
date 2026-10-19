@@ -1,19 +1,19 @@
 # 검증 기록
 
-기능 검증 기준은 **2026-10-19, `2d897be`**다. Windows·Node.js 24.19.0에서 자동 회귀와 화면을 확인했다. 실제 모델 전체 흐름의 최근 검증일은 2026-10-17이다. 아래 결과는 해당 검증 시점의 기록이며 문서 정리만으로 실제 모델 시험을 다시 수행한 것으로 간주하지 않는다.
+기능 검증 기준은 **2026-10-19, 설치 프로젝트 목록 선택 기능 반영 후**다. Windows·Node.js 24.19.0에서 자동 회귀와 화면을 확인했다. 실제 모델 전체 흐름의 최근 검증일은 2026-10-17이다. 아래 결과는 해당 검증 시점의 기록이며 실제 모델 시험의 재수행을 뜻하지 않는다.
 
 | 검증 | 결과 | 근거 |
 | --- | --- | --- |
-| 자동 회귀 | 187개 통과, 실패·건너뜀 0 | `npm.cmd test`, 로컬 `.master-agent/manual-project-tests.log` |
+| 자동 회귀 | 190개 통과, 실패·건너뜀 0 | `npm.cmd test`, 로컬 `.master-agent/project-candidates-tests.log` |
 | 설치 자동 탐색 | PATH의 실행 파일·npm shim·Windows npm 설치·명시적 override·미설치 구분, 현재 PC의 실제 설치 진입점 확인 | `tests/discovery.test.mjs` |
 | 그룹·단일 요청 | 서비스 범위 고정·구성원 변경·중복 접수 방지·실행기 중단 및 이어 실행·HTTP 쓰기 인증 | `tests/requests.test.mjs` |
-| 수동 프로젝트 등록 | 단독 등록·그룹 생성/편집과 원자적 저장, 경로·ID 중복 및 잘못된 입력·버전 충돌 시 전체 롤백, 인증·근거 위조 차단 | `tests/project-registration.test.mjs` 5개 |
+| 프로젝트 후보·등록 | 설치 표시 기반 후보 조회·검색 범위/한도·중복 구분, 단독 등록·그룹과 원자적 저장·오류 시 전체 롤백, 후보 API 인증·자동 등록 금지 | `tests/project-candidates.test.mjs` 2개, `tests/project-registration.test.mjs` 6개 |
 | 요청 전체 실행 | 그룹/단일 요청 각각 모의 AI 계획 → 템플릿 연결 → 실제 파일 변경·Node 검사 → 인계·succeeded | `tests/requests.test.mjs`; AI와 개발 호스트는 모의 응답 |
 | 명령 설치 | 임시 npm 전역 prefix에 로컬 패키지 설치 후 저장소 밖에서 프로젝트 조회·데모 완료 | `npm.cmd install --global --prefix <임시경로> --offline --ignore-scripts <소스경로>` |
 | 관제 서버 | 전체 등록 프로젝트·독립 작업 관측, 조회 실패·오래된 관측 구분, 중복 조회 제한, HTTP 조회 경계 | `tests/dashboard.test.mjs` 6개 |
-| 실제 브라우저 | Chrome에서 그룹 생성/편집 중 신규 등록·단독 등록 후 그룹 선택·입력 수정/제외/취소·중복 경로 롤백, 그룹/단일 요청·검색·필터·상세 유지·모바일·연결 끊김 통과 | 로컬 `.master-agent/dashboard-browser-uSE6Wj/`의 desktop.png·mobile.png·mobile-registration.png; 화면 시험의 실행기 접수는 모의 처리 |
+| 실제 브라우저 | Chrome에서 설치 후보 검색·선택 시 이름/경로 반영·등록된 후보 구분, 직접 입력·그룹 저장·취소·롤백, 그룹/단일 요청·모바일·연결 끊김 통과 | 로컬 `.master-agent/dashboard-browser-dC6ojU/`의 desktop.png·mobile.png·mobile-registration.png; 화면 시험의 실행기 접수는 모의 처리 |
 | 진행 상태·병렬 제어 | 5개 회귀 통과, 실제 CLI 조회에서도 확인 | `tests/parallel-progress.test.mjs` |
-| 구문·문서 | JavaScript 75개·Markdown 18개 검사 통과 | `npm.cmd run check` |
+| 구문·문서 | JavaScript 77개·Markdown 18개 검사 통과 | `npm.cmd run check` |
 | 실제 code-agent 계약 등록 | 등록 성공, 원문과 다른 claim·변경된 문서 거부 | `tests/handoff-contracts.test.mjs`의 실제 빌드 연동 |
 | 실제 code-agent 통신 | 접수·중복·이벤트·재부착·협력 정지·제어권 인계 통과 | `tests/code-agent-control.test.mjs`, 가짜 개발 호스트 |
 | 앞선 답의 실제 AI 판단 | 5건 통과: routine 3·ambiguous 1·critical 1 | [판단 증거](evidence/2026-10-16-answer-context.json) |
