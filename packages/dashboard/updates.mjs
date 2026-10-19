@@ -4,6 +4,7 @@ import { existsSync, readFileSync, readdirSync, lstatSync, mkdtempSync, rmdirSyn
 import { tmpdir, hostname } from 'node:os';
 import { join, resolve, extname } from 'node:path';
 import { Catalog, normalizedPath } from '../catalog/catalog.mjs';
+import { pendingHumanResponse } from '../code-agent-adapter/interactions.mjs';
 import { hash, now, requireThat } from '../domain/contracts.mjs';
 import { findCodeAgent } from '../code-agent-adapter/discovery.mjs';
 import { createSourceBuilder, sourceSummary } from './source-update.mjs';
@@ -86,6 +87,7 @@ export function createUpdates(store, { cliPath, run = runUpdateCli, cacheRoot, s
       row.current = view.project.applied ?? `번들 ${view.running.version}`;
       const maintenance = store.get('project-maintenance', project.id);
       const reasons = [...view.project.busy, ...(store.lock(project.id) ? ['master-agent 작업 실행 중'] : []),
+        ...(pendingHumanResponse(store, project.id) ? ['사람 응답 전송·적용 결과 확인 필요'] : []),
         ...(maintenance?.active ? ['업데이트 진행 중 또는 중단 점검 필요'] : [])];
       return { ...row, state: reasons.length ? 'skipped' : 'ready', detail: reasons.join(' · ') || '상태를 다시 확인한 뒤 선택한 버전을 적용합니다.' };
     } catch (error) { return { ...row, state: 'skipped', detail: error.message }; }
@@ -111,6 +113,7 @@ export function createUpdates(store, { cliPath, run = runUpdateCli, cacheRoot, s
       const current = store.need('project', project.id);
       requireThat(current.revision === project.revision && current.path === project.path, 'stale-state', '프로젝트 정보가 변경되었습니다.');
       requireThat(!store.lock(project.id), 'project-busy', 'master-agent 작업 실행 중');
+      requireThat(!pendingHumanResponse(store, project.id), 'project-busy', '사람 응답 전송·적용 결과 확인 필요');
       const old = store.get('project-maintenance', project.id);
       requireThat(!old?.active, 'project-busy', '업데이트 진행 중 또는 중단 점검 필요');
       store.put('project-maintenance', { id: project.id, active: true, batchId: batch.id, pid: process.pid, host: hostname(), childPid: null }, old?.revision ?? 0);

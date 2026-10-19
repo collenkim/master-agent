@@ -89,7 +89,9 @@ Git 소스 설치와 단일 원격 추적 브랜치가 필요하다. detached HE
 
 | 경로 | 역할 |
 | --- | --- |
-| `GET /api/overview` | 프로젝트·그룹·요청·목표·업데이트 결과와 현재 화면의 요청 토큰 |
+| `GET /api/overview` | 프로젝트·그룹·요청·목표·업데이트·공통 요청함과 현재 화면의 요청 토큰 |
+| `POST /api/interactions/respond` | 요청 ID·revision·contentHash·context·commandId와 명시적 답변/보류/재열기/승인. 상세는 아래 공통 요청함 계약 |
+| `POST /api/interactions/retry` | `{commandId}`로 미확인 전송을 같은 영속 envelope로 재전송하거나 중단된 master 재개를 대조. 임의 명령·경로·서명 키 입력은 받지 않음 |
 | `POST /api/project-candidates` | 알려진 작업 위치의 설치 프로젝트·등록 여부 조회. 요청 본문으로 탐색 경로를 지정하지 않으며 동시 조회는 공유 |
 | `POST /api/projects` | `{project}`로 수동 등록 |
 | `POST /api/projects/delete` | `{id, revision}`으로 등록 해제·그룹 제외. 폴더와 실행 이력 보존, 미완료 목표·실행/업데이트 사용 중이면 409 |
@@ -104,16 +106,27 @@ Git 소스 설치와 단일 원격 추적 브랜치가 필요하다. detached HE
 
 CLI 전용 `POST /api/dashboard-control`은 별도 제어 토큰과 서버 ID로 status·stop을 처리한다. 화면 토큰으로는 호출할 수 없다. restart는 이 종료 경로를 확인한 뒤 새 CLI 프로세스가 서버를 시작하는 동작이다.
 
+## 공통 요청함
+
+전체·발행 주체·프로젝트·그룹·작업/TASK 검색·단계·상태로 필터링한다. 질문의 첫 관측/발행 시각부터 대기 시간을 표시하며 새 요청 표시는 현재 페이지에서 열어본 여부다. 그룹 요청은 접수 당시 그룹·프로젝트 범위를 보존한다. master 목표가 없는 독립 code-agent 설정/운영 질문도 표시한다.
+
+master 분석의 추천은 실제 선택지 문구와 정확히 일치할 때만 기본 선택한다. code-agent는 발행자의 추천 ID·이유·근거·옵션별 결과를 사용하고, 다중 선택 기본값은 명시된 `defaultOptionIds`만 따른다. 직접 입력·옵션별 입력 조건을 표시하며 폼을 열거나 추천을 선택한 것만으로 제출하지 않는다. 폴링 중 입력을 유지하고 탭의 sessionStorage에 초안을 보존한다. 질문 변경 시 이전 초안을 자동 적용하지 않고 최신 질문을 다시 열게 한다.
+
+승인은 별도 창에서 전문과 변경 후보를 보여 준다. 전문 확인 체크·승인/수정 요청·각 후보의 적용/유지는 기본 선택하지 않는다. 서버는 원래 요청의 최신 버전·해시·문맥을 다시 읽고, 화면 Origin·토큰 검사 후에만 별도 사람 채널 키로 서명한다. AI 위임 grant나 훅 관찰 기록으로 대체하지 않는다. 최초 연결과 지원 빌드는 [README](../README.md)와 [연동 계약](dashboard-interactions-plan.md)을 따른다.
+
+code-agent의 보류는 원래 요청을 deferred로 만들며 다시 열기를 명시적으로 제출해야 답할 수 있다. master/구형 code-agent 표시의 보류는 master 목록에만 기록하고 원래 작업을 바꾸지 않는다. 답변 전송함에는 commandId·정확한 서명 요청을 먼저 저장하고 통신 실패는 `수신 여부 미확인`으로 보존한다. 이력의 재시도 버튼은 같은 명령을 재전송한다. 수신은 소비·적용·재개·업무 완료를 뜻하지 않는다. 적용 오류와 재개 차단은 원래 결과로 표시한다.
+
+master 분석은 모든 질문에 답한 뒤 기존 target-request를 재분석한다. 복구 답은 기존 시도·검증 실행에 결속하고 기존 Recovery 처리기로 파일·상태·권한을 다시 검사한다. CLI로 만든 목표는 답을 저장한 뒤 기존 CLI 명령으로 이어간다. code-agent 세션 재개는 해당 API의 continuation과 원래 supervisor에 맡기며 대시보드가 새 개발 작업을 만들지 않는다. 응답 전송·적용이 미확인인 프로젝트의 등록 해제·업데이트는 막는다.
+
+제어 연결이나 사람 키가 없으면 불가 이유를 표시한다. 구형 빌드는 `questions`/`consents` 또는 상태 요약으로 관측하고 제출은 제공하지 않는다. 조회 실패는 마지막 기록을 보존한다. `--saved`에서는 외부 요청을 새로 조회하지 않는다.
+
 ## 아직 제공하지 않는 화면
 
 다음은 [제품 요구사항](requirements.md)과 [확장 설계](architecture.md)의 후속 범위다. 현재 화면의 버튼이나 API로 제공하지 않는다.
 
-초기 설정·개발·검증·리뷰·반영·복구·운영 및 master 자체 질문을 처리할 공통 요청함은 [전체 작업 연동 계획](dashboard-interactions-plan.md)에 정리했다. 추천 선택·직접 입력·사람 동의·원래 흐름 재개를 포함한다. code-agent 요청 API와 사람 응답 채널을 먼저 보완해야 하며, 현재 질문 ID·대기 건수 표시만으로 답을 전송할 수는 없다.
-
 | 후속 기능 | 연결할 기존 기능·조건 |
 | --- | --- |
 | 계획 그래프·재계획 비교·조건별 증거 상세 | [LangGraph](langgraph.md), [재계획](replanning.md), [검증 계약](live-verification.md) |
-| 공통 질문·추천 선택·승인·복구 판단 요청함 | [전체 작업 연동 계획](dashboard-interactions-plan.md), 기존 소유권·상태 버전·권한 검증 |
 | 질문과 무관한 웹 작업 중지·취소 | [code-agent 통신 계약](code-agent-control.md)의 실행 식별·정지 확인 |
 | 분석 취소·실패 복구·검증 중단 대조 | [중단 처리](interruption.md), [복구](recovery.md), [반영 대조](delivery-reconciliation.md) |
 | 사용자 지정 범위의 추가 탐색·프로젝트 설정 변경 | 탐색 범위 제한, 경로 중복과 기존 실행의 일치 확인 |

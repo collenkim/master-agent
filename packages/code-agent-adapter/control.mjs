@@ -7,7 +7,7 @@ import { findCodeAgent } from './discovery.mjs';
 /** code-agent 의 master 통신 계약(code-agent/doc/master-control.md). 같은 PC 의 CLI 호출 한 번이 요청 한 건이다. */
 export const PROTOCOL = 'code-agent.master';
 export const PROTOCOL_VERSION = 1;
-const MUTATING = new Set(['submit', 'pause', 'cancel', 'resume', 'decide', 'answer', 'handover', 'reconcile', 'policy', 'revoke']);
+const MUTATING = new Set(['submit', 'pause', 'cancel', 'resume', 'decide', 'answer', 'handover', 'reconcile', 'policy', 'revoke', 'interaction.respond']);
 // 실행을 지금 시작하지 않았다고 확정할 수 있는 거부 — 통신 실패와 구분한다
 export const TERMINAL_RUN_STATES = new Set(['completed', 'blocked', 'failed', 'cancelled', 'paused', 'abandoned', 'unknown']);
 

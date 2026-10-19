@@ -61,7 +61,7 @@ export function dashboardSnapshot(store, { live = false, refreshing = false, int
 }
 
 /** One bounded sweep, shared by every browser; failures are isolated per project. */
-export function createMonitor(store, { cliPath, intervalMs = 5000, timeoutMs = 5000, observe = observeProject } = {}) {
+export function createMonitor(store, { cliPath, intervalMs = 5000, timeoutMs = 5000, observe = observeProject, onObserved } = {}) {
   const errors = new Map();
   let pending = null, timer = null, stopped = false;
   function refresh() {
@@ -75,6 +75,10 @@ export function createMonitor(store, { cliPath, intervalMs = 5000, timeoutMs = 5
           if (store.need('project', project.id).deletedAt) { errors.delete(project.id); continue; }
           try { await observe(store, project.id, { cliPath, timeoutMs }); errors.delete(project.id); }
           catch (error) { errors.set(project.id, { message: error.message, at: new Date().toISOString() }); }
+          if (onObserved && !store.need('project', project.id).deletedAt) {
+            try { await onObserved(project); }
+            catch (error) { errors.set(project.id, { message: `질문 조회 실패: ${error.code ?? 'invalid-response'}`, at: new Date().toISOString() }); }
+          }
         }
       }));
     })().finally(() => { pending = null; });

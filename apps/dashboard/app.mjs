@@ -1,3 +1,4 @@
+import { renderInteractions } from './interactions.mjs';
 const $ = id => document.getElementById(id);
 const labels = {
   completed: '완료', cancelled: '취소', paused: '일시 정지', running: '실행 중',
@@ -60,6 +61,7 @@ function render() {
   </details>`).join('') || '<div class="empty">등록된 목표가 없습니다.</div>';
   renderManagement();
   renderUpdates();
+  renderInteractions(latest, post, refresh);
 }
 
 async function refresh() {

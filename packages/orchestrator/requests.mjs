@@ -9,6 +9,7 @@ import { LiveWorkflow } from './drive.mjs';
 import { ControlHost } from '../runner/control-host.mjs';
 import { CliProvider } from '../reasoning/cli-provider.mjs';
 import { Planner } from '../reasoning/planner.mjs';
+import { Recovery } from './recovery.mjs';
 import { VerificationTemplates } from '../verification/templates.mjs';
 import { findCodeAgent } from '../code-agent-adapter/discovery.mjs';
 import { observeProject } from '../code-agent-adapter/observe.mjs';
@@ -51,14 +52,16 @@ export function acceptRequest(store, { targetType, targetId, goal, taskNumber, c
   });
 }
 
-export function continueRequest(store, id, expectedRevision) {
-  return store.transaction(() => {
+export function continueRequest(store, id, expectedRevision, { inTransaction = false } = {}) {
+  const apply = () => {
     const record = store.need('target-request', id);
     requireThat(record.revision === expectedRevision, 'stale-state', '요청 상태가 변경되었습니다. 다시 조회하세요.');
+    requireThat(!store.list('interaction-command').some(c => c.missionId === id && c.resume?.state === 'launching'), 'request-busy', '답변 제출에서 기존 요청의 재개를 접수 중입니다. 중복 재개할 수 없습니다.');
     requireThat(!['succeeded', 'cancelled'].includes(store.need('mission', id).state), 'invalid-state', '종료된 목표입니다.');
     requireThat(!['queued', 'running'].includes(record.state) || !alive(record.pid, record.host), 'request-busy', '요청 실행기가 이미 실행 중입니다.');
     return store.put('target-request', { ...record, state: 'queued', pid: null, host: null, owner: null, error: null, updatedAt: now() }, record.revision);
-  });
+  };
+  return inTransaction ? apply() : store.transaction(apply);
 }
 
 /** A durable worker survives the dashboard closing. It uses the existing LangGraph and gates. */
@@ -87,6 +90,34 @@ export async function runRequest(store, id, { cliPath, host, provider, workflow 
       }
     }
     const reasoning = provider ?? new CliProvider({ provider: record.provider, model: record.model ?? undefined });
+    for (const answer of store.need('mission', id).recoveryAnswers ?? []) {
+      if (answer.state !== 'queued') continue;
+      const engine = new Engine(store);
+      store.transaction(() => {
+        const m = store.need('mission', id), a = m.attempts.find(a => a.id === answer.attemptId);
+        requireThat(a?.recoveryRunId === answer.runId && a.verificationRunId === answer.verificationRunId && !a.recoveryBusy, 'stale-question', '복구 답변의 대상이 변경되었습니다.');
+        m.recoveryAnswers.find(r => r.commandId === answer.commandId).state = 'reviewing';
+        engine.save(m, 'recovery-answer-reviewing', { commandId: answer.commandId });
+      });
+      try {
+        const m = store.need('mission', id), a = m.attempts.find(a => a.id === answer.attemptId);
+        const project = store.need('project', a.projectId);
+        const remote = await executionHost.inspect(project, undefined, a.turns.at(-1)?.result?.sessionId);
+        await new Recovery(store).recover(id, a.id, executionHost, reasoning, { expectedRevision: m.revision, expectedState: remote.stateVersion, context: answer.answer });
+        store.transaction(() => {
+          const current = store.need('mission', id);
+          current.recoveryAnswers.find(r => r.commandId === answer.commandId).state = 'reviewed';
+          engine.save(current, 'recovery-answer-reviewed', { commandId: answer.commandId });
+        });
+      } catch (error) {
+        store.transaction(() => {
+          const current = store.need('mission', id), item = current.recoveryAnswers.find(r => r.commandId === answer.commandId);
+          item.state = 'failed'; item.error = error.code ?? 'recovery-error';
+          engine.save(current, 'recovery-answer-failed', { commandId: answer.commandId });
+        });
+        throw error;
+      }
+    }
     const before = store.need('mission', id);
     if (before.planningHold && ['blocked', 'waiting-decision'].includes(before.state)) {
       await new Planner(store).analyze(id, reasoning, { expectedRevision: before.revision });

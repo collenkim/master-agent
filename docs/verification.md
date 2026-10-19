@@ -1,10 +1,14 @@
 # 검증 기록
 
-기능 검증 기준은 **2026-10-19, 대시보드 프로젝트 삭제·업데이트 건너뜀 안내 반영 후**다. Windows·Node.js 24.19.0에서 자동 회귀와 화면을 확인했다. 실제 모델 전체 흐름의 최근 검증일은 2026-10-17이다. 아래 결과는 해당 검증 시점의 기록이며 실제 모델 시험의 재수행을 뜻하지 않는다.
+기능 검증 기준은 **2026-10-19, 공통 요청함·실제 interaction API 연결 후**다. Windows·Node.js 24.19.0에서 회귀·실제 CLI·브라우저를 확인했다. 실제 모델 전체 흐름의 최근 검증일은 2026-10-17이며, 이번 질문 계약 시험은 해당 모델 시험의 재수행을 뜻하지 않는다.
 
 | 검증 | 결과 | 근거 |
 | --- | --- | --- |
-| 자동 회귀 | 219개 통과, 실패·건너뜀 0 | `npm.cmd test`, 로컬 `.master-agent/project-deletion-tests.log` |
+| 자동 회귀 | 232개 통과, 실패·건너뜀 0 | `npm.cmd test`, 로컬 `.master-agent/interactions-tests.log` |
+| 공통 요청함 회귀 | 추천 미추정·보류·답 적용, 동일 명령/두 탭·재시작·master 재개, 오래된 내용/문맥·등록 해제·업데이트, 원장 복사/교체·그룹 범위 고정, HTTP 인증, 기존 시도·세션에서 복구 후 실제 재검증 | `tests/dashboard-interactions.test.mjs` 13개 |
+| 실제 code-agent 질문 API | 빈/기존 격리 프로젝트 각 10단계의 질문 수신·소비·적용, 다중 선택·옵션 입력·직접 입력, 보류/재열기, 같은 명령 재전송, 브랜치 변경·키 부재 거부, docs 동의의 실제 적용 | `scripts/smoke-interactions-live.mjs`, `.master-agent/interactions-live.json`. 발행자·최초 인증은 합성 fixture, 개발 모델 미호출 |
+| 실제 API·브라우저·중단 복구 | 모바일 브라우저의 다중 답과 별도 동의가 실제 서명·CLI를 통과. 전송 전 단절 후 DB 재시작·같은 envelope 재전송, 미확인 중 삭제 거부, 실제 docs 적용 확인 | `.master-agent/interactions-live-browser.json`, `.master-agent/interactions-live-browser-TEmDBW/`. 실제 사용자 TTY·개발/반영/운영 전체 모델 완주와 구분 |
+| master 질문 브라우저 | 추천의 명시적 제출, 폴링/닫기/재열기 초안 보존, 보류, 전체 답 수집 후 한 번 재개, 오래된 화면 거부, 승인 미선택·미지원 비활성, XSS·모바일·연결 끊김 | `scripts/smoke-dashboard-interactions.mjs`, `.master-agent/interactions-browser-vm81o2/`. 발행자·실행기 모의 |
 | 원격 업데이트 준비 | 실제 로컬 Git remote·pull·npm ci/build/test 후 동일 패키지 적용, 각 준비 단계 실패 시 미적용, upstream 변경·분기·미설정 거부, 원본 변경 보존·종료 처리·HTTP 비동기 실행 | `tests/source-update.test.mjs` 9개; 합성 code-agent 패키지 사용, 외부 원격 서버·실제 관리 프로젝트는 변경하지 않음 |
 | 일괄 업데이트 | 설치본·카탈로그 변경 거부, 삭제된 프로젝트 제외·이전 미리보기 무효화, 작업·승인·개발 잠금 제외, 부분 실패·충돌·보류 구분, 중복 적용 방지·종료 취소·중단 점검·HTTP 인증 | `tests/dashboard-updates.test.mjs` 11개 |
 | 실제 code-agent 업데이트 | 격리 프로젝트의 설치본 적용·버전 확인, 누락 템플릿 복구, 사용자 수정 보존, 접수 중 프로젝트 건너뜀 | 위 테스트의 실제 설치본 연동; 실제 관리 프로젝트는 변경하지 않음 |
@@ -15,16 +19,20 @@
 | 요청 전체 실행 | 그룹/단일 요청 각각 모의 AI 계획 → 템플릿 연결 → 실제 파일 변경·Node 검사 → 인계·succeeded | `tests/requests.test.mjs`; AI와 개발 호스트는 모의 응답 |
 | 명령 설치 | 임시 npm 전역 prefix에 로컬 패키지 설치 후 저장소 밖에서 프로젝트 조회·데모 완료 | `npm.cmd install --global --prefix <임시경로> --offline --ignore-scripts <소스경로>` |
 | 관제 서버 | 전체 등록 프로젝트·독립 작업 관측, 조회 실패·오래된 관측 구분, 중복 조회 제한, 삭제 시 기존 대기열·이후 조회에서 제외, HTTP 조회 경계 | `tests/dashboard.test.mjs` 7개 |
-| 실제 브라우저 | 삭제 취소·확정·미완료 목표 거부·그룹 제외·후보 재선택·요청 대상 제외, 원격 업데이트·출력 펼침 유지, 빈 그룹·등록·TASK 번호·설치 감지·모바일·연결 끊김 통과 | 로컬 `.master-agent/dashboard-browser-xHIfJ9/`의 desktop.png·mobile.png·mobile-deletion.png·mobile-registration.png·mobile-update.png; 화면의 개발 접수·업데이트 실행은 모의 처리 |
+| 기존 대시보드 브라우저 | 삭제·그룹·후보·TASK·원격 업데이트·설치 감지·모바일·연결 끊김 회귀 통과 | 로컬 `.master-agent/dashboard-browser-NM3mYE/`; 화면의 개발 접수·업데이트 실행은 모의 처리 |
 | 브랜치별 작업과 업데이트 판정 | 다른 브랜치 체크아웃에서 `status --json`은 `work: null`·`no-work`, `version --json`은 이전 브랜치 미완료 작업을 `project.busy`로 반환함을 읽기 전용 확인 | code-agent 소스·빌드·설치 릴리스의 `currentCursor`/`allCursors` 사용 대조; 실제 프로젝트 상태·브랜치는 변경하지 않음 |
 | 진행 상태·병렬 제어 | 5개 회귀 통과, 실제 CLI 조회에서도 확인 | `tests/parallel-progress.test.mjs` |
-| 구문·문서 | JavaScript 84개·Markdown 18개 검사 통과 | `npm.cmd run check` |
+| 구문·문서 | JavaScript 92개·Markdown 19개 검사 통과 | `npm.cmd run check` |
 | 실제 code-agent 계약 등록 | 등록 성공, 원문과 다른 claim·변경된 문서 거부 | `tests/handoff-contracts.test.mjs`의 실제 빌드 연동 |
 | 실제 code-agent 통신 | 접수·중복·이벤트·재부착·협력 정지·제어권 인계 통과 | `tests/code-agent-control.test.mjs`, 가짜 개발 호스트 |
 | 앞선 답의 실제 AI 판단 | 5건 통과: routine 3·ambiguous 1·critical 1 | [판단 증거](evidence/2026-10-16-answer-context.json) |
 | 실제 병렬·계약 인계·통합 | 두 프로젝트·세 작업 succeeded, 56분 30초, 계약 입력 7건 대조 | [v4 전체 흐름 증거](evidence/2026-10-17-parallel-contract-flow.json) |
 
 code-agent 연동 시험은 외부 빌드가 없으면 건너뛴다. 위 회귀 결과에는 건너뜀이 없다. 현재 구현과 남은 작업은 [구현 현황](implementation.md)을 따른다.
+
+공통 요청함은 `C:/IdeaProjects/code-agent/dist/agent/cli.js`의 1.0.0·stateSchema 7·interaction schema 1에서 확인했다. 확인 당시 소스 HEAD는 `e289829`이며 interaction 변경이 아직 커밋되지 않은 작업 빌드였다. 이 커밋만 체크아웃하면 새 기능이 있다는 뜻이 아니다. `scripts/check-interaction-support.mjs`가 빈/기존 두 격리 저장소에서 실제 hello·명령·빌드 수정 시각·소스 변경 여부를 저장한다. 인계 문서의 프로젝트 식별자 예제와 달리 실제 응답의 `hello.result.project.projectId`로 서명한다.
+
+검사 도중 외부 code-agent 설치본이 재빌드된 회차에는 일괄 업데이트 시험이 설치 해시 변경으로 중단됐다. 보호 검사를 완화하지 않았으며 최종 표는 재실행 결과다. 질문 단계별 계약 시험의 host 소비/complete는 합성 발행자가 수행했다. 실제 모델의 개발·리뷰·반영 완주나 운영 변경 전체를 검증한 결과로 확장하지 않는다.
 
 ## 자동 회귀의 확인 범위
 

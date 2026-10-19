@@ -2,7 +2,7 @@
 
 여러 프로젝트의 code-agent를 연결해 목표를 분석하고, 작업을 배정·검증·인계하는 CLI 오케스트레이터입니다. `master-agent` 명령으로 실행하고 `master-agent dashboard`로 등록 프로젝트 전체를 감시합니다. LangGraph JS가 실행 흐름을 제어하고 SQLite에 판단·증거·체크포인트를 저장합니다.
 
-현재 대시보드에서 프로젝트 등록·삭제·서비스 그룹 관리·TASK 번호를 포함한 그룹/단일 요청·code-agent 일괄 업데이트를 제공합니다. 실제 Claude로 두 프로젝트의 병렬 개발·계약 인계·통합 완료를 검증했으며, 최신 자동 회귀와 브라우저 시험의 결과·범위는 [검증 기록](docs/verification.md)에 정리했습니다.
+현재 대시보드에서 프로젝트 등록·삭제·서비스 그룹 관리·TASK 번호를 포함한 그룹/단일 요청·code-agent 일괄 업데이트와 **공통 질문·승인 요청함**을 제공합니다. 실제 Claude로 두 프로젝트의 병렬 개발·계약 인계·통합 완료를 검증했으며, 최신 자동 회귀와 브라우저 시험의 결과·범위는 [검증 기록](docs/verification.md)에 정리했습니다.
 
 ## 실행 프로세스
 
@@ -146,7 +146,25 @@ master-agent mission graph <목표ID>
 
 ## 현재 경계와 문서
 
-웹에서의 실행 중지·승인·답변 전달, 원격 러너·운영 예산·Codex 개발 호스트는 후속 범위입니다. 실제 업무 규모의 품질, 자유 목표부터 전체 완료까지의 연속 시험, 실패 복구·프로세스 중단을 포함한 실제 모델 평가는 더 필요합니다.
+공통 요청함에서 전체/프로젝트/그룹/작업·단계·상태로 질문을 찾고, 추천 이유·근거·대안을 검토한 뒤 답변을 명시적으로 제출합니다. code-agent의 다중 선택·직접 입력·보류·재열기와 별도 승인 전문 화면을 제공합니다. master 분석·복구 질문은 기존 목표에서 재분석하며, code-agent 질문은 원래 발행 세션으로 전달합니다. 수신·적용·재개는 별도로 표시합니다.
+
+code-agent 질문에 답하려면 기능을 포함한 빌드와 **프로젝트별 사람 채널 연결**이 필요합니다. 각 프로젝트 폴더에서 사용자가 직접 실행합니다. 이미 제어 연결이 있다면 같은 제어자 ID로 사람 채널만 추가합니다.
+
+```powershell
+code-agent master enable --controller dashboard --token-out C:\Users\<사용자>\.code-agent\<프로젝트ID>.token
+code-agent master human enable --controller dashboard
+```
+
+master 쪽에서는 등록 프로젝트와 토큰을 연결하고 대시보드를 재시작합니다.
+
+```powershell
+master-agent project control <프로젝트ID> --controller dashboard --token-file C:\Users\<사용자>\.code-agent\<프로젝트ID>.token --db <기존DB>
+master-agent dashboard restart --db <기존DB>
+```
+
+대시보드 서버는 같은 OS 계정의 `~/.code-agent/dashboard-channels`에서 해당 채널 키를 찾습니다. 토큰·개인 키는 화면이나 모델에 전달하지 않습니다. 버전 문자열 대신 실제 `hello`의 interaction 스키마·명령 지원 여부를 확인하며, 미지원 빌드는 조회 가능한 기존 질문만 표시하고 제출을 막습니다. 상세 계약과 제한은 [공통 요청함](docs/dashboard-interactions-plan.md)에 있습니다.
+
+질문과 무관한 웹 실행 중지, 원격 러너·운영 예산·Codex 개발 호스트는 후속 범위입니다. 종료된 독립 세션·Codex 비대화형 세션 자동 재개는 code-agent가 지원하지 않습니다. 실제 업무 규모의 품질, 자유 목표부터 전체 완료까지의 연속 시험, 실패 복구·프로세스 중단을 포함한 실제 모델 평가는 더 필요합니다.
 
 | 문서 | 내용 |
 | --- | --- |
@@ -157,5 +175,5 @@ master-agent mission graph <목표ID>
 | [code-agent 통신 계약](docs/code-agent-control.md) | 위임 판단·이벤트·재부착·정지·제어권 인계 |
 | [복구](docs/recovery.md) / [재계획](docs/replanning.md) / [반영 대조](docs/delivery-reconciliation.md) / [중단 처리](docs/interruption.md) | 실패·중단별 처리 경계 |
 | [로컬 대시보드](docs/ui.md) | 연결 오류 해결·등록·그룹·요청·관측·HTTP 계약·후속 범위 |
-| [전체 작업의 질문·선택·승인 연동 계획](docs/dashboard-interactions-plan.md) | 초기 설정·개발·복구·운영의 공통 요청함, 양쪽 변경 범위·검증 기준·담당 전달 명령 |
+| [공통 요청함 구현·인계](docs/dashboard-interactions-plan.md) | 실제 API·사람 채널·응답 보존·단계별 지원·제한·재현 방법 |
 | [요구사항](docs/requirements.md) / [설계](docs/architecture.md) / [오케스트레이션](docs/orchestration.md) | 제품 목표와 확장 설계 |

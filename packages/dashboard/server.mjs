@@ -11,6 +11,7 @@ import { acceptRequest, launchRequest, continueRequest } from '../orchestrator/r
 import { createMonitor } from './monitor.mjs';
 import { projectCandidates } from './project-candidates.mjs';
 import { createUpdates } from './updates.mjs';
+import { createInteractions } from './interactions.mjs';
 
 export function validateDashboardOptions({ port = 4310, cliPath, intervalMs = 5000, observe = true } = {}) {
   requireThat(Number.isInteger(port) && port >= 0 && port <= 65535, 'usage', '--port는 0~65535 정수입니다.');
@@ -18,20 +19,24 @@ export function validateDashboardOptions({ port = 4310, cliPath, intervalMs = 50
   return observe ? findCodeAgent(cliPath, { required: false }) : null;
 }
 
-export async function startDashboard({ dbPath, port = 4310, cliPath, intervalMs = 5000, observe = true, launch = launchRequest, candidateOptions = {}, updateOptions = {}, management } = {}) {
+export async function startDashboard({ dbPath, port = 4310, cliPath, intervalMs = 5000, observe = true, launch = launchRequest, candidateOptions = {}, updateOptions = {}, interactionOptions = {}, management } = {}) {
   const updateCliPath = cliPath;
   cliPath = validateDashboardOptions({ port, cliPath, intervalMs, observe });
   const assets = new Map([
     ['/', ['text/html; charset=utf-8', 'index.html']],
     ['/app.mjs', ['text/javascript; charset=utf-8', 'app.mjs']],
+    ['/interactions.mjs', ['text/javascript; charset=utf-8', 'interactions.mjs']],
     ['/style.css', ['text/css; charset=utf-8', 'style.css']],
   ].map(([path, [type, file]]) => [path, { type, body: readFileSync(new URL(`../../apps/dashboard/${file}`, import.meta.url)) }]));
-  const store = new Store(dbPath), monitor = createMonitor(store, { cliPath, intervalMs });
+  const store = new Store(dbPath);
+  const interactions = createInteractions(store, { ...interactionOptions, cliPath, launch, launchOptions: { dbPath, cliPath } });
+  const monitor = createMonitor(store, { cliPath, intervalMs, onObserved: interactions.refreshProject });
   const updates = createUpdates(store, { cliPath: updateCliPath ?? cliPath,
     cacheRoot: join(dirname(resolve(dbPath)), 'code-agent-builds'), ...updateOptions });
   const token = randomUUID(), catalog = new Catalog(store);
   let candidateScan;
   let origin;
+  const receipt = ({ id, state, receiptId, resume, error }) => ({ id, state, receiptId, resume, error });
   const server = createServer(async (request, response) => {
     const send = (status, body, type = 'application/json; charset=utf-8') => {
       response.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
@@ -67,6 +72,8 @@ export async function startDashboard({ dbPath, port = 4310, cliPath, intervalMs 
           return send(200, JSON.stringify(await candidateScan));
         }
         if (path === '/api/projects') return send(201, JSON.stringify(catalog.registerManual(input.project)));
+        if (path === '/api/interactions/respond') return send(200, JSON.stringify(receipt(await interactions.respond(input))));
+        if (path === '/api/interactions/retry') return send(200, JSON.stringify(receipt(await interactions.retry(input.commandId))));
         if (path === '/api/projects/delete') return send(200, JSON.stringify(catalog.remove(input.id, input.revision)));
         if (path === '/api/updates/preview') return send(200, JSON.stringify(await updates.preview(input)));
         if (path === '/api/updates/apply') return send(202, JSON.stringify(updates.apply(input.id)));
@@ -84,13 +91,13 @@ export async function startDashboard({ dbPath, port = 4310, cliPath, intervalMs 
         return send(404, '{"error":"not-found"}');
       }
       if (request.method !== 'GET') return send(405, '{"error":"method-not-allowed"}');
-      if (path === '/api/overview') return send(200, JSON.stringify({ ...monitor.snapshot(), updates: updates.snapshot(), token, codeAgent: cliPath,
+      if (path === '/api/overview') return send(200, JSON.stringify({ ...monitor.snapshot(), interactions: interactions.snapshot(), updates: updates.snapshot(), token, codeAgent: cliPath,
         discovery: cliPath ? 'installed' : observe ? 'not-found' : 'saved' }));
       const asset = assets.get(path);
       if (asset) return send(200, asset.body, asset.type);
       send(404, '{"error":"not-found"}');
     } catch (error) {
-      const status = error.code === 'forbidden' ? 403 : ['stale-state', 'request-busy', 'request-conflict', 'project-busy', 'project-in-use', 'already-exists', 'duplicate-path'].includes(error.code) ? 409 : error.code === 'not-found' ? 404 : error.code ? 400 : 500;
+      const status = error.code === 'forbidden' ? 403 : ['stale-state', 'stale-question', 'request-busy', 'request-conflict', 'project-busy', 'project-in-use', 'already-exists', 'duplicate-path'].includes(error.code) ? 409 : error.code === 'not-found' ? 404 : error.code ? 400 : 500;
       send(status, JSON.stringify({ error: error.code ?? 'internal-error', message: error.code ? error.message : '요청 처리 중 오류가 발생했습니다.' }));
     }
   });
@@ -110,6 +117,7 @@ export async function startDashboard({ dbPath, port = 4310, cliPath, intervalMs 
         server.closeIdleConnections();
         const updating = updates.stop();
         await monitor.stop();
+        await interactions.stop();
         await closed;
         await updating;
         store.close();

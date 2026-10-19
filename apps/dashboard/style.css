@@ -4,3 +4,15 @@ dialog{width:min(650px,94vw);max-height:90vh;overflow:auto;background:#171f2c;co
 .candidate-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;flex-wrap:wrap}.candidate-list{max-height:220px;overflow:auto;display:grid;gap:8px}.candidate-pick{text-align:left;white-space:normal;min-width:0;width:100%;overflow-wrap:anywhere}.candidate-pick span{display:block;font-size:11px;color:#9baac0;margin-top:4px}.candidate-pick:disabled{cursor:default}.candidate-pick .path{margin-bottom:0}
 #update-dialog{width:min(900px,94vw)}#update-dialog .dialog-actions{flex-wrap:wrap}#update-dialog button{white-space:normal}#updates pre,#update-preview pre{white-space:pre-wrap;overflow-wrap:anywhere;max-width:520px}
 #updates table,#update-preview table{min-width:620px;table-layout:fixed}#updates th:first-child,#update-preview th:first-child{width:35%}#updates th:nth-child(2),#update-preview th:nth-child(2){width:20%}
+/* Common inbox: preserve full question/approval text and readable mobile forms. */
+.inbox-filters { flex-wrap: wrap; margin-bottom: 1rem; }
+.interaction-body { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; max-height: 40vh; overflow-y: auto; padding: 1rem; border: 1px solid #39445c; border-radius: 8px; }
+.interaction-option { display: flex; align-items: flex-start; gap: .7rem; padding: .6rem 0; }
+.interaction-option input { width: auto; flex-shrink: 0; margin-top: .25rem; }
+#interaction-inbox { margin-bottom: 2rem; }
+#interaction-history small { display: block; }
+#interaction-dialog, #interaction-approval { overflow-wrap: anywhere; }
+#interaction-custom-label[hidden] { display: none; }
+#interaction-dialog [hidden] { display: none; }
+#interaction-stale:empty, #interaction-error:empty { display: none; }
+#interaction-dialog .dialog-actions, #interaction-approval .dialog-actions { flex-wrap: wrap; }

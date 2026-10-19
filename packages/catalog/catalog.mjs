@@ -1,6 +1,7 @@
 import { realpathSync, statSync } from 'node:fs';
 import { resolve, isAbsolute } from 'node:path';
 import { hostname } from 'node:os';
+import { pendingHumanResponse } from '../code-agent-adapter/interactions.mjs';
 import { validateProject, requireThat, string, strings, now, object } from '../domain/contracts.mjs';
 
 export function normalizedPath(path) {
@@ -24,6 +25,7 @@ export class Catalog {
       requireThat(project.revision === expectedRevision, 'stale-state', '프로젝트 정보가 변경되었습니다. 다시 조회하세요.');
       requireThat(!this.store.lock(id) && !this.store.get('project-maintenance', id)?.active,
         'project-busy', '프로젝트 실행 또는 업데이트 잠금이 있습니다. 완료하거나 중단 상태를 먼저 점검하세요.');
+      requireThat(!pendingHumanResponse(this.store, id), 'project-busy', '사람 응답의 전송·적용 결과를 먼저 확인하세요.');
       const mission = this.store.list('mission').find(m => m.scope.projectIds.includes(id) && !['simulation-complete', 'succeeded', 'cancelled'].includes(m.state));
       requireThat(!mission, 'project-in-use', `미완료 목표 ${mission?.id}에서 사용하는 프로젝트입니다. 목표를 완료하거나 취소한 뒤 삭제하세요.`);
       const updating = this.store.list('agent-update').some(batch => {
