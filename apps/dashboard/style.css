@@ -16,3 +16,4 @@ dialog{width:min(650px,94vw);max-height:90vh;overflow:auto;background:#171f2c;co
 #interaction-dialog [hidden] { display: none; }
 #interaction-stale:empty, #interaction-error:empty { display: none; }
 #interaction-dialog .dialog-actions, #interaction-approval .dialog-actions { flex-wrap: wrap; }
+#history-filter{align-items:flex-end;gap:12px}#history-filter label{display:grid;gap:6px;min-width:0;max-width:100%}#history-filter input,#history-filter select{margin:0;max-width:100%}.history-entry ul{padding-left:20px}.history-entry summary{overflow-wrap:anywhere}.history-entry p,.history-entry small{overflow-wrap:anywhere}

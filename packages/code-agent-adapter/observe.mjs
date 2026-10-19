@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { Catalog, normalizedPath } from '../catalog/catalog.mjs';
 import { requireThat, hash, now } from '../domain/contracts.mjs';
 import { findCodeAgent } from './discovery.mjs';
+import { recordObservation } from '../dashboard/history.mjs';
 
 const runFile = promisify(execFile);
 const resumeCodes = new Set(['stale-request', 'unobservable', 'no-work', 'ownership-conflict', 'wait', 'needs-human', 'replan-required', 'reapproval-required', 'limit-reached', 'ready']);
@@ -68,10 +69,12 @@ export async function observeProject(store, projectId, { cliPath, timeoutMs = 30
     const previous = store.get('observation', projectId);
     // 같은 밀리초에 시작한 조회도 요청 식별자로 구별한다.
     if (store.need('observation-request', projectId).requestId !== requestId) return previous ?? { id: projectId, status: 'superseded' };
-    return store.put('observation', {
+    const saved = store.put('observation', {
       id: projectId, startedAt: observedAt, recordedAt: now(), ...result,
       lastSuccessfulState: result.state ?? previous?.lastSuccessfulState ?? null,
       capabilities: { status: Boolean(result.state), submit: false, resume: false, answer: false, cancel: false },
     }, previous?.revision ?? 0);
+    recordObservation(store, projectId, saved);
+    return saved;
   });
 }

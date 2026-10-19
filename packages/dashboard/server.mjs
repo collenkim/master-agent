@@ -12,6 +12,7 @@ import { createMonitor } from './monitor.mjs';
 import { projectCandidates } from './project-candidates.mjs';
 import { createUpdates } from './updates.mjs';
 import { createInteractions } from './interactions.mjs';
+import { createHistory, historyPage } from './history.mjs';
 
 export function validateDashboardOptions({ port = 4310, cliPath, intervalMs = 5000, observe = true } = {}) {
   requireThat(Number.isInteger(port) && port >= 0 && port <= 65535, 'usage', '--port는 0~65535 정수입니다.');
@@ -26,11 +27,16 @@ export async function startDashboard({ dbPath, port = 4310, cliPath, intervalMs 
     ['/', ['text/html; charset=utf-8', 'index.html']],
     ['/app.mjs', ['text/javascript; charset=utf-8', 'app.mjs']],
     ['/interactions.mjs', ['text/javascript; charset=utf-8', 'interactions.mjs']],
+    ['/history.mjs', ['text/javascript; charset=utf-8', 'history.mjs']],
     ['/style.css', ['text/css; charset=utf-8', 'style.css']],
   ].map(([path, [type, file]]) => [path, { type, body: readFileSync(new URL(`../../apps/dashboard/${file}`, import.meta.url)) }]));
   const store = new Store(dbPath);
   const interactions = createInteractions(store, { ...interactionOptions, cliPath, launch, launchOptions: { dbPath, cliPath } });
-  const monitor = createMonitor(store, { cliPath, intervalMs, onObserved: interactions.refreshProject });
+  const history = createHistory(store, { cliPath });
+  const monitor = createMonitor(store, { cliPath, intervalMs, onObserved: async project => {
+    await history.refreshProject(project);
+    await interactions.refreshProject(project);
+  } });
   const updates = createUpdates(store, { cliPath: updateCliPath ?? cliPath,
     cacheRoot: join(dirname(resolve(dbPath)), 'code-agent-builds'), ...updateOptions });
   const token = randomUUID(), catalog = new Catalog(store);
@@ -92,6 +98,11 @@ export async function startDashboard({ dbPath, port = 4310, cliPath, intervalMs 
         return send(404, '{"error":"not-found"}');
       }
       if (request.method !== 'GET') return send(405, '{"error":"method-not-allowed"}');
+      if (path === '/api/history') {
+        const query = new URL(request.url, origin).searchParams;
+        return send(200, JSON.stringify(historyPage(store, { projectId: query.get('projectId') ?? '', groupId: query.get('groupId') ?? '',
+          task: query.get('task') ?? '', before: query.get('before') ?? '', limit: Number(query.get('limit') ?? 50) })));
+      }
       if (path === '/api/overview') return send(200, JSON.stringify({ ...monitor.snapshot(), interactions: interactions.snapshot(), updates: updates.snapshot(), token, codeAgent: cliPath,
         discovery: cliPath ? 'installed' : observe ? 'not-found' : 'saved' }));
       const asset = assets.get(path);

@@ -2,6 +2,7 @@ import { Engine } from '../orchestrator/engine.mjs';
 import { observeProject } from '../code-agent-adapter/observe.mjs';
 import { requestStatus } from '../orchestrator/requests.mjs';
 import { Catalog } from '../catalog/catalog.mjs';
+import { stageDetails } from './history.mjs';
 
 const text = value => typeof value === 'string' ? value.slice(0, 2000) : '';
 const list = value => Array.isArray(value) ? value : [];
@@ -33,7 +34,8 @@ export function dashboardSnapshot(store, { live = false, refreshing = false, int
     return { id: project.id, revision: project.revision, name: text(project.name), path: project.path, domains: project.domains,
       observation: { status: observationStatus, stale, observedAt, checkedAt: failure?.at ?? observation?.recordedAt ?? null,
         historical: observationStatus !== 'observed', error: text(failure?.message ?? observation?.error) },
-      work: state?.work ? { id: text(state.work.id), phase: text(state.work.phase) } : null,
+      work: stageDetails(state).work,
+      stages: stageDetails(state),
       resume: state?.resume ? { code: text(state.resume.code), reasons: list(state.resume.reasons).map(r => typeof r === 'string' ? text(r) : text(r.detail ?? r.code)) } : null,
       lease: text(state?.ownership?.lease?.state), process: text(state?.ownership?.process),
       unknown: list(state?.unknown).map(text),

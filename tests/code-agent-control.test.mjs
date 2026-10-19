@@ -9,6 +9,7 @@ import { Store } from '../packages/storage/store.mjs';
 import { Engine } from '../packages/orchestrator/engine.mjs';
 import { ControlHost, bindControl, requestControlHandover, acceptControl } from '../packages/runner/control-host.mjs';
 import { ControlClient } from '../packages/code-agent-adapter/control.mjs';
+import { createHistory, historyPage } from '../packages/dashboard/history.mjs';
 
 /**
  * 실제 code-agent CLI(빌드 산출물)와 통신 계약으로 주고받는 연동 시험. 호스트는 code-agent 의 가짜 호스트(masterFakeHost.js)다 —
@@ -82,6 +83,16 @@ test('실제 code-agent 통신 계약: 연결·원자적 접수·중복 거부·
   assert.equal(again.control.runId, accepted.runId);
   const snapshot = await client.result('snapshot');
   assert.equal(snapshot.runs.recent.length, 1);
+  // Dashboard events use the real CLI contract and never advance the execution host's cursor.
+  const hostCursor = store.get('control-cursor', project.id);
+  const history = createHistory(store, { cliPath: CLI });
+  await history.refreshProject(project);
+  const timeline = historyPage(store, { projectId: project.id });
+  assert.equal(timeline.sources[0].error, null);
+  assert.ok(timeline.items.some(e => e.type === 'run.finished' && e.runId === accepted.runId));
+  await history.refreshProject(project);
+  assert.equal(historyPage(store, { projectId: project.id }).items.length, timeline.items.length);
+  assert.deepEqual(store.get('control-cursor', project.id), hostCursor);
   await assert.rejects(host.reattach({ ...ticket, invocationId: 'never-sent' }), e => e.code === 'control-not-submitted');
 
   // 정지 — 요청 접수와 실제 정지를 가른다

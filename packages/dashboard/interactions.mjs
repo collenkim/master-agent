@@ -4,6 +4,7 @@ import { Engine } from '../orchestrator/engine.mjs';
 import { continueRequest, requestStatus } from '../orchestrator/requests.mjs';
 import { callOnce, ControlClient, PROTOCOL, PROTOCOL_VERSION } from '../code-agent-adapter/control.mjs';
 import { findHumanKey, interactionApiSupported, interactionClient, signInteraction } from '../code-agent-adapter/interactions.mjs';
+import { recordInteraction } from './history.mjs';
 
 const remoteUnavailable = '현재 code-agent 연동에는 전체 단계 요청 및 인증된 사람 응답 계약이 없습니다. 원래 code-agent 콘솔에서 처리하세요.';
 const values = v => Array.isArray(v) ? v : [];
@@ -59,7 +60,9 @@ export function createInteractions(store, { cliPath, readRemote, resolveHumanKey
     const previous = store.get('interaction', item.id);
     const contentHash = hash(item);
     if (previous?.contentHash === contentHash) return previous;
-    return store.put('interaction', { ...item, contentHash, firstSeenAt: previous?.firstSeenAt ?? now(), updatedAt: now() }, previous?.revision ?? 0);
+    const saved = store.put('interaction', { ...item, contentHash, firstSeenAt: previous?.firstSeenAt ?? now(), updatedAt: now() }, previous?.revision ?? 0);
+    recordInteraction(store, saved);
+    return saved;
   }
   function saveRemote(project, record) {
     requireThat(record.schemaVersion === 1 && record.source === 'code-agent' && typeof record.sourceInstanceId === 'string' &&

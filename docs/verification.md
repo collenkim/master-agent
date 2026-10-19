@@ -1,10 +1,12 @@
 # 검증 기록
 
-기능 검증 기준은 **2026-10-19, 그룹 삭제·카드 버튼 정렬 반영 후**다. Windows·Node.js 24.19.0에서 회귀·실제 CLI·브라우저를 확인했다. 실제 모델 전체 흐름의 최근 검증일은 2026-10-17이며, 질문 계약·화면 시험은 해당 모델 시험의 재수행을 뜻하지 않는다.
+기능 검증 기준은 **2026-10-20, 세부 상태·독립 실행 이력·단계별 타임라인 반영 후**다. Windows·Node.js 24.19.0에서 회귀·실제 CLI·브라우저를 확인했다. 실제 모델 전체 흐름의 최근 검증일은 2026-10-17이며, 관제·질문 계약·화면 시험은 해당 모델 시험의 재수행을 뜻하지 않는다.
 
 | 검증 | 결과 | 근거 |
 | --- | --- | --- |
-| 자동 회귀 | 234개 통과, 실패·건너뜀 0 | `npm.cmd test`, 로컬 `.master-agent/groups-tests.log` |
+| 자동 회귀 | 전체 241개 통과, 최종 보완 후 관련 34개 재통과. 실패·건너뜀 0 | `npm.cmd test`, 로컬 `.master-agent/stage-history-tests.log`, `.master-agent/stage-history-focused-tests.log` |
+| 단계 이력 | 세부 단계·검증 정보와 비공개 필드 제외, 독립 관측 누적·재시작·시도/브랜치/조회 실패 구분, 커서 격리·중복 방지·원장 교체·보존 구간 복구, 그룹/TASK 연결·페이지 조회·요청함 변화·HTTP 경계 | `tests/dashboard-history.test.mjs` 7개. 상태·이벤트 발행자는 합성 fixture |
+| 단계 타임라인 브라우저 | 세부 단계·검증 표시, 실제 API의 프로젝트/그룹/TASK 필터·이전 페이지·자동 갱신 후 페이지 유지·재조회, 1440/390/320px·XSS | `scripts/smoke-dashboard-history.mjs`, `.master-agent/stage-history-browser-efpNRQ/`. 격리 카탈로그·합성 상태와 이벤트, 개발 모델 미호출 |
 | 공통 요청함 회귀 | 추천 미추정·보류·답 적용, 동일 명령/두 탭·재시작·master 재개, 오래된 내용/문맥·등록 해제·업데이트, 원장 복사/교체·그룹 범위 고정, HTTP 인증, 기존 시도·세션에서 복구 후 실제 재검증 | `tests/dashboard-interactions.test.mjs` 13개 |
 | 실제 code-agent 질문 API | 빈/기존 격리 프로젝트 각 10단계의 질문 수신·소비·적용, 다중 선택·옵션 입력·직접 입력, 보류/재열기, 같은 명령 재전송, 브랜치 변경·키 부재 거부, docs 동의의 실제 적용 | `scripts/smoke-interactions-live.mjs`, `.master-agent/interactions-live.json`. 발행자·최초 인증은 합성 fixture, 개발 모델 미호출 |
 | 실제 API·브라우저·중단 복구 | 모바일 브라우저의 다중 답과 별도 동의가 실제 서명·CLI를 통과. 전송 전 단절 후 DB 재시작·같은 envelope 재전송, 미확인 중 삭제 거부, 실제 docs 적용 확인 | `.master-agent/interactions-live-browser.json`, `.master-agent/interactions-live-browser-2pNLLS/`. 실제 사용자 TTY·개발/반영/운영 전체 모델 완주와 구분 |
@@ -23,9 +25,9 @@
 | 기존 대시보드 브라우저 | 삭제·그룹·후보·TASK·원격 업데이트·설치 감지·모바일·연결 끊김 회귀 통과 | 로컬 `.master-agent/dashboard-browser-NM3mYE/`; 화면의 개발 접수·업데이트 실행은 모의 처리 |
 | 브랜치별 작업과 업데이트 판정 | 다른 브랜치 체크아웃에서 `status --json`은 `work: null`·`no-work`, `version --json`은 이전 브랜치 미완료 작업을 `project.busy`로 반환함을 읽기 전용 확인 | code-agent 소스·빌드·설치 릴리스의 `currentCursor`/`allCursors` 사용 대조; 실제 프로젝트 상태·브랜치는 변경하지 않음 |
 | 진행 상태·병렬 제어 | 5개 회귀 통과, 실제 CLI 조회에서도 확인 | `tests/parallel-progress.test.mjs` |
-| 구문·문서 | JavaScript 94개·Markdown 19개 검사 통과 | `npm.cmd run check` |
+| 구문·문서 | JavaScript 98개·Markdown 19개 검사 통과 | `npm.cmd run check` |
 | 실제 code-agent 계약 등록 | 등록 성공, 원문과 다른 claim·변경된 문서 거부 | `tests/handoff-contracts.test.mjs`의 실제 빌드 연동 |
-| 실제 code-agent 통신 | 접수·중복·이벤트·재부착·협력 정지·제어권 인계 통과 | `tests/code-agent-control.test.mjs`, 가짜 개발 호스트 |
+| 실제 code-agent 통신 | 접수·중복·이벤트·재부착·협력 정지·제어권 인계, 대시보드의 실제 이벤트 수집·반복 조회 중복 방지·실행 호스트 커서 보존 통과 | `tests/code-agent-control.test.mjs`, 실제 빌드와 가짜 개발 호스트. 타임라인 연동 추가 후 별도 재통과 |
 | 앞선 답의 실제 AI 판단 | 5건 통과: routine 3·ambiguous 1·critical 1 | [판단 증거](evidence/2026-10-16-answer-context.json) |
 | 실제 병렬·계약 인계·통합 | 두 프로젝트·세 작업 succeeded, 56분 30초, 계약 입력 7건 대조 | [v4 전체 흐름 증거](evidence/2026-10-17-parallel-contract-flow.json) |
 

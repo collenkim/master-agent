@@ -1,4 +1,5 @@
 import { renderInteractions } from './interactions.mjs';
+import { renderHistory, renderStageDetails } from './history.mjs';
 const $ = id => document.getElementById(id);
 const labels = {
   completed: '완료', cancelled: '취소', paused: '일시 정지', running: '실행 중',
@@ -35,13 +36,14 @@ function render() {
     <div class="card-head"><h3>${escape(p.name || p.id)}</h3>${badge(p.observation.status)}</div>
     <div class="card-actions"><button type="button" class="project-request" data-id="${escape(p.id)}">이 프로젝트에 요청</button><button type="button" class="delete-project danger-button" data-id="${escape(p.id)}">프로젝트 삭제</button></div>
     <p class="path">${escape(p.path)}</p>
-    <div class="work"><span class="muted">${p.observation.historical || p.observation.stale ? '마지막 관측 작업' : '현재 관측 작업'}</span><strong>${escape(p.work?.id ?? (p.observation.status === 'observed' ? '작업 없음' : '확인되지 않음'))}</strong><span>${escape(p.work?.phase ?? '—')}</span></div>
+    <div class="work"><span class="muted">${p.observation.historical || p.observation.stale ? '마지막 관측 작업' : '현재 관측 작업'}</span><strong>${escape(p.work?.id ?? (p.observation.status === 'observed' ? '작업 없음' : '확인되지 않음'))}</strong><span>${escape([p.work?.phase, p.work?.stage, p.work?.task].filter(Boolean).join(' / ') || '—')}</span></div>
     <div class="chips">${p.resume ? badge(p.resume.code) : ''}${p.observation.stale ? '<span class="badge warning">오래됨·미조회</span>' : ''}${p.observation.historical && p.work ? '<span class="badge warning">이전 관측</span>' : ''}</div>
     <p class="muted">관측 ${escape(date(p.observation.observedAt))}<br>조회 시도 ${escape(date(p.observation.checkedAt))}</p>
     ${p.observation.error ? `<p class="error">${escape(p.observation.error)}</p>` : ''}
     <div class="waiting"><span>승인 대기 <b>${p.consents.length}</b></span><span>답변 대기 <b>${p.questions.length}</b></span><span>임대 <b>${escape(p.lease || '미확인')}</b></span></div>
     <details data-id="${escape(p.id)}" ${openProjects.has(p.id) ? 'open' : ''}><summary>작업·판단 상세</summary>
       <p>프로젝트 ID: ${escape(p.id)}</p><p>제어 연결: ${p.control ? `${escape(p.control.controller)} (등록 당시 ${p.control.owner ? '소유자' : '관찰자'})` : '없음'}</p>
+      ${renderStageDetails(p.stages)}
       ${p.resume?.reasons.map(r => `<p>${escape(r)}</p>`).join('') ?? ''}
       ${p.consents.map(c => `<p>승인: ${escape(c.action)} · ${escape(c.id)}</p>`).join('')}
       ${p.questions.map(q => `<p>${q.status === 'unverified' ? '답변 검증 대기' : '답변 대기'}: ${escape(q.id)}</p>`).join('')}
@@ -62,6 +64,7 @@ function render() {
   renderManagement();
   renderUpdates();
   renderInteractions(latest, post, refresh);
+  renderHistory(latest);
 }
 
 async function refresh() {
