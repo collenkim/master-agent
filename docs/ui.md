@@ -108,12 +108,13 @@ CLI 전용 `POST /api/dashboard-control`은 별도 제어 토큰과 서버 ID로
 
 다음은 [제품 요구사항](requirements.md)과 [확장 설계](architecture.md)의 후속 범위다. 현재 화면의 버튼이나 API로 제공하지 않는다.
 
-초기 문서 준비와 업무 선택의 추천 UI는 [별도 연동 계획](dashboard-interactions-plan.md)에 정리했다. code-agent 요청 API와 사람 응답 채널을 먼저 보완해야 하며, 현재 질문 ID·대기 건수 표시만으로 답을 전송할 수는 없다.
+초기 설정·개발·검증·리뷰·반영·복구·운영 및 master 자체 질문을 처리할 공통 요청함은 [전체 작업 연동 계획](dashboard-interactions-plan.md)에 정리했다. 추천 선택·직접 입력·사람 동의·원래 흐름 재개를 포함한다. code-agent 요청 API와 사람 응답 채널을 먼저 보완해야 하며, 현재 질문 ID·대기 건수 표시만으로 답을 전송할 수는 없다.
 
 | 후속 기능 | 연결할 기존 기능·조건 |
 | --- | --- |
 | 계획 그래프·재계획 비교·조건별 증거 상세 | [LangGraph](langgraph.md), [재계획](replanning.md), [검증 계약](live-verification.md) |
-| 웹 중지·취소·승인·사람 답 전달 | [code-agent 통신 계약](code-agent-control.md)의 소유권·상태 버전·권한 검증 |
+| 공통 질문·추천 선택·승인·복구 판단 요청함 | [전체 작업 연동 계획](dashboard-interactions-plan.md), 기존 소유권·상태 버전·권한 검증 |
+| 질문과 무관한 웹 작업 중지·취소 | [code-agent 통신 계약](code-agent-control.md)의 실행 식별·정지 확인 |
 | 분석 취소·실패 복구·검증 중단 대조 | [중단 처리](interruption.md), [복구](recovery.md), [반영 대조](delivery-reconciliation.md) |
 | 사용자 지정 범위의 추가 탐색·프로젝트 설정 변경 | 탐색 범위 제한, 경로 중복과 기존 실행의 일치 확인 |
 | 여러 그룹/선택 프로젝트 요청·프로젝트별 지시·실시간 로그 | 접수 대상 고정, 중복 방지, 기존 잠금·검증 규칙 유지 |

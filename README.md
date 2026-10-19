@@ -157,5 +157,5 @@ master-agent mission graph <목표ID>
 | [code-agent 통신 계약](docs/code-agent-control.md) | 위임 판단·이벤트·재부착·정지·제어권 인계 |
 | [복구](docs/recovery.md) / [재계획](docs/replanning.md) / [반영 대조](docs/delivery-reconciliation.md) / [중단 처리](docs/interruption.md) | 실패·중단별 처리 경계 |
 | [로컬 대시보드](docs/ui.md) | 연결 오류 해결·등록·그룹·요청·관측·HTTP 계약·후속 범위 |
-| [초기 설정·추천 선택 연동 계획](docs/dashboard-interactions-plan.md) | code-agent/master-agent 변경 범위·구현 순서·검증 기준·담당 전달 명령 |
+| [전체 작업의 질문·선택·승인 연동 계획](docs/dashboard-interactions-plan.md) | 초기 설정·개발·복구·운영의 공통 요청함, 양쪽 변경 범위·검증 기준·담당 전달 명령 |
 | [요구사항](docs/requirements.md) / [설계](docs/architecture.md) / [오케스트레이션](docs/orchestration.md) | 제품 목표와 확장 설계 |
