@@ -5,6 +5,7 @@ import { continueRequest, requestStatus } from '../orchestrator/requests.mjs';
 import { callOnce, ControlClient, PROTOCOL, PROTOCOL_VERSION } from '../code-agent-adapter/control.mjs';
 import { findHumanKey, interactionApiSupported, interactionClient, signInteraction } from '../code-agent-adapter/interactions.mjs';
 import { recordInteraction } from './history.mjs';
+import { preparationIssues } from '../orchestrator/preparation.mjs';
 
 const remoteUnavailable = '현재 code-agent 연동에는 전체 단계 요청 및 인증된 사람 응답 계약이 없습니다. 원래 code-agent 콘솔에서 처리하세요.';
 const values = v => Array.isArray(v) ? v : [];
@@ -106,6 +107,20 @@ export function createInteractions(store, { cliPath, readRemote, resolveHumanKey
         groupIds: m.scope.groups.map(g => g.id), taskNumber: m.taskNumber ?? null, workId: null,
         context: { missionRevision: m.revision, scope: m.scope }, kind: 'question', allowCustom: true, multiple: false,
         respondSupported: true, unavailableReason: null };
+      const request = store.get('target-request', m.id), issues = request ? preparationIssues(request) : [];
+      if (issues.length && ['waiting', 'failed'].includes(request.state)) {
+        const id = key('master', m.id, `preparation:${request.revision}`);
+        active.add(id);
+        save({ ...common, id, requestId: `preparation:${request.revision}`, handler: 'preparation', taskId: null, stage: 'setup',
+          context: { ...common.context, requestRevision: request.revision }, title: `${m.taskNumber ?? '요청'} · 프로젝트 실행 준비 필요`,
+          body: issues.map(i => `${store.get('project', i.projectId)?.name ?? i.projectId}: ${i.message}\n${i.guidance}`).join('\n\n') +
+            (launchOptions.dbPath ? `\n\n현재 대시보드 DB: ${launchOptions.dbPath}` : ''),
+          reason: '실행에 필요한 준비가 부족해 요청이 대기 중입니다. 다시 확인하면 근거·설치·연결을 재점검하고 같은 요청·TASK에서 이어갑니다.',
+          references: issues.map(i => `${i.projectId}:${i.code}`), options: [{ id: 'recheck', label: '준비 상태 다시 확인하고 기존 요청 이어 실행' }],
+          recommendedOptionIds: ['recheck'], recommendation: '준비 상태 다시 확인하고 기존 요청 이어 실행', allowCustom: false,
+          respondSupported: m.state !== 'paused', unavailableReason: m.state === 'paused' ? '일시 정지된 목표입니다. 먼저 재개하세요.' : null,
+          producerState: 'open', originAt: request.updatedAt });
+      }
       const run = m.analysisRunId ? store.get('analysis-run', m.analysisRunId) : null;
       if (run && m.planningHold && ['blocked', 'waiting-decision'].includes(m.state) && ['needs-context', 'needs-human'].includes(run.status)) {
         for (const issue of run.result.issues) {
@@ -268,7 +283,12 @@ export function createInteractions(store, { cliPath, readRemote, resolveHumanKey
       let command = store.put('interaction-command', { id: input.commandId, interactionId: item.id, missionId: item.missionId,
         inputHash, contentHash: item.contentHash, action: input.action, answer, state: 'received', createdAt: now(), resume: { state: 'not-requested' } });
       if (input.action === 'answer') {
-        if (item.handler === 'analysis') new Planner(store).clarify(item.missionId, { analysisId: item.runId, answers: [{ issueId: item.requestId, answer }] }, item.context.missionRevision, { inTransaction: true });
+        if (item.handler === 'preparation') {
+          const m = new Engine(store).checked(item.missionId, item.context.missionRevision), request = store.need('target-request', m.id);
+          requireThat(!['paused', 'succeeded', 'cancelled'].includes(m.state) && request.revision === item.context.requestRevision, 'stale-question', '요청 상태가 변경되었습니다. 다시 확인하세요.');
+          requireThat(input.resume === true, 'invalid-input', '준비 재점검은 기존 요청 재개로 제출하세요.');
+        }
+        else if (item.handler === 'analysis') new Planner(store).clarify(item.missionId, { analysisId: item.runId, answers: [{ issueId: item.requestId, answer }] }, item.context.missionRevision, { inTransaction: true });
         else {
           const engine = new Engine(store), m = engine.checked(item.missionId, item.context.missionRevision);
           const a = m.attempts.find(a => a.id === item.context.attemptId), run = store.need('recovery-run', item.runId);

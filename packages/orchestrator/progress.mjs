@@ -7,6 +7,7 @@ const actions = {
   'verification-pending': 'verify-live', verifying: 'wait-for-verification',
   'handoff-pending': 'handoff-live', ready: 'advance', waiting: 'wait-for-dependencies',
   analyzing: 'wait-for-analysis', planning: 'provide-plan',
+  'setup-required': 'prepare-project',
 };
 function processing(activity) {
   if (activity?.state !== 'processing' || activity.host !== hostname()) return false;
@@ -68,8 +69,9 @@ export function missionProgress(store, mission, tasks, events) {
       phase, runId: run?.id ?? null, lastProgressAt,
       nextAction: actions[status] ?? 'review-blockers', escalations: human.map(e => e.id) };
   });
+  const request = store.get('target-request', mission.id);
   const status = ['succeeded', 'simulation-complete'].includes(mission.state) ? 'completed' : mission.state === 'cancelled' ? 'cancelled' :
-    mission.state === 'paused' ? 'paused' : mission.planningHold ? mission.state === 'waiting-decision' ? 'human-input' : 'blocked' :
+    mission.state === 'paused' ? 'paused' : request?.state === 'failed' ? 'blocked' : request?.state === 'waiting' && request.preparation?.state === 'waiting' ? 'setup-required' : mission.planningHold ? mission.state === 'waiting-decision' ? 'human-input' : 'blocked' :
       mission.state === 'analyzing' ? 'analyzing' : !tasks.length ? 'planning' :
         ['human-input', 'blocked', 'approval-processing', 'running', 'approval-pending', 'verifying', 'verification-pending', 'handoff-pending', 'ready', 'waiting'].find(s => details.some(t => t.status === s)) ?? 'ready';
   return { status, nextAction: status === 'ready' && tasks.length && tasks.every(t => t.state === 'succeeded') ? 'verify-completion' : actions[status],

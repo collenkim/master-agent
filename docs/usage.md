@@ -52,10 +52,10 @@ master-agent request continue <요청ID> --revision <요청버전>
 
 실행 전 준비는 다음과 같다.
 
-1. 각 code-agent 프로젝트를 대시보드의 수동 등록 또는 `project add`로 등록하고 `project collect`로 정책·코드 근거를 수집한다. 수동 등록은 기존 폴더와 담당 업무를 선언하는 단계이며 code-agent 설치·권한 부여·근거 수집을 대신하지 않는다.
+1. 각 code-agent 프로젝트를 대시보드의 수동 등록 또는 `project add`로 등록한다. 요청 실행기는 최초 계획 전 표준 문서·빌드 설정을 수집하고, 해당 파일이 없으면 실제 최상위 폴더 목록을 관측한다. 상세 정책·코드는 `project collect`로 별도 지정할 수 있다. 수집 범위와 제한은 [AI 계획](ai-planning.md)을 따른다.
 2. 프로젝트 사용자가 code-agent master 연동과 위임 grant를 설정하고 `project control`로 연결한다. 자동 탐색은 설치 경로만 찾으며 제어 권한을 대신 부여하지 않는다.
 3. 요청의 완료 조건·작업 범위·검사 명령에 맞는 templates를 전달하거나 계획 후 `mission verification` / `mission verification-template`으로 보완한다.
-4. 그룹·단일 요청을 보내면 별도 실행기가 AI 계획·검증 계약 연결·개발·검증·인계를 진행한다. 준비가 부족하면 failed 또는 waiting에 사유를 남긴다. 분석 질문은 `mission clarify`, code-agent 질문은 기존 relay로 답한다. 보완 후 `request continue`로 동일 목표를 이어간다.
+4. 그룹·단일 요청을 보내면 별도 실행기가 근거·설치·제어 연결을 점검하고 AI 계획·검증 계약 연결·개발·검증·인계를 진행한다. 준비가 부족하면 `waiting`과 `실행 준비 필요`로 표시하며 공통 요청함에서 대상별 조치·보류·재점검을 제공한다. 초기 준비 오류로 실패했던 요청도 같은 요청함에 연결한다. 보완 후 요청함의 재점검 또는 `request continue`로 동일 목표를 이어간다. 업무 분석 질문은 공통 요청함 또는 `mission clarify`, code-agent 질문은 공통 요청함 또는 기존 relay로 답한다.
 
 대시보드 종료는 접수한 작업을 중지하지 않는다. 실행 중인 작업의 중지는 기존 `mission stop`·`mission pause`를 사용한다. 실행기 로그는 DB 디렉터리의 request-logs에 저장한다. 프로세스가 사라진 요청은 interrupted로 표시하며 자동 재접수하지 않는다. 이어 실행도 기존 그래프 소유권과 프로젝트 잠금을 검사한다.
 

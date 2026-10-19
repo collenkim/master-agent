@@ -166,7 +166,7 @@ function open(id) {
   $('interaction-limit').textContent = opened.unavailableReason ?? '답변 제출 후 기존 목표와 TASK 번호로 재분석합니다. 다른 질문이 남아 있으면 답변을 기다립니다.';
   $('interaction-history').innerHTML = history(opened); $('interaction-error').textContent = '';
   $('interaction-stale').textContent = draft && !compatible ? `질문이 변경되어 이전 초안을 자동 제출하지 않습니다. 이전 직접 입력: ${draft.custom || '(선택 답변)'}` : '';
-  $('interaction-submit').textContent = structured ? '선택 내용 명시적 제출' : '답변 제출 · 기존 요청 재개';
+  $('interaction-submit').textContent = opened.handler === 'preparation' ? '준비 다시 확인 · 기존 요청 재개' : structured ? '선택 내용 명시적 제출' : '답변 제출 · 기존 요청 재개';
   $('interaction-submit').disabled = !opened.respondSupported || !['open', 'deferred'].includes(opened.state) || structured && opened.state === 'deferred';
   $('interaction-defer').textContent = structured && opened.state === 'deferred' ? '다시 열기' : '보류';
   $('interaction-defer').disabled = !['open', 'deferred'].includes(opened.state);

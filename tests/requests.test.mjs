@@ -106,13 +106,14 @@ test('worker claim excludes duplicates and failure/continue preserve the same mi
   assert.equal(requestStatus({ state: 'running', pid: 999999999, host: (await import('node:os')).hostname() }).state, 'interrupted');
 });
 
-test('detached CLI worker persists failures after launch, without a browser connection', async t => {
+test('detached CLI worker preserves installation problems as preparation waits without a browser connection', async t => {
   const { store, fixture, db, root } = setup(t);
   const { request } = acceptRequest(store, { targetType: 'project', targetId: fixture.projects[0].id, goal: '작업' });
   await launchRequest(store, request.id, { dbPath: db, cliPath: join(root, 'missing-code-agent.js') });
   let record;
-  for (let i = 0; i < 100; i++) { record = store.need('target-request', request.id); if (record.state === 'failed') break; await delay(50); }
-  assert.equal(record.state, 'failed'); assert.equal(record.error.code, 'invalid-cli');
+  for (let i = 0; i < 100; i++) { record = store.need('target-request', request.id); if (record.state === 'waiting') break; await delay(50); }
+  assert.equal(record.state, 'waiting'); assert.equal(record.error, null);
+  assert.equal(record.preparation.issues[0].code, 'invalid-cli');
   await delay(100);
 });
 

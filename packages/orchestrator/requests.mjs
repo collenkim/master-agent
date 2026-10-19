@@ -12,7 +12,7 @@ import { Planner } from '../reasoning/planner.mjs';
 import { Recovery } from './recovery.mjs';
 import { VerificationTemplates } from '../verification/templates.mjs';
 import { findCodeAgent } from '../code-agent-adapter/discovery.mjs';
-import { observeProject } from '../code-agent-adapter/observe.mjs';
+import { prepareRequest, preparationCodes } from './preparation.mjs';
 import { requireThat, string, now } from '../domain/contracts.mjs';
 
 function alive(pid, host) {
@@ -65,7 +65,7 @@ export function continueRequest(store, id, expectedRevision, { inTransaction = f
 }
 
 /** A durable worker survives the dashboard closing. It uses the existing LangGraph and gates. */
-export async function runRequest(store, id, { cliPath, host, provider, workflow } = {}) {
+export async function runRequest(store, id, { cliPath, host, provider, workflow, prepare = prepareRequest } = {}) {
   const owner = randomUUID();
   const record = store.transaction(() => {
     const current = store.need('target-request', id);
@@ -77,17 +77,26 @@ export async function runRequest(store, id, { cliPath, host, provider, workflow 
     requireThat(current.owner === owner, 'request-busy', '요청 실행 소유자가 변경되었습니다.');
     return store.put('target-request', { ...current, ...patch, updatedAt: now() }, current.revision);
   });
+  const recordPreparation = preparation => {
+    store.transaction(() => {
+      const engine = new Engine(store), m = store.need('mission', id);
+      m.preparation = preparation;
+      if (preparation.state === 'waiting') m.reason = preparation.issues.map(i => `${i.projectName ?? i.projectId}: ${i.message}`).join('\n');
+      else if (!m.plans.length && !m.planningHold) m.reason = '준비 점검을 마쳤습니다. 실행 계획을 생성합니다.';
+      engine.save(m, 'request-preparation-checked', { state: preparation.state, codes: preparation.issues.map(i => i.code) });
+    });
+    return finish({ preparation, ...(preparation.state === 'waiting' ? { state: 'waiting', blockers: preparation.blockers ?? preparation.issues.map(i => `${i.projectId}:${i.code}`), error: null } : { error: null, blockers: [] }) });
+  };
   try {
     if (!record.templatesRegistered) {
       for (const template of record.templates) new VerificationTemplates(store).register(id, template, store.need('mission', id).revision);
       finish({ templatesRegistered: true });
     }
     const executionHost = host ?? new ControlHost(store, { cliPath: findCodeAgent(cliPath) });
-    if (!host && !store.need('mission', id).plans.length) {
-      for (const projectId of record.projectIds) {
-        const observation = await observeProject(store, projectId, { cliPath: executionHost.cliPath });
-        requireThat(observation.status === 'observed', observation.status, `${projectId}: ${observation.error ?? 'code-agent 상태를 확인할 수 없습니다.'}`);
-      }
+    if (!host) {
+      const preparation = await prepare(store, record, { cliPath: executionHost.cliPath });
+      const saved = recordPreparation(preparation);
+      if (preparation.state === 'waiting') return saved;
     }
     const reasoning = provider ?? new CliProvider({ provider: record.provider, model: record.model ?? undefined });
     for (const answer of store.need('mission', id).recoveryAnswers ?? []) {
@@ -124,9 +133,18 @@ export async function runRequest(store, id, { cliPath, host, provider, workflow 
     }
     const result = await (workflow ?? new LiveWorkflow(store)).run(id, executionHost, reasoning);
     const mission = store.need('mission', id);
+    const verificationIssues = (result.blockers ?? []).filter(code => code.endsWith(':missing-verification-recipe')).map(code => {
+      const taskId = code.slice(0, -':missing-verification-recipe'.length);
+      const task = mission.plans.at(-1)?.proposal.tasks.find(t => t.id === taskId);
+      return { projectId: task?.projectId ?? record.projectIds[0], code: 'missing-verification-recipe', message: `${taskId}: 독립 검증 계약이 필요합니다.`,
+        guidance: `완료 조건·파일 범위·검사 명령을 지정한 검증 계약을 등록하세요.\nmaster-agent mission verification ${id} <검증 계약 JSON 파일> --revision <최신 목표 버전> --db <현재 대시보드 DB>\n기존 템플릿은 mission verification-template으로 등록할 수 있습니다. 등록 후 같은 요청을 재점검하세요.` };
+    });
+    if (verificationIssues.length) return recordPreparation({ state: 'waiting', checkedAt: now(), checks: [], issues: verificationIssues, blockers: result.blockers });
     return finish({ state: mission.state === 'succeeded' ? 'completed' : mission.state === 'cancelled' ? 'cancelled' : 'waiting',
       blockers: result.blockers ?? [], error: null });
   } catch (error) {
+    if (!host && preparationCodes.has(error.code)) return recordPreparation({ checkedAt: now(), state: 'waiting', checks: [], issues: [{
+      projectId: record.projectIds[0], code: error.code, message: error.message, guidance: '설치·근거·제어 연결을 확인한 뒤 같은 요청에서 준비 상태를 다시 확인하세요.' }] });
     return finish({ state: 'failed', error: { code: error.code ?? 'internal-error', message: error.message }, blockers: [error.code ?? 'internal-error'] });
   }
 }

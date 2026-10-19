@@ -7,6 +7,7 @@ import { openBrowser } from './browser.mjs';
 import { planningSetup, blockedAnswer } from '../tests/planning-fixture.mjs';
 import { createInteractions } from '../packages/dashboard/interactions.mjs';
 import { startDashboard } from '../packages/dashboard/server.mjs';
+import { acceptRequest } from '../packages/orchestrator/requests.mjs';
 
 mkdirSync(resolve('.master-agent'), { recursive: true });
 const artifacts = mkdtempSync(resolve('.master-agent/interactions-browser-')), cleanup = [];
@@ -75,11 +76,30 @@ try {
   writeFileSync(join(artifacts, 'mobile-inbox.png'), Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
   await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1080, deviceScaleFactor: 1, mobile: false });
   writeFileSync(join(artifacts, 'desktop-inbox.png'), Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+  // An older failed request must become actionable without creating a replacement TASK.
+  const preparation = acceptRequest(f.store, { targetType: 'project', targetId: project.id, goal: '새 서비스 준비', taskNumber: 'SETUP-1' }).request;
+  f.store.put('target-request', { ...preparation, state: 'failed', error: { code: 'missing-knowledge', message: '먼저 근거를 수집하세요.' } }, preparation.revision);
+  await evaluate(`document.getElementById('interaction-source').value='master'; document.getElementById('interaction-state').value='pending'; document.getElementById('interaction-search').value='SETUP-1'; document.getElementById('refresh').click()`);
+  await waitFor(`document.getElementById('interaction-items').textContent.includes('프로젝트 실행 준비 필요')`);
+  assert.ok((await evaluate('document.getElementById("projects").textContent')).includes('먼저 근거를 수집하세요.'));
+  await evaluate(`document.querySelector('[data-interaction]').click()`);
+  assert.equal(await evaluate('document.querySelector("#interaction-options input:checked").value'), 'recheck');
+  assert.equal(await evaluate('document.getElementById("interaction-custom-label").hidden'), true);
+  assert.equal(launches, 1);
+  await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  assert.equal(await evaluate(`document.getElementById('interaction-dialog').scrollWidth <= document.getElementById('interaction-dialog').clientWidth`), true);
+  writeFileSync(join(artifacts, 'mobile-preparation.png'), Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+  await evaluate(`document.getElementById('interaction-form').requestSubmit()`);
+  await waitFor(`document.getElementById('interaction-error').textContent.includes('적용')`);
+  assert.equal(launches, 2);
+  assert.equal(f.store.need('target-request', preparation.id).state, 'queued');
+  assert.equal(f.store.need('target-request', preparation.id).taskNumber, 'SETUP-1');
+  await evaluate(`document.getElementById('interaction-close').click()`);
   await dashboard.close(); await evaluate(`document.getElementById('refresh').click()`);
   await waitFor(`document.getElementById('connection').textContent === '연결 끊김'`);
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ passed: true, producer: 'synthetic', actualCodeAgentResponses: false,
-    checks: ['recommendation-no-auto-submit', 'draft-poll-reopen', 'defer', 'explicit-submit', 'wait-other-answers', 'single-launch', 'stale-view', 'full-approval-unchecked', 'unsupported-disabled', 'XSS', 'mobile', 'disconnect'], artifacts }));
+    checks: ['recommendation-no-auto-submit', 'draft-poll-reopen', 'defer', 'explicit-submit', 'wait-other-answers', 'single-launch', 'stale-view', 'full-approval-unchecked', 'unsupported-disabled', 'XSS', 'mobile', 'preparation-legacy-failure', 'preparation-default-no-auto-submit', 'preparation-same-task-recheck', 'disconnect'], artifacts }));
 } finally {
   await browser?.close();
   await dashboard.close();

@@ -12,6 +12,7 @@ const labels = {
   'no-work': '현재 작업 없음', 'needs-human': '사람 판단 필요', 'ownership-conflict': '소유권 충돌',
   'replan-required': '재계획 필요', 'reapproval-required': '재승인 필요', 'limit-reached': '한도 도달',
   'stale-request': '요청 상태 변경', wait: '대기',
+  'setup-required': '실행 준비 필요',
   queued: '접수·시작 대기', failed: '실행 오류', interrupted: '실행기 중단',
   skipped: '건너뜀', 'needs-attention': '결과 확인 필요',
 };
@@ -40,6 +41,7 @@ function render() {
     <div class="chips">${p.resume ? badge(p.resume.code) : ''}${p.observation.stale ? '<span class="badge warning">오래됨·미조회</span>' : ''}${p.observation.historical && p.work ? '<span class="badge warning">이전 관측</span>' : ''}</div>
     <p class="muted">관측 ${escape(date(p.observation.observedAt))}<br>조회 시도 ${escape(date(p.observation.checkedAt))}</p>
     ${p.observation.error ? `<p class="error">${escape(p.observation.error)}</p>` : ''}
+    ${(p.requests ?? []).filter(r => r.state === 'failed' || r.issues.length).map(r => `<p class="error">${escape(r.taskNumber ?? r.id)} · ${escape(r.error || '실행 준비 필요 — 공통 요청함에서 확인하세요.')}<small>${r.issues.map(i => escape(i.message)).join('<br>')}</small></p>`).join('')}
     <div class="waiting"><span>승인 대기 <b>${p.consents.length}</b></span><span>답변 대기 <b>${p.questions.length}</b></span><span>임대 <b>${escape(p.lease || '미확인')}</b></span></div>
     <details data-id="${escape(p.id)}" ${openProjects.has(p.id) ? 'open' : ''}><summary>작업·판단 상세</summary>
       <p>프로젝트 ID: ${escape(p.id)}</p><p>제어 연결: ${p.control ? `${escape(p.control.controller)} (등록 당시 ${p.control.owner ? '소유자' : '관찰자'})` : '없음'}</p>
@@ -58,6 +60,7 @@ function render() {
     <summary><span>${escape(m.goal)} <small>${m.mode === 'simulation' ? '모의 실행' : '실제 실행'}</small></span>${badge(m.status)}</summary>
     <p class="muted">${escape(m.id)} · 마지막 진행 ${escape(date(m.lastProgressAt))}</p>
     ${m.error ? `<p class="error">${escape(m.error)}</p>` : ''}
+    ${['blocked', 'setup-required'].includes(m.status) ? `<p class="error">${escape(m.reason)}</p>` : ''}
     <div class="table-wrap"><table><thead><tr><th>작업 / 프로젝트</th><th>상태</th><th>단계</th><th>사유 / 다음 행동</th><th>마지막 진행</th></tr></thead><tbody>${m.tasks.map(t => `<tr><td>${escape(t.taskId)}<small>${escape(t.projectId)}</small></td><td>${badge(t.status)}</td><td>${escape(t.phase ?? '—')}</td><td>${escape(t.reason)}<small>${escape(t.nextAction)}</small></td><td>${escape(date(t.lastProgressAt))}</td></tr>`).join('')}</tbody></table></div>
     <h3>최근 이벤트</h3><ol class="events">${m.events.map(e => `<li><time>${escape(date(e.at))}</time> ${escape(e.type)} ${escape(e.taskId)}</li>`).join('') || '<li>기록 없음</li>'}</ol>
   </details>`).join('') || '<div class="empty">등록된 목표가 없습니다.</div>';
@@ -126,6 +129,7 @@ function renderManagement() {
     <p class="muted">${escape(r.id)} · ${escape(date(r.updatedAt))}</p>
     ${r.state === 'waiting' ? `<p>${escape(r.reason)}</p>` : ''}
     ${r.error ? `<p class="error">${escape(r.error.message)}</p>` : ''}${r.blockers.length ? `<p>${escape(r.blockers.join(' · '))}</p>` : ''}
+    ${r.preparation?.state === 'waiting' ? '<p>공통 요청함에서 필요한 준비와 재점검 방법을 확인하세요.</p>' : ''}
     ${['waiting', 'failed', 'interrupted', 'queued'].includes(r.state) ? `<button type="button" class="continue-request" data-id="${escape(r.id)}">보완 후 이어 실행</button>` : ''}</article>`).join('') || '<div class="empty">그룹 또는 프로젝트에 유지보수 요청을 보내세요.</div>';
 }
 function openGroup(id) {

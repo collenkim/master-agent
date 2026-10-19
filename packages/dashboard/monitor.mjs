@@ -3,6 +3,7 @@ import { observeProject } from '../code-agent-adapter/observe.mjs';
 import { requestStatus } from '../orchestrator/requests.mjs';
 import { Catalog } from '../catalog/catalog.mjs';
 import { stageDetails } from './history.mjs';
+import { preparationIssues } from '../orchestrator/preparation.mjs';
 
 const text = value => typeof value === 'string' ? value.slice(0, 2000) : '';
 const list = value => Array.isArray(value) ? value : [];
@@ -14,6 +15,7 @@ export function dashboardSnapshot(store, { live = false, refreshing = false, int
     try {
       const detail = engine.describe(mission.id);
       return { id: mission.id, goal: text(mission.goal), mode: mission.mode, state: mission.state, ...detail.progress,
+        reason: text(store.get('target-request', mission.id)?.error?.message ?? mission.reason),
         tasks: detail.progress.tasks.map(task => ({ ...task, goal: text(detail.taskDetails.find(t => t.id === task.taskId)?.goal) })),
         events: detail.events.slice(-12).reverse().map(e => ({ sequence: e.sequence, at: e.at, type: e.eventType ?? e.type, taskId: e.taskId ?? null })) };
     } catch (error) {
@@ -31,6 +33,9 @@ export function dashboardSnapshot(store, { live = false, refreshing = false, int
     const observationStatus = failure ? 'process-error' : observation?.status ?? 'unobserved';
     const binding = store.get('control-binding', project.id);
     const tasks = missions.flatMap(m => m.tasks.filter(t => t.projectId === project.id).map(t => ({ ...t, missionId: m.id, missionGoal: m.goal, mode: m.mode })));
+    const pendingRequests = store.list('target-request').filter(r => r.projectIds.includes(project.id) && !['completed', 'cancelled'].includes(r.state))
+      .map(r => ({ id: r.id, taskNumber: r.taskNumber ?? null, state: r.state, progress: missions.find(m => m.id === r.id)?.status,
+        error: text(r.error?.message), issues: preparationIssues(r).filter(i => i.projectId === project.id) }));
     return { id: project.id, revision: project.revision, name: text(project.name), path: project.path, domains: project.domains,
       observation: { status: observationStatus, stale, observedAt, checkedAt: failure?.at ?? observation?.recordedAt ?? null,
         historical: observationStatus !== 'observed', error: text(failure?.message ?? observation?.error) },
@@ -45,17 +50,18 @@ export function dashboardSnapshot(store, { live = false, refreshing = false, int
       findings: state?.findings ? { open: state.findings.open, blocking: state.findings.blocking, humanDecision: state.findings.humanDecision } : null,
       control: binding ? { controller: text(binding.controller), owner: binding.owner, boundAt: binding.boundAt } : null,
       lock: store.lock(project.id) ? { missionId: store.lock(project.id).mission_id, attemptId: store.lock(project.id).attempt_id } : null,
-      tasks,
+      tasks, requests: pendingRequests,
       attention: Boolean(list(state?.consents?.open).length || list(state?.questions?.unanswered).length || list(state?.questions?.unverified).length ||
         state?.findings?.blocking || state?.findings?.humanDecision ||
         ['needs-human', 'ownership-conflict', 'replan-required', 'reapproval-required', 'limit-reached'].includes(state?.resume?.code) ||
-        tasks.some(t => ['human-input', 'approval-pending', 'approval-processing', 'blocked'].includes(t.status))) };
+        tasks.some(t => ['human-input', 'approval-pending', 'approval-processing', 'blocked'].includes(t.status)) ||
+        pendingRequests.some(r => r.state === 'failed' || r.issues.length)) };
   });
   const groups = new Catalog(store).groups();
   const requests = store.list('target-request').map(requestStatus).map(r => ({ id: r.id, revision: r.revision, targetType: r.targetType, targetId: r.targetId,
     goal: text(r.goal), taskNumber: r.taskNumber ?? null, projectIds: r.projectIds, groupRevision: r.groupRevision, state: r.state, provider: r.provider,
-    progress: missions.find(m => m.id === r.id)?.status ?? null, reason: text(store.get('mission', r.id)?.reason),
-    createdAt: r.createdAt, updatedAt: r.updatedAt, blockers: r.blockers, error: r.error }));
+    progress: missions.find(m => m.id === r.id)?.status ?? null, reason: text(r.error?.message ?? store.get('mission', r.id)?.reason),
+    createdAt: r.createdAt, updatedAt: r.updatedAt, blockers: r.blockers, error: r.error, preparation: r.preparation ?? null }));
   return { generatedAt: new Date(now).toISOString(), live, refreshing, intervalMs, projects, missions, groups, requests,
     counts: { projects: projects.length, activeMissions: missions.filter(m => !['completed', 'cancelled'].includes(m.status)).length,
       attention: projects.filter(p => p.attention).length,
