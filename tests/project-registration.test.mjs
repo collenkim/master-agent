@@ -103,6 +103,8 @@ registrationTest('stale group edits and unselected drafts cannot register orphan
 
 registrationTest('candidate list requires dashboard authentication, ignores client scan paths and never registers automatically', async ({ root, store, post, draft }) => {
   const project = draft('installed');
+  const initial = await post('/api/project-candidates', {});
+  assert.equal(initial.body.projects.some(p => p.path === project.path), false);
   mkdirSync(join(project.path, '.code-agent')); writeFileSync(join(project.path, '.code-agent/version'), 'test');
   const before = store.list('project');
   assert.equal((await post('/api/project-candidates', {}, { 'X-Master-Token': '' })).status, 403);

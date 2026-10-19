@@ -67,6 +67,7 @@ async function refresh() {
     const response = await fetch('/api/overview', { signal: AbortSignal.timeout(10000) });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     latest = await response.json(); render();
+    if ($('project-dialog').open) void loadCandidates();
     $('connection').textContent = `연결됨 · ${date(latest.generatedAt)}`;
     $('notice').className = 'notice';
     $('notice').textContent = latest.live ? `설치된 code-agent 연결됨 · 조회 완료 후 ${latest.intervalMs / 1000}초 간격${latest.refreshing ? ' · 조회 중' : ''}` :
@@ -94,11 +95,11 @@ function renderCandidates() {
 }
 async function loadCandidates() {
   if (candidateLoading) return;
-  candidateLoading = true; candidates = []; $('candidate-refresh').disabled = true; renderCandidates();
+  candidateLoading = true; $('candidate-refresh').disabled = true; renderCandidates();
   try {
     const result = await post('/api/project-candidates', {});
     candidates = result.projects;
-    candidateInfo = result.truncated ? ' · 조회 한도에 도달해 일부만 표시합니다. 없는 경로는 직접 입력하세요.' : ' · 알려진 작업 위치의 설치 표시 기준';
+    candidateInfo = result.truncated ? ' · 조회 한도에 도달해 일부만 표시합니다. 없는 경로는 직접 입력하세요.' : ' · 알려진 작업 위치의 설치 표시 기준 · 자동 갱신';
   } catch (error) { candidateInfo = ` · 조회 실패: ${error.message}. 경로를 직접 입력할 수 있습니다.`; }
   finally { candidateLoading = false; $('candidate-refresh').disabled = false; renderCandidates(); }
 }

@@ -10,10 +10,14 @@ import { acceptRequest, launchRequest, continueRequest } from '../orchestrator/r
 import { createMonitor } from './monitor.mjs';
 import { projectCandidates } from './project-candidates.mjs';
 
-export async function startDashboard({ dbPath, port = 4310, cliPath, intervalMs = 5000, observe = true, launch = launchRequest, candidateOptions = {} } = {}) {
+export function validateDashboardOptions({ port = 4310, cliPath, intervalMs = 5000, observe = true } = {}) {
   requireThat(Number.isInteger(port) && port >= 0 && port <= 65535, 'usage', '--port는 0~65535 정수입니다.');
   requireThat(Number.isInteger(intervalMs) && intervalMs >= 1000 && intervalMs <= 3600000, 'usage', '--refresh-ms는 1000~3600000 정수입니다.');
-  cliPath = observe ? findCodeAgent(cliPath, { required: false }) : null;
+  return observe ? findCodeAgent(cliPath, { required: false }) : null;
+}
+
+export async function startDashboard({ dbPath, port = 4310, cliPath, intervalMs = 5000, observe = true, launch = launchRequest, candidateOptions = {}, management } = {}) {
+  cliPath = validateDashboardOptions({ port, cliPath, intervalMs, observe });
   const assets = new Map([
     ['/', ['text/html; charset=utf-8', 'index.html']],
     ['/app.mjs', ['text/javascript; charset=utf-8', 'app.mjs']],
@@ -36,7 +40,10 @@ export async function startDashboard({ dbPath, port = 4310, cliPath, intervalMs 
     try {
       const path = new URL(request.url, origin).pathname;
       if (request.method === 'POST') {
-        requireThat(request.headers.origin === origin && request.headers['x-master-token'] === token, 'forbidden', '이 대시보드에서 보낸 요청만 처리합니다.');
+        const control = path === '/api/dashboard-control';
+        requireThat(request.headers.origin === origin && (control
+          ? management && request.headers['x-master-control'] === management.token
+          : request.headers['x-master-token'] === token), 'forbidden', '이 대시보드에서 보낸 요청만 처리합니다.');
         requireThat(request.headers['content-type']?.split(';')[0] === 'application/json', 'invalid-input', 'JSON 요청이 필요합니다.');
         let body = '';
         request.setEncoding('utf8');
@@ -44,6 +51,12 @@ export async function startDashboard({ dbPath, port = 4310, cliPath, intervalMs 
         let input;
         try { input = JSON.parse(body); } catch { requireThat(false, 'invalid-input', 'JSON을 읽을 수 없습니다.'); }
         requireThat(input && typeof input === 'object' && !Array.isArray(input), 'invalid-input', '객체가 필요합니다.');
+        if (control) {
+          requireThat(input.id === management.id && ['status', 'stop'].includes(input.action), 'invalid-input', '서버 식별자와 제어 동작을 확인하세요.');
+          send(input.action === 'stop' ? 202 : 200, JSON.stringify({ id: management.id, state: input.action === 'stop' ? 'stopping' : 'running' }));
+          if (input.action === 'stop') setImmediate(management.stop);
+          return;
+        }
         if (path === '/api/project-candidates') {
           candidateScan ??= projectCandidates(store.list('project'), { ...candidateOptions, cliPath }).finally(() => { candidateScan = null; });
           return send(200, JSON.stringify(await candidateScan));

@@ -68,13 +68,19 @@ master-agent mission list --db .master-agent/demo.db
 
 ```powershell
 master-agent dashboard --db C:\workspace\control\master.db
+
+# 다른 터미널에서 같은 DB의 서버 확인·재시작·종료
+master-agent dashboard status --db C:\workspace\control\master.db
+master-agent dashboard restart --db C:\workspace\control\master.db
+master-agent dashboard stop --db C:\workspace\control\master.db
 ```
 
 출력된 `http://127.0.0.1:4310`을 브라우저에서 엽니다. **설치된 code-agent는 자동 탐색**합니다. PATH의 실행 파일·npm 전역 설치와 링크를 확인하며 Windows npm 설치 경로도 확인합니다. 별도 빌드를 사용할 때만 `CODE_AGENT_CLI` 또는 `--cli`를 지정합니다. `--port <번호>`로 포트를 바꾸고, Ctrl+C로 대시보드 서버를 종료합니다. `--refresh-ms 5000`은 전체 조회가 끝난 뒤 다음 조회까지의 간격입니다.
 
-대시보드를 사용하는 동안 실행 터미널을 유지해야 합니다. `Failed to fetch`가 표시되면 서버 실행 여부와 접속 포트를 확인하고 **기존과 같은 DB**로 다시 실행하세요. 자동 시작 서비스는 제공하지 않습니다. 코드 변경 후에는 서버를 재시작하고 화면을 새로고침합니다. [연결 오류 해결](docs/ui.md#실행과-연결)에 증상별 확인 방법이 있습니다.
+`restart`는 기존 서버를 종료하고 **같은 DB·포트·조회 설정**으로 새 프로세스에서 실행합니다. 서버가 꺼져 있어도 마지막 설정으로 시작합니다. 시작·재시작 명령을 실행한 터미널은 유지해야 하며 자동 시작 서비스는 제공하지 않습니다. 코드 변경 후 `restart`를 실행하고 화면을 새로고침하세요. 이 명령이 없던 이전 버전으로 실행 중인 서버는 최초 한 번 기존 터미널에서 Ctrl+C로 종료해야 합니다. [연결 오류 해결](docs/ui.md#실행과-연결)에 상태 확인과 복구 방법이 있습니다.
 
 - 같은 DB에 등록된 **모든 프로젝트**를 조회합니다. master 목표에 연결되지 않은 독립 code-agent 작업도 포함합니다. 등록 창에서는 알려진 작업 위치의 code-agent 설치 프로젝트를 찾아 선택할 수 있습니다.
+- 등록 창을 열어 둔 동안 설치 프로젝트 목록을 자동 갱신합니다. 서버 실행 후 새 프로젝트에 code-agent를 설치해도 다음 조회에 감지하며 입력 중인 내용은 유지합니다. 후보 선택·등록 후 프로젝트 상태 관제도 자동으로 포함됩니다.
 - 프로젝트별 작업·단계·승인·질문 대기·리뷰 차단·임대 상태, 목표별 작업 진행과 최근 이벤트를 표시합니다. 검색과 판단 필요·조회 오류 필터를 제공합니다.
 - 설치된 code-agent의 `status --json`을 자동 조회합니다. 설치를 찾지 못하거나 `--saved`로 실행하면 저장된 관측과 master 기록을 표시합니다. 조회 실패·오래된 관측·이전 작업을 구분하고 프로세스 생존을 추정하지 않습니다.
 - 프로젝트 수동 등록, 서비스 그룹 생성·구성원 편집, 그룹·단일 프로젝트 요청과 기존 요청 이어 실행을 화면에서 제공합니다. code-agent 제어 토큰과 원본 모델 입력은 화면 API에 보내지 않습니다. 실행 중지·승인·답변 전달은 기존 CLI를 사용합니다.

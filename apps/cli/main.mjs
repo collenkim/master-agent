@@ -34,6 +34,9 @@ const help = `master-agent — 근거 수집·AI 계획 생성·개발 호스트
 code-agent는 설치된 명령에서 자동 탐색합니다. --cli는 별도 빌드 지정용입니다.
   dashboard [--port 4310] [--cli <code-agent경로>] [--refresh-ms 5000]
                                       등록 프로젝트·목표의 로컬 관제·그룹·요청 화면; 설치된 code-agent 자동 탐색
+  dashboard restart                   같은 DB의 서버를 종료하고 이전 포트·조회 설정으로 다시 실행
+  dashboard status                    같은 DB의 대시보드 실행 상태·URL 조회
+  dashboard stop                      대시보드만 종료 (접수한 개발 요청은 유지)
   demo                                세 프로젝트 고정 계획 모의 실행
   project add <JSON>                   프로젝트 도메인·근거·경로 등록
   project list                        프로젝트·잠금·마지막 관측 조회
@@ -125,14 +128,16 @@ async function main() {
   } });
   if (values.help || !args.length || args[0] === 'help') { console.log(help); return; }
   if (args[0] === 'dashboard') {
-    requireThat(args.length === 1, 'usage', help);
-    const { startDashboard } = await import('../../packages/dashboard/server.mjs');
-    const dashboard = await startDashboard({ dbPath: resolve(values.db ?? '.master-agent/master.db'), cliPath: values.cli,
-      observe: !values.saved,
-      port: values.port === undefined ? 4310 : Number(values.port), intervalMs: values['refresh-ms'] === undefined ? 5000 : Number(values['refresh-ms']) });
-    console.log(JSON.stringify({ url: dashboard.url, db: resolve(values.db ?? '.master-agent/master.db'), mode: dashboard.cliPath ? 'live-observation' : 'saved-observation', codeAgent: dashboard.cliPath }));
-    const stop = () => { dashboard.close().catch(error => { console.error(error.message); process.exitCode = 1; }); };
-    process.once('SIGINT', stop); process.once('SIGTERM', stop);
+    requireThat(args.length <= 2, 'usage', help);
+    const { dashboardCommand } = await import('../../packages/dashboard/lifecycle.mjs');
+    const dashboard = await dashboardCommand(args[1] ?? 'start', { dbPath: resolve(values.db ?? '.master-agent/master.db'), cliPath: values.cli,
+      observe: values.saved === undefined ? undefined : !values.saved,
+      port: values.port === undefined ? undefined : Number(values.port), intervalMs: values['refresh-ms'] === undefined ? undefined : Number(values['refresh-ms']) });
+    console.log(JSON.stringify(dashboard.info));
+    if (dashboard.close) {
+      const stop = () => { dashboard.close().catch(error => { console.error(error.message); process.exitCode = 1; }); };
+      process.once('SIGINT', stop); process.once('SIGTERM', stop);
+    }
     return;
   }
   const [category, action, id, file, extra] = args;
