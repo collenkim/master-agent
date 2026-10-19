@@ -33,7 +33,7 @@ function render() {
   const openProjects = new Set([...document.querySelectorAll('#projects details[open]')].map(e => e.dataset.id));
   $('projects').innerHTML = visible.map(p => `<article class="project">
     <div class="card-head"><h3>${escape(p.name || p.id)}</h3>${badge(p.observation.status)}</div>
-    <div class="filters"><button type="button" class="project-request" data-id="${escape(p.id)}">이 프로젝트에 요청</button><button type="button" class="delete-project" data-id="${escape(p.id)}">프로젝트 삭제</button></div>
+    <div class="card-actions"><button type="button" class="project-request" data-id="${escape(p.id)}">이 프로젝트에 요청</button><button type="button" class="delete-project danger-button" data-id="${escape(p.id)}">프로젝트 삭제</button></div>
     <p class="path">${escape(p.path)}</p>
     <div class="work"><span class="muted">${p.observation.historical || p.observation.stale ? '마지막 관측 작업' : '현재 관측 작업'}</span><strong>${escape(p.work?.id ?? (p.observation.status === 'observed' ? '작업 없음' : '확인되지 않음'))}</strong><span>${escape(p.work?.phase ?? '—')}</span></div>
     <div class="chips">${p.resume ? badge(p.resume.code) : ''}${p.observation.stale ? '<span class="badge warning">오래됨·미조회</span>' : ''}${p.observation.historical && p.work ? '<span class="badge warning">이전 관측</span>' : ''}</div>
@@ -85,7 +85,7 @@ $('search').addEventListener('input', render); $('filter').addEventListener('cha
 $('refresh').addEventListener('click', refresh);
 void refresh();
 
-let editingGroup = null, deletingProject = null, requestKey, requestGroupRevision;
+let editingGroup = null, deletingProject = null, deletingGroup = null, requestKey, requestGroupRevision;
 let groupDrafts = [], projectInGroup = false, editingDraftId = null, projectDraftId;
 let candidates = [], candidateLoading = false, candidateInfo = '';
 function renderCandidates() {
@@ -114,9 +114,9 @@ async function post(path, body) {
   return result;
 }
 function renderManagement() {
-  $('groups').innerHTML = latest.groups.map(g => `<article class="project"><div class="card-head"><h3>${escape(g.name)}</h3><span class="badge">${g.projectIds.length}개 프로젝트</span></div>
+  $('groups').innerHTML = latest.groups.map(g => `<article class="project group-card"><div class="card-head"><h3>${escape(g.name)}</h3><span class="badge">${g.projectIds.length}개 프로젝트</span></div>
     <p>${escape(g.description || '서비스 범위 설명 없음')}</p><p class="muted">${escape(g.projectIds.map(id => latest.projects.find(p => p.id === id)?.name ?? id).join(' · ') || '소속 프로젝트 없음')}</p>
-    <div class="filters"><button type="button" class="edit-group" data-id="${escape(g.id)}">구성 편집</button><button type="button" class="group-request" data-id="${escape(g.id)}" ${g.projectIds.length ? '' : 'disabled'}>그룹에 요청</button></div></article>`).join('') || '<div class="empty">서비스 그룹을 만들고 유지보수할 프로젝트를 선택하세요.</div>';
+    <div class="card-actions"><button type="button" class="edit-group" data-id="${escape(g.id)}">구성 편집</button><button type="button" class="group-request" data-id="${escape(g.id)}" ${g.projectIds.length ? '' : 'disabled'}>그룹에 요청</button><button type="button" class="delete-group danger-button" data-id="${escape(g.id)}">그룹 삭제</button></div></article>`).join('') || '<div class="empty">서비스 그룹을 만들고 유지보수할 프로젝트를 선택하세요.</div>';
   $('requests').innerHTML = [...latest.requests].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(r => `<article class="mission"><div class="card-head"><h3>${escape(r.goal)}</h3>${badge(r.state === 'waiting' ? r.progress ?? 'waiting' : r.state)}</div>
     <p>${r.targetType === 'group' ? '그룹' : '프로젝트'} ${escape(r.targetId)} · ${escape(r.projectIds.join(', '))}</p>
     ${r.taskNumber ? `<p>TASK: <strong>${escape(r.taskNumber)}</strong></p>` : ''}
@@ -163,6 +163,14 @@ function openDeleteProject(id) {
   $('delete-project-error').textContent = '';
   $('delete-project-dialog').showModal();
 }
+function openDeleteGroup(id) {
+  deletingGroup = latest.groups.find(g => g.id === id);
+  if (!deletingGroup) return;
+  $('delete-group-name').textContent = `${deletingGroup.name} (${deletingGroup.id})`;
+  $('delete-group-members').textContent = `등록을 유지할 프로젝트: ${deletingGroup.projectIds.map(pid => latest.projects.find(p => p.id === pid)?.name ?? pid).join(' · ') || '없음'}`;
+  $('delete-group-error').textContent = '';
+  $('delete-group-dialog').showModal();
+}
 function scopeChanged() {
   const type = $('request-type').value, id = $('request-target').value;
   const group = latest.groups.find(g => g.id === id);
@@ -195,6 +203,7 @@ document.addEventListener('click', async event => {
   if (button.classList.contains('group-request')) openRequest('group', button.dataset.id);
   if (button.classList.contains('project-request')) openRequest('project', button.dataset.id);
   if (button.classList.contains('delete-project')) openDeleteProject(button.dataset.id);
+  if (button.classList.contains('delete-group')) openDeleteGroup(button.dataset.id);
   if (button.classList.contains('edit-draft')) openProject(true, button.dataset.id);
   if (button.classList.contains('candidate-pick') && !button.disabled) {
     const project = candidates.find(p => p.path === button.dataset.path);
@@ -218,6 +227,15 @@ $('delete-project-form').addEventListener('submit', async event => {
     $('action-status').textContent = '프로젝트 등록을 해제하고 그룹에서 제외했습니다. 프로젝트 폴더와 이전 요청 이력은 보존됩니다.';
     await refresh();
   } catch (error) { $('delete-project-error').textContent = error.message; } finally { button.disabled = false; }
+});
+$('delete-group-form').addEventListener('submit', async event => {
+  event.preventDefault(); const button = event.submitter; button.disabled = true;
+  try {
+    await post('/api/groups/delete', { id: deletingGroup.id, revision: deletingGroup.revision });
+    $('delete-group-dialog').close();
+    $('action-status').textContent = '그룹을 삭제했습니다. 프로젝트 등록과 기존 요청·실행은 유지됩니다.';
+    await refresh();
+  } catch (error) { $('delete-group-error').textContent = error.message; } finally { button.disabled = false; }
 });
 $('group-form').addEventListener('submit', async event => {
   event.preventDefault(); const button = event.submitter; button.disabled = true;

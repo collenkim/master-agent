@@ -82,6 +82,15 @@
     <p id="delete-project-error" class="error" role="alert"></p>
     <div class="dialog-actions"><button type="button" data-close="delete-project-dialog">취소</button><button type="submit">등록 해제</button></div>
   </form></dialog>
+  <dialog id="delete-group-dialog" aria-labelledby="delete-group-title"><form id="delete-group-form">
+    <h2 id="delete-group-title">그룹 삭제</h2>
+    <p id="delete-group-name"></p>
+    <p id="delete-group-members" class="path"></p>
+    <p>그룹 목록과 새 요청 대상에서 제외합니다. 소속 프로젝트의 등록·폴더·code-agent는 유지됩니다.</p>
+    <p>이미 접수한 요청은 기존 프로젝트 범위로 계속 진행하며 요청·실행 이력을 보존합니다. 새 그룹을 만들 때는 다른 그룹 ID를 사용하세요.</p>
+    <p id="delete-group-error" class="error" role="alert"></p>
+    <div class="dialog-actions"><button type="button" data-close="delete-group-dialog">취소</button><button type="submit" class="danger-button">그룹 삭제</button></div>
+  </form></dialog>
   <dialog id="request-dialog"><form id="request-form">
     <h2>유지보수 요청 보내기</h2>
     <label>대상 종류<select id="request-type"><option value="group">서비스 그룹</option><option value="project">단일 프로젝트</option></select></label>

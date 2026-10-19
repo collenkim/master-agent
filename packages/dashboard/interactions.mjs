@@ -71,7 +71,7 @@ export function createInteractions(store, { cliPath, readRemote, resolveHumanKey
     const ready = record.canRespond && record.localKeyAvailable;
     const item = save({ id: key('code-agent', `${project.id}:${record.sourceInstanceId}`, record.requestId), source: 'code-agent', sourceInstanceId: record.sourceInstanceId,
       requestId: record.requestId, handler: 'code-agent', kind: record.kind === 'consent' ? 'approval' : 'question',
-      projectIds: [project.id], groupIds: owner ? owner.scope.groups.map(g => g.id) : store.list('group').filter(g => g.projectIds.includes(project.id)).map(g => g.id),
+      projectIds: [project.id], groupIds: owner ? owner.scope.groups.map(g => g.id) : store.list('group').filter(g => !g.deletedAt && g.projectIds.includes(project.id)).map(g => g.id),
       missionId: owner?.id ?? null, taskId: attempt?.taskId ?? null, taskNumber: owner?.taskNumber ?? record.context.workId,
       workId: record.context.workId, stage: record.stage, context: record.context, title: record.title,
       body: record.consent?.summary ?? record.title, questions: record.questions, consent: record.consent ?? null,
@@ -174,7 +174,7 @@ export function createInteractions(store, { cliPath, readRemote, resolveHumanKey
       const owner = store.list('mission').find(m => !['succeeded', 'cancelled'].includes(m.state) && m.attempts.some(a =>
         a.projectId === project.id && a.codeAgentWorkId === workId && !['succeeded', 'abandoned'].includes(a.state)));
       const attempt = owner?.attempts.find(a => a.projectId === project.id && a.codeAgentWorkId === workId);
-      const groups = owner ? owner.scope.groups.map(g => g.id) : store.list('group').filter(g => g.projectIds?.includes(project.id)).map(g => g.id);
+      const groups = owner ? owner.scope.groups.map(g => g.id) : store.list('group').filter(g => !g.deletedAt && g.projectIds?.includes(project.id)).map(g => g.id);
       const common = { source: 'code-agent', sourceInstanceId: instance, projectIds: [project.id], groupIds: groups,
         missionId: owner?.id ?? null, taskId: attempt?.taskId ?? null, taskNumber: owner?.taskNumber ?? workId, workId, stage: state.work?.phase ?? 'setup',
         context: { projectPath: project.path, repo: state.repo, stateVersion: state.stateVersion, workId },

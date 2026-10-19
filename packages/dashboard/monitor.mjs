@@ -49,7 +49,7 @@ export function dashboardSnapshot(store, { live = false, refreshing = false, int
         ['needs-human', 'ownership-conflict', 'replan-required', 'reapproval-required', 'limit-reached'].includes(state?.resume?.code) ||
         tasks.some(t => ['human-input', 'approval-pending', 'approval-processing', 'blocked'].includes(t.status))) };
   });
-  const groups = store.list('group');
+  const groups = new Catalog(store).groups();
   const requests = store.list('target-request').map(requestStatus).map(r => ({ id: r.id, revision: r.revision, targetType: r.targetType, targetId: r.targetId,
     goal: text(r.goal), taskNumber: r.taskNumber ?? null, projectIds: r.projectIds, groupRevision: r.groupRevision, state: r.state, provider: r.provider,
     progress: missions.find(m => m.id === r.id)?.status ?? null, reason: text(store.get('mission', r.id)?.reason),

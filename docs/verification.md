@@ -1,10 +1,10 @@
 # 검증 기록
 
-기능 검증 기준은 **2026-10-19, 공통 요청함 연결 및 문서·중복 코드 정리 후**다. Windows·Node.js 24.19.0에서 회귀·실제 CLI·브라우저를 확인했다. 실제 모델 전체 흐름의 최근 검증일은 2026-10-17이며, 이번 질문 계약 시험은 해당 모델 시험의 재수행을 뜻하지 않는다.
+기능 검증 기준은 **2026-10-19, 그룹 삭제·카드 버튼 정렬 반영 후**다. Windows·Node.js 24.19.0에서 회귀·실제 CLI·브라우저를 확인했다. 실제 모델 전체 흐름의 최근 검증일은 2026-10-17이며, 질문 계약·화면 시험은 해당 모델 시험의 재수행을 뜻하지 않는다.
 
 | 검증 | 결과 | 근거 |
 | --- | --- | --- |
-| 자동 회귀 | 232개 통과, 실패·건너뜀 0 | `npm.cmd test`, 로컬 `.master-agent/interactions-tests.log` |
+| 자동 회귀 | 234개 통과, 실패·건너뜀 0 | `npm.cmd test`, 로컬 `.master-agent/groups-tests.log` |
 | 공통 요청함 회귀 | 추천 미추정·보류·답 적용, 동일 명령/두 탭·재시작·master 재개, 오래된 내용/문맥·등록 해제·업데이트, 원장 복사/교체·그룹 범위 고정, HTTP 인증, 기존 시도·세션에서 복구 후 실제 재검증 | `tests/dashboard-interactions.test.mjs` 13개 |
 | 실제 code-agent 질문 API | 빈/기존 격리 프로젝트 각 10단계의 질문 수신·소비·적용, 다중 선택·옵션 입력·직접 입력, 보류/재열기, 같은 명령 재전송, 브랜치 변경·키 부재 거부, docs 동의의 실제 적용 | `scripts/smoke-interactions-live.mjs`, `.master-agent/interactions-live.json`. 발행자·최초 인증은 합성 fixture, 개발 모델 미호출 |
 | 실제 API·브라우저·중단 복구 | 모바일 브라우저의 다중 답과 별도 동의가 실제 서명·CLI를 통과. 전송 전 단절 후 DB 재시작·같은 envelope 재전송, 미확인 중 삭제 거부, 실제 docs 적용 확인 | `.master-agent/interactions-live-browser.json`, `.master-agent/interactions-live-browser-2pNLLS/`. 실제 사용자 TTY·개발/반영/운영 전체 모델 완주와 구분 |
@@ -15,14 +15,15 @@
 | 서버 재시작·종료 | 실제 CLI 프로세스 교체·DB/URL/설정 유지·종료 후 재시작·중복 서버 차단·무관한 서버 보호·화면 토큰 제어 거부 | `tests/dashboard-lifecycle.test.mjs` 2개 |
 | 설치 자동 탐색 | PATH의 실행 파일·npm shim·Windows npm 설치·명시적 override·미설치 구분, 현재 PC의 실제 설치 진입점 확인 | `tests/discovery.test.mjs` |
 | 그룹·단일 요청 | 서비스 범위 고정·중복 접수 방지, TASK 번호 입력 검증·기록·AI 계획·프로젝트별 개발 지시 전달·이어 실행 보존, HTTP 인증 | `tests/requests.test.mjs` |
-| 프로젝트 후보·등록·삭제 | 후보 조회·중복 구분·API 인증, 단독/그룹 등록·원자적 저장, 삭제 시 그룹 제외·폴더와 완료 이력 보존·새 ID 재등록·오래된 편집 거부·미완료 목표/실행/업데이트 보호 | `tests/project-candidates.test.mjs` 2개, `tests/project-registration.test.mjs` 9개 |
+| 프로젝트 후보·등록·삭제, 그룹 삭제 | 후보 조회·중복 구분·API 인증, 단독/그룹 등록·원자적 저장, 프로젝트 삭제 보호와 이력 보존. 그룹 삭제의 인증·버전 대조·기존 요청 범위와 실행 보존·삭제 ID의 새 요청/수정 거부 | `tests/project-candidates.test.mjs` 2개, `tests/project-registration.test.mjs` 11개 |
+| 그룹 삭제·카드 버튼 브라우저 | 1440/390/320px 버튼 정렬, 삭제 취소·버전 충돌·빈/소속 그룹 삭제, 새로고침 후 유지·요청 대상 제외·프로젝트 보존·XSS. CLI create/delete/list도 격리 DB에서 확인 | `scripts/smoke-dashboard-groups.mjs`, `.master-agent/group-delete-browser-qhxz8i/`. 실제 브라우저·API, 격리 카탈로그이며 개발 모델 미호출 |
 | 요청 전체 실행 | 그룹/단일 요청 각각 모의 AI 계획 → 템플릿 연결 → 실제 파일 변경·Node 검사 → 인계·succeeded | `tests/requests.test.mjs`; AI와 개발 호스트는 모의 응답 |
 | 명령 설치 | 임시 npm 전역 prefix에 로컬 패키지 설치 후 저장소 밖에서 프로젝트 조회·데모 완료 | `npm.cmd install --global --prefix <임시경로> --offline --ignore-scripts <소스경로>` |
 | 관제 서버 | 전체 등록 프로젝트·독립 작업 관측, 조회 실패·오래된 관측 구분, 중복 조회 제한, 삭제 시 기존 대기열·이후 조회에서 제외, HTTP 조회 경계 | `tests/dashboard.test.mjs` 7개 |
 | 기존 대시보드 브라우저 | 삭제·그룹·후보·TASK·원격 업데이트·설치 감지·모바일·연결 끊김 회귀 통과 | 로컬 `.master-agent/dashboard-browser-NM3mYE/`; 화면의 개발 접수·업데이트 실행은 모의 처리 |
 | 브랜치별 작업과 업데이트 판정 | 다른 브랜치 체크아웃에서 `status --json`은 `work: null`·`no-work`, `version --json`은 이전 브랜치 미완료 작업을 `project.busy`로 반환함을 읽기 전용 확인 | code-agent 소스·빌드·설치 릴리스의 `currentCursor`/`allCursors` 사용 대조; 실제 프로젝트 상태·브랜치는 변경하지 않음 |
 | 진행 상태·병렬 제어 | 5개 회귀 통과, 실제 CLI 조회에서도 확인 | `tests/parallel-progress.test.mjs` |
-| 구문·문서 | JavaScript 93개·Markdown 19개 검사 통과 | `npm.cmd run check` |
+| 구문·문서 | JavaScript 94개·Markdown 19개 검사 통과 | `npm.cmd run check` |
 | 실제 code-agent 계약 등록 | 등록 성공, 원문과 다른 claim·변경된 문서 거부 | `tests/handoff-contracts.test.mjs`의 실제 빌드 연동 |
 | 실제 code-agent 통신 | 접수·중복·이벤트·재부착·협력 정지·제어권 인계 통과 | `tests/code-agent-control.test.mjs`, 가짜 개발 호스트 |
 | 앞선 답의 실제 AI 판단 | 5건 통과: routine 3·ambiguous 1·critical 1 | [판단 증거](evidence/2026-10-16-answer-context.json) |

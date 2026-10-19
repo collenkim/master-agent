@@ -75,6 +75,7 @@ export async function startDashboard({ dbPath, port = 4310, cliPath, intervalMs 
         if (path === '/api/interactions/respond') return send(200, JSON.stringify(receipt(await interactions.respond(input))));
         if (path === '/api/interactions/retry') return send(200, JSON.stringify(receipt(await interactions.retry(input.commandId))));
         if (path === '/api/projects/delete') return send(200, JSON.stringify(catalog.remove(input.id, input.revision)));
+        if (path === '/api/groups/delete') return send(200, JSON.stringify(catalog.removeGroup(input.id, input.revision)));
         if (path === '/api/updates/preview') return send(200, JSON.stringify(await updates.preview(input)));
         if (path === '/api/updates/apply') return send(202, JSON.stringify(updates.apply(input.id)));
         if (path === '/api/updates/recover') return send(200, JSON.stringify(await updates.recover(input.id)));

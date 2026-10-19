@@ -54,6 +54,7 @@ code-agent는 설치된 명령에서 자동 탐색합니다. --cli는 별도 빌
   group list                          그룹 목록
   group create <ID> <이름> [--description <서비스범위>]  빈 프로젝트 그룹 생성
   group show <ID>                      그룹 구성·버전 조회
+  group delete <ID> --revision <N>     그룹 삭제 (소속 프로젝트·기존 요청 보존)
   group add <ID> <프로젝트ID> --revision <N>    그룹에 프로젝트 추가
   group remove <ID> <프로젝트ID> --revision <N> 그룹에서 프로젝트 제외
   group request <ID> <요청내용> [--task-number <TASK번호>] [--criterion <완료조건>] [--input <JSON>] 그룹 요청·실행
@@ -151,7 +152,7 @@ async function main() {
     'mission reattach': 4, 'mission stop': 4, 'mission delegate': 4, 'mission escalations': 3, 'mission relay': 5,
     'mission create': 3, 'mission list': 2, 'mission show': 3, 'mission graph': 3, 'mission plan': 4, 'mission step': 3, 'mission run': 3,
     'mission pause': 3, 'mission resume': 3, 'mission retry': 4, 'mission unknown': 4,
-    'group create': 4, 'group show': 3, 'group add': 4, 'group remove': 4, 'group request': 4, 'project request': 4,
+    'group create': 4, 'group show': 3, 'group delete': 3, 'group add': 4, 'group remove': 4, 'group request': 4, 'project request': 4,
     'request list': 2, 'request show': 3, 'request run': 3, 'request continue': 3 };
   const key = category === 'demo' ? 'demo' : `${category} ${action}`;
   requireThat(counts[key] === args.length, 'usage', help);
@@ -165,7 +166,7 @@ async function main() {
   if (['mission replan', 'mission reconcile', 'mission reconcile-verification'].includes(key)) requireThat(revision && values['expect-state'] && !values.simulate, 'usage', '--revision, --expect-state가 필요합니다.');
   if (key === 'mission stop-analysis') requireThat(revision && !values.simulate, 'usage', '--revision이 필요합니다.');
   if (['project control', 'project snapshot', 'project handover', 'project accept', 'mission reattach', 'mission stop', 'mission delegate', 'mission relay', 'group request', 'project request'].includes(key)) requireThat(!values.simulate, 'usage', '모의 옵션은 사용할 수 없습니다.');
-  if (['group add', 'group remove', 'request continue'].includes(key)) requireThat(revision, 'usage', '--revision이 필요합니다.');
+  if (['group add', 'group remove', 'group delete', 'request continue'].includes(key)) requireThat(revision, 'usage', '--revision이 필요합니다.');
   if (['project control', 'project accept'].includes(key)) requireThat(values.controller && values['token-file'], 'usage', '--controller와 --token-file이 필요합니다.');
   if (key === 'project handover') requireThat(values.to, 'usage', '--to가 필요합니다.');
   if (key === 'mission stop') requireThat(['pause', 'cancel'].includes(values.mode), 'usage', '--mode pause 또는 cancel이 필요합니다.');
@@ -208,9 +209,10 @@ async function main() {
       case 'project handover': result = await requestControlHandover(store, id, { cliPath: values.cli, to: values.to, commandId: `ho-${randomUUID()}`, waitMs: ms('wait-ms', 0), pollMs: ms('poll-ms', 2000) }); break;
       case 'project accept': result = await acceptControl(store, id, { cliPath: values.cli, controller: values.controller, tokenFile: resolve(values['token-file']) }); break;
       case 'group save': result = engine.catalog.group(json(id), revision ?? 0); break;
-      case 'group list': result = store.list('group'); break;
+      case 'group list': result = engine.catalog.groups(); break;
       case 'group create': result = engine.catalog.group({ id, name: file, description: values.description ?? '', projectIds: [] }); break;
-      case 'group show': result = store.need('group', id); break;
+      case 'group show': result = engine.catalog.activeGroup(id); break;
+      case 'group delete': result = engine.catalog.removeGroup(id, revision); break;
       case 'group add': case 'group remove': result = engine.catalog.membership(id, file, action, revision); break;
       case 'group request': case 'project request': {
         const input = values.input ? json(values.input) : {};

@@ -6,6 +6,7 @@ import { hostname } from 'node:os';
 import { setup } from './helpers.mjs';
 import { startDashboard } from '../packages/dashboard/server.mjs';
 import { SimulationRunner } from '../packages/runner/simulation.mjs';
+import { acceptRequest } from '../packages/orchestrator/requests.mjs';
 
 async function dashboardFixture(t) {
   const context = setup(t);
@@ -30,6 +31,58 @@ function registrationTest(name, run) {
     try { await run(context); } finally { await context.dashboard.close(); }
   });
 }
+
+registrationTest('group deletion keeps projects and accepted scope, permits existing work and rejects new use of the deleted identity', async ({ store, engine, fixture, mission, dashboard, post, draft }) => {
+  const group = store.need('group', fixture.group.id), projects = store.list('project');
+  const input = { targetType: 'group', targetId: group.id, groupRevision: group.revision, goal: '기존 접수', requestKey: 'before-delete' };
+  const { request } = acceptRequest(store, input);
+  const before = engine.describe(mission.id), accepted = store.need('mission', request.id);
+  const removed = await post('/api/groups/delete', { id: group.id, revision: group.revision });
+  assert.equal(removed.status, 200);
+  assert.ok(store.need('group', group.id).deletedAt);
+  assert.deepEqual(store.list('project'), projects);
+  assert.deepEqual(engine.describe(mission.id), before);
+  assert.deepEqual(store.need('mission', request.id), accepted);
+  assert.deepEqual(store.need('target-request', request.id), request);
+  const overview = await (await fetch(dashboard.url + '/api/overview')).json();
+  assert.equal(overview.groups.some(g => g.id === group.id), false);
+  assert.equal(overview.projects.length, projects.length);
+  assert.ok(overview.requests.some(r => r.id === request.id));
+  assert.equal((await post('/api/requests', input)).body.id, request.id);
+  for (const groupRevision of [undefined, group.revision, group.revision + 1]) {
+    assert.equal((await post('/api/requests', { ...input, groupRevision, requestKey: 'after-delete' })).status, 404);
+  }
+  const orphan = draft('orphan');
+  for (const revision of [group.revision, group.revision + 1]) {
+    assert.equal((await post('/api/groups', { group: { ...group, projectIds: [orphan.id] }, revision, newProjects: [orphan] })).status, 404);
+    assert.equal(store.get('project', orphan.id), undefined);
+  }
+  assert.equal((await post('/api/groups', { group })).status, 409);
+  assert.throws(() => engine.catalog.membership(group.id, projects[0].id, 'add', group.revision + 1), { code: 'not-found' });
+  assert.throws(() => engine.catalog.snapshot({ groupIds: [group.id], projectIds: [] }), { code: 'not-found' });
+  const finished = await engine.run(mission.id, new SimulationRunner());
+  assert.equal(finished.state, 'simulation-complete');
+  assert.deepEqual(finished.scope, before.scope);
+});
+
+registrationTest('empty group deletion requires dashboard authentication and current version; stale tabs cannot delete an edited group', async ({ engine, store, post }) => {
+  const group = engine.catalog.group({ id: 'empty-delete', name: '빈 그룹', projectIds: [] });
+  const input = { id: group.id, revision: group.revision };
+  for (const headers of [{ 'X-Master-Token': '' }, { Origin: 'https://other.example' }]) {
+    assert.equal((await post('/api/groups/delete', input, headers)).status, 403);
+  }
+  for (const revision of [undefined, 0, -1, '1', 1.5]) {
+    assert.equal((await post('/api/groups/delete', { id: group.id, revision })).status, 400);
+  }
+  assert.equal((await post('/api/groups/delete', { id: 'missing', revision: 1 })).status, 404);
+  assert.deepEqual(store.need('group', group.id), group);
+  const edited = engine.catalog.group({ ...group, name: '바뀐 그룹' }, group.revision);
+  assert.equal((await post('/api/groups/delete', input)).status, 409);
+  assert.deepEqual(store.need('group', group.id), edited);
+  assert.equal((await post('/api/groups/delete', { id: group.id, revision: edited.revision })).status, 200);
+  assert.equal((await post('/api/groups/delete', { id: group.id, revision: edited.revision })).status, 404);
+  assert.deepEqual(engine.catalog.groups().map(g => g.id), ['test-commerce']);
+});
 
 registrationTest('manual registration persists an existing folder without installing, granting control or accepting forged evidence', async ({ store, post, draft }) => {
   const project = draft('manual');

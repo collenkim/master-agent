@@ -39,7 +39,7 @@ export function acceptRequest(store, { targetType, targetId, goal, taskNumber, c
   return store.transaction(() => {
     const duplicate = store.db.prepare('SELECT mission_id FROM requests WHERE key=?').get(requestKey);
     if (!duplicate && targetType === 'group' && groupRevision !== undefined) {
-      requireThat(store.need('group', targetId).revision === groupRevision, 'stale-state', '그룹 구성이 변경되었습니다. 대상을 다시 확인하세요.');
+      requireThat(new Engine(store).catalog.activeGroup(targetId).revision === groupRevision, 'stale-state', '그룹 구성이 변경되었습니다. 대상을 다시 확인하세요.');
     }
     const mission = new Engine(store).create(input, { inTransaction: true });
     const previous = store.get('target-request', mission.id);

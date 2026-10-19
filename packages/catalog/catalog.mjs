@@ -12,6 +12,23 @@ export function normalizedPath(path) {
 export class Catalog {
   constructor(store) { this.store = store; }
   projects() { return this.store.list('project').filter(p => !p.deletedAt); }
+  groups() { return this.store.list('group').filter(g => !g.deletedAt); }
+  activeGroup(id) {
+    const group = this.store.need('group', id);
+    requireThat(!group.deletedAt, 'not-found', `그룹 ${id}는 삭제되었습니다. 새 그룹은 다른 ID로 만드세요.`);
+    return group;
+  }
+  removeGroup(id, expectedRevision) {
+    string(id, 'group.id');
+    requireThat(Number.isInteger(expectedRevision) && expectedRevision > 0, 'invalid-input', '그룹 버전이 필요합니다.');
+    return this.store.transaction(() => {
+      const group = this.activeGroup(id);
+      requireThat(group.revision === expectedRevision, 'stale-state', '그룹 구성이 변경되었습니다. 다시 조회하세요.');
+      // Accepted missions retain their own scope; deleting a group never cancels their work.
+      const removed = this.store.put('group', { ...group, deletedAt: now() }, expectedRevision);
+      return { id, deletedAt: removed.deletedAt };
+    });
+  }
   active(id) {
     const project = this.store.need('project', id);
     requireThat(!project.deletedAt, 'not-found', `프로젝트 ${id}는 등록 해제되었습니다. 다시 등록하려면 새 ID를 사용하세요.`);
@@ -34,7 +51,7 @@ export class Catalog {
         try { process.kill(batch.pid, 0); return true; } catch (error) { return error.code !== 'ESRCH'; }
       });
       requireThat(!updating, 'project-busy', '이 프로젝트를 포함한 일괄 업데이트가 진행 중입니다. 완료 후 삭제하세요.');
-      const groups = this.store.list('group').filter(g => g.projectIds.includes(id));
+      const groups = this.groups().filter(g => g.projectIds.includes(id));
       for (const group of groups) this.store.put('group', { ...group, projectIds: group.projectIds.filter(pid => pid !== id) }, group.revision);
       // Keep immutable identity and historical references; release only the active path registration.
       const removed = this.store.put('project', { ...project, deletedAt: now() }, expectedRevision);
@@ -83,6 +100,7 @@ export class Catalog {
     requireThat(Array.isArray(newProjects) && newProjects.length <= 100, 'invalid-input', '새 프로젝트는 최대 100개까지 등록할 수 있습니다.');
     return this.store.transaction(() => {
       const current = this.store.get('group', input.id);
+      if (expectedRevision > 0) this.activeGroup(input.id);
       requireThat(expectedRevision === 0 ? !current : current?.revision === expectedRevision,
         expectedRevision === 0 ? 'already-exists' : 'stale-state', '그룹이 이미 존재하거나 변경되었습니다. 다시 조회하세요.');
       for (const draft of newProjects) {
@@ -96,14 +114,14 @@ export class Catalog {
   }
   membership(id, projectId, action, expectedRevision) {
     requireThat(['add', 'remove'].includes(action), 'invalid-input', '그룹 구성원 추가 또는 제외가 필요합니다.');
-    const group = this.store.need('group', id);
+    const group = this.activeGroup(id);
     requireThat(group.revision === expectedRevision, 'stale-state', '그룹이 변경되었습니다. 다시 조회하세요.');
     this.active(projectId);
     const projectIds = action === 'add' ? [...new Set([...group.projectIds, projectId])] : group.projectIds.filter(pid => pid !== projectId);
     return this.group({ ...group, projectIds }, expectedRevision);
   }
   snapshot(scope) {
-    const groups = scope.groupIds.map(id => this.store.need('group', id));
+    const groups = scope.groupIds.map(id => this.activeGroup(id));
     const ids = [...new Set([...scope.projectIds, ...groups.flatMap(g => g.projectIds)])].sort();
     requireThat(ids.length, 'empty-scope', '대상 프로젝트가 없습니다.');
     const projects = ids.map(id => this.active(id));
