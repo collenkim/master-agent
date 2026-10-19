@@ -39,6 +39,7 @@ export function hostPrompt(ticket, { control = false } = {}) {
 이것은 사용자 승인을 대신하는 문서가 아닙니다. 요구 확정·계획 승인·동의는 기존 code-agent 절차로 확인해야 합니다.
 승인 응답을 지어내거나 승인 파일·임대·hook·설정을 직접 수정하지 마세요. 필요한 승인을 받을 수 없으면 현재 상태와 질문을 보고하고 멈추세요.
 새 작업은 .claude/skills/ca-request/SKILL.md를 읽고 그 절차로 접수하며 지정된 codeAgentWorkId를 사용하세요. 기존 작업은 .claude/skills/ca-next/SKILL.md 절차로 이어가세요.
+feature·fix·refactor는 최초 접수 요구로 판단합니다. 이미 접수한 작업의 후속 수정·검증 실패는 기존 종류와 codeAgentWorkId를 유지하며 새 fix 작업으로 재접수하지 마세요.
 ${ticket.taskNumber ? 'taskNumber는 사용자가 지정한 업무 TASK 번호입니다. 이 프로젝트의 요구사항·작업 기록에서 원래 요청과의 연결을 유지하세요. 그룹에서 나눈 작업도 같은 번호를 참조하며 내부 taskId·codeAgentWorkId는 별도로 유지하세요.\n' : ''}
 ${codeAgentBase ? `codeAgentBase는 같은 프로젝트의 선행 작업이 반영한 커밋입니다. 새 작업을 접수할 때 기준 브랜치로 --base ${codeAgentBase}를 주어 그 위에서 시작하세요.\n` : ''}${check}
 다른 작업을 중단하거나 덮어쓰지 마세요. 커밋·push·배포를 자동 승인하지 마세요.

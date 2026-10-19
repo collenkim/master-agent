@@ -28,10 +28,21 @@ export class Engine {
         requireThat(previous.hash === fingerprint, 'request-conflict', '같은 접수 키의 내용이 다릅니다.');
         return this.store.need('mission', previous.mission_id);
       }
+      const scope = this.catalog.snapshot(request.scope);
+      // 접수 키는 재전송 식별자다. 업무 번호는 프로젝트별로 완료·취소 뒤에도 같은 목표를 가리킨다.
+      if (request.taskNumber !== undefined) {
+        const duplicate = this.store.list('mission').find(m =>
+          m.taskNumber?.toLowerCase() === request.taskNumber.toLowerCase() &&
+          m.scope.projectIds.some(projectId => scope.projectIds.includes(projectId)));
+        if (duplicate) {
+          const projects = duplicate.scope.projectIds.filter(projectId => scope.projectIds.includes(projectId));
+          requireThat(false, 'request-conflict', `업무 번호 ${request.taskNumber}는 프로젝트 ${projects.join(', ')}에 이미 접수됐습니다. 기존 목표 ${duplicate.id}에서 이어가세요. 같은 프로젝트에 중복 생성하지 않습니다.`);
+        }
+      }
       const mission = {
         id: randomUUID(), goal: request.goal, mode: request.mode, criteria: request.criteria,
         ...(request.taskNumber === undefined ? {} : { taskNumber: request.taskNumber }),
-        scope: this.catalog.snapshot(request.scope), requestedScope: request.scope,
+        scope, requestedScope: request.scope,
         state: 'received', plans: [], tasks: [], attempts: [], createdAt: now(), reason: '실행 계획이 필요합니다.',
       };
       const saved = this.store.put('mission', mission);
