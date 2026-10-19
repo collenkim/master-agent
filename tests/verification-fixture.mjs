@@ -1,7 +1,5 @@
-import test from 'node:test';
-import assert from 'node:assert/strict';
-import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { temporary, cleanup } from './helpers.mjs';
 import { Store } from '../packages/storage/store.mjs';
@@ -9,8 +7,6 @@ import { Engine } from '../packages/orchestrator/engine.mjs';
 import { LiveExecution } from '../packages/orchestrator/live.mjs';
 import { LiveVerification } from '../packages/verification/live-verification.mjs';
 import { Knowledge } from '../packages/knowledge/sources.mjs';
-import { snapshotTree } from '../packages/verification/tree.mjs';
-import { LiveWorkflow } from '../packages/orchestrator/drive.mjs';
 
 export function verificationFixture(t) {
   const root = temporary(t), store = new Store(join(root, 'state.db')); cleanup(t, () => store.close());

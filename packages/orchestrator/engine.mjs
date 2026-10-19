@@ -7,7 +7,7 @@ import { relevantSource, taskHeld, activeHolds } from './scope.mjs';
 import { assertReplanTrees } from './replan-guard.mjs';
 import { missionProgress } from './progress.mjs';
 import { observationIdentity } from '../code-agent-adapter/observe.mjs';
-import { requireThat, string, strings, object, hash, now, validateMission, validatePlan } from '../domain/contracts.mjs';
+import { requireThat, string, strings, hash, now, validateMission, validatePlan } from '../domain/contracts.mjs';
 
 const finished = new Set(['simulation-complete', 'succeeded', 'cancelled']);
 const activePlan = mission => mission.plans.at(-1);

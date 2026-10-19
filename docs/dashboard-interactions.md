@@ -1,12 +1,12 @@
 # 공통 질문·선택·승인 요청함: 구현과 인계
 
-기준일: 2026-10-19. 기존 제안과 담당별 실행 지시를 실제 연결 계약·지원 범위로 정리했다. 조작은 [README](../README.md)와 [대시보드](ui.md), 시험 결과는 [검증 기록](verification.md)을 따른다. code-agent 정본은 `C:/IdeaProjects/code-agent/doc/dashboard-interactions.md`다.
+기준일: 2026-10-19. 실제 연결 계약과 지원 범위를 정리한다. 조작은 [README](../README.md#공통-질문승인-요청함)와 [대시보드](ui.md#공통-요청함), 시험 결과는 [검증 기록](verification.md)을 따른다. code-agent 정본은 `C:/IdeaProjects/code-agent/doc/dashboard-interactions.md`다.
 
 ## 선행 API 확인
 
-작업 시작 시 설치 빌드는 구형 API만 제공했으나, 같은 날 갱신된 실제 빌드와 인계 문서를 다시 확인하고 연결했다. 연결 진입점은 `C:/IdeaProjects/code-agent/dist/agent/cli.js`, 확인한 버전은 1.0.0·stateSchema 7·interaction schema 1이다. 패키지 버전만으로 지원 여부를 판정하지 않는다.
+연결 진입점은 설치 탐색으로 찾은 code-agent CLI다. 검증한 로컬 빌드는 1.0.0·stateSchema 7·interaction schema 1이며, 출처는 [검증 기록](verification.md)에 남긴다. 패키지 버전만으로 지원 여부를 판정하지 않는다.
 
-`hello.result.codeAgent.stateSchema >= 7`, `hello.result.interactions.schemaVersion === 1`, `humanChannel: dashboard-human`, `signature: Ed25519`, 아래 명령을 함께 확인한다. 실제 프로젝트 식별자는 `hello.result.project.projectId`다. 인계 문서의 예제 루트 `projectId` 대신 실제 빌드 응답을 사용한다.
+`hello.result.codeAgent.stateSchema >= 7`, `hello.result.interactions.schemaVersion === 1`, `humanChannel: dashboard-human`, `signature: Ed25519`, 아래 명령을 함께 확인한다. 프로젝트 식별자는 `hello.result.project.projectId`다.
 
 | code-agent 명령 | master 연결 |
 | --- | --- |

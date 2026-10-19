@@ -11,8 +11,8 @@ const key = (source, instance, requestId) => hash([source, instance, requestId])
 const options = items => items.map((label, i) => ({ id: String(i + 1), label }));
 const recommendation = (items, label) => items.find(o => o.label === label)?.id ?? null;
 
-/** The legacy protocol is observation-only here. Never manufacture a human approval or grant. */
-export async function readLegacyInteractions(store, project, cliPath, resolveKey = findHumanKey) {
+/** Read the interaction feed when supported; older APIs remain observation-only. */
+async function readRemoteInteractions(store, project, cliPath, resolveKey = findHumanKey) {
   const hello = await callOnce(cliPath, project.path, { protocol: PROTOCOL, version: PROTOCOL_VERSION, type: 'hello' }, { timeoutMs: 5000 });
   requireThat(hello.ok, 'interaction-unavailable', 'code-agent 기능 조회에 실패했습니다.');
   const binding = store.get('control-binding', project.id), result = hello.result;
@@ -51,7 +51,7 @@ export async function readLegacyInteractions(store, project, cliPath, resolveKey
 
 /** Own requests are applied atomically with their command receipt. External requests stay at their owner. */
 export function createInteractions(store, { cliPath, readRemote, resolveHumanKey = findHumanKey, launch, launchOptions = {} } = {}) {
-  readRemote ??= (store, project, cli) => readLegacyInteractions(store, project, cli, resolveHumanKey);
+  readRemote ??= (store, project, cli) => readRemoteInteractions(store, project, cli, resolveHumanKey);
   const sending = new Map();
   const resuming = new Set();
   const active = new Set();

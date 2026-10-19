@@ -1,10 +1,9 @@
 // Windows Chrome UI smoke. Synthetic producers/launcher; never contacts a managed project or model.
-import { spawn } from 'node:child_process';
-import { once } from 'node:events';
-import { mkdtempSync, readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import assert from 'node:assert/strict';
+import { openBrowser } from './browser.mjs';
 import { planningSetup, blockedAnswer } from '../tests/planning-fixture.mjs';
 import { createInteractions } from '../packages/dashboard/interactions.mjs';
 import { startDashboard } from '../packages/dashboard/server.mjs';
@@ -27,34 +26,10 @@ await observer.refreshProject(project);
 let launches = 0;
 const dashboard = await startDashboard({ dbPath: f.db, port: 0, observe: false,
   launch: async (store, id) => { launches++; return store.need('target-request', id); } });
-const browser = spawn(process.env.CHROME_PATH ?? 'C:/Program Files/Google/Chrome/Application/chrome.exe', [
-  '--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check', '--remote-debugging-port=0',
-  `--user-data-dir=${join(artifacts, 'browser-profile')}`, 'about:blank',
-], { windowsHide: true, stdio: 'ignore' });
-let socket, send;
+let browser;
 try {
-  const activePort = join(artifacts, 'browser-profile', 'DevToolsActivePort');
-  for (let i = 0; i < 100 && !existsSync(activePort); i++) { if (browser.exitCode !== null) throw new Error('Chrome exited'); await delay(100); }
-  const port = readFileSync(activePort, 'utf8').split('\n')[0];
-  const page = await (await fetch(`http://127.0.0.1:${port}/json/new?${encodeURIComponent(dashboard.url)}`, { method: 'PUT' })).json();
-  socket = new WebSocket(page.webSocketDebuggerUrl); await once(socket, 'open');
-  let sequence = 0; const pending = new Map(), errors = [];
-  socket.addEventListener('message', event => {
-    const message = JSON.parse(event.data);
-    if (message.id) { const callback = pending.get(message.id); pending.delete(message.id); message.error ? callback.reject(message.error) : callback.resolve(message.result); }
-    if (message.method === 'Runtime.exceptionThrown') errors.push(message.params.exceptionDetails);
-  });
-  send = (method, params = {}) => new Promise((resolve, reject) => { const id = ++sequence; pending.set(id, { resolve, reject }); socket.send(JSON.stringify({ id, method, params })); });
-  await send('Runtime.enable'); await send('Page.enable');
-  const evaluate = async expression => {
-    const result = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
-    if (result.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails));
-    return result.result.value;
-  };
-  const waitFor = async expression => {
-    for (let i = 0; i < 100; i++) { if (await evaluate(expression)) return; await delay(100); }
-    throw new Error(`Timed out: ${expression}\n${JSON.stringify({ errors, form: await evaluate('document.getElementById("interaction-form").innerText'), state: await evaluate('document.getElementById("interaction-submit").disabled'), commands: f.store.list('interaction-command').map(c => ({ action: c.action, state: c.state, error: c.error })) })}`);
-  };
+  browser = await openBrowser(dashboard.url, artifacts);
+  const { send, evaluate, waitFor, errors } = browser;
   await waitFor('document.querySelectorAll("#interaction-items .project").length === 4');
   assert.equal(await evaluate('Boolean(window.injected || document.querySelector("#interaction-items img"))'), false);
   await evaluate(`document.getElementById('interaction-source').value='master'; document.getElementById('interaction-source').dispatchEvent(new Event('input')); document.querySelector('[data-interaction]').click();`);
@@ -106,8 +81,7 @@ try {
   console.log(JSON.stringify({ passed: true, producer: 'synthetic', actualCodeAgentResponses: false,
     checks: ['recommendation-no-auto-submit', 'draft-poll-reopen', 'defer', 'explicit-submit', 'wait-other-answers', 'single-launch', 'stale-view', 'full-approval-unchecked', 'unsupported-disabled', 'XSS', 'mobile', 'disconnect'], artifacts }));
 } finally {
-  if (send && socket.readyState === WebSocket.OPEN) { await send('Browser.close').catch(() => {}); socket.close(); }
-  else browser.kill();
+  await browser?.close();
   await dashboard.close();
   for (const fn of cleanup.reverse()) fn();
 }

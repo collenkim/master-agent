@@ -29,6 +29,6 @@ for (const kind of ['empty', 'existing']) {
 }
 const evidence = { checkedAt: new Date().toISOString(), cliPath, buildModifiedAt: statSync(cliPath).mtime.toISOString(),
   sourceCommit, sourceDirty, handoff, handoffPresent: existsSync(handoff), probes, fullLifecycleTested: false,
-  limitation: 'hello 기능 조회만 수행. 전체 질문·사람 승인·원래 세션 재개 왕복은 확정 인계 API가 필요합니다.', artifacts };
+  limitation: 'hello 기능 조회만 수행. 서명·응답·적용 왕복은 smoke-interactions-live.mjs로 별도 검증합니다.', artifacts };
 writeFileSync(join(artifacts, 'capabilities.json'), JSON.stringify(evidence, null, 2));
 console.log(JSON.stringify(evidence, null, 2));

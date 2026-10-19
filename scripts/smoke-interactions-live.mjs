@@ -5,7 +5,7 @@ import { createRequire } from 'node:module';
 import { generateKeyPairSync, randomUUID } from 'node:crypto';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, dirname, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { Store } from '../packages/storage/store.mjs';
 import { Catalog } from '../packages/catalog/catalog.mjs';

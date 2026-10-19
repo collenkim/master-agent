@@ -10,7 +10,7 @@ for (const file of docs) {
   const content = readFileSync(file, 'utf8');
   if ((content.match(/```/g) ?? []).length % 2) throw new Error(`코드 블록 오류: ${file}`);
   for (const [, link] of content.matchAll(/\]\(([^)]+)\)/g)) {
-    if (/^https?:/.test(link)) continue;
+    if (/^https?:/.test(link) || link.startsWith('#')) continue;
     readFileSync(resolve(dirname(file), link.split('#')[0]));
   }
 }
