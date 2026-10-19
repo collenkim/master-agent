@@ -108,6 +108,8 @@ CLI 전용 `POST /api/dashboard-control`은 별도 제어 토큰과 서버 ID로
 
 다음은 [제품 요구사항](requirements.md)과 [확장 설계](architecture.md)의 후속 범위다. 현재 화면의 버튼이나 API로 제공하지 않는다.
 
+초기 문서 준비와 업무 선택의 추천 UI는 [별도 연동 계획](dashboard-interactions-plan.md)에 정리했다. code-agent 요청 API와 사람 응답 채널을 먼저 보완해야 하며, 현재 질문 ID·대기 건수 표시만으로 답을 전송할 수는 없다.
+
 | 후속 기능 | 연결할 기존 기능·조건 |
 | --- | --- |
 | 계획 그래프·재계획 비교·조건별 증거 상세 | [LangGraph](langgraph.md), [재계획](replanning.md), [검증 계약](live-verification.md) |
