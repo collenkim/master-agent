@@ -1,5 +1,6 @@
 import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { once } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import { Store } from '../storage/store.mjs';
@@ -26,7 +27,8 @@ export async function startDashboard({ dbPath, port = 4310, cliPath, intervalMs 
     ['/style.css', ['text/css; charset=utf-8', 'style.css']],
   ].map(([path, [type, file]]) => [path, { type, body: readFileSync(new URL(`../../apps/dashboard/${file}`, import.meta.url)) }]));
   const store = new Store(dbPath), monitor = createMonitor(store, { cliPath, intervalMs });
-  const updates = createUpdates(store, { cliPath: updateCliPath ?? cliPath, ...updateOptions });
+  const updates = createUpdates(store, { cliPath: updateCliPath ?? cliPath,
+    cacheRoot: join(dirname(resolve(dbPath)), 'code-agent-builds'), ...updateOptions });
   const token = randomUUID(), catalog = new Catalog(store);
   let candidateScan;
   let origin;
@@ -65,7 +67,7 @@ export async function startDashboard({ dbPath, port = 4310, cliPath, intervalMs 
           return send(200, JSON.stringify(await candidateScan));
         }
         if (path === '/api/projects') return send(201, JSON.stringify(catalog.registerManual(input.project)));
-        if (path === '/api/updates/preview') return send(200, JSON.stringify(await updates.preview()));
+        if (path === '/api/updates/preview') return send(200, JSON.stringify(await updates.preview(input)));
         if (path === '/api/updates/apply') return send(202, JSON.stringify(updates.apply(input.id)));
         if (path === '/api/updates/recover') return send(200, JSON.stringify(await updates.recover(input.id)));
         if (path === '/api/groups') return send(200, JSON.stringify(catalog.group(input.group, input.revision ?? 0, { newProjects: input.newProjects })));

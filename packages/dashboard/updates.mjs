@@ -6,6 +6,7 @@ import { join, resolve, extname } from 'node:path';
 import { normalizedPath } from '../catalog/catalog.mjs';
 import { hash, now, requireThat } from '../domain/contracts.mjs';
 import { findCodeAgent } from '../code-agent-adapter/discovery.mjs';
+import { createSourceBuilder, sourceSummary } from './source-update.mjs';
 
 const alive = pid => {
   if (!Number.isInteger(pid) || pid <= 0) return false;
@@ -49,7 +50,7 @@ export function installationFingerprint(cliPath) {
   return digest.digest('hex');
 }
 
-export function createUpdates(store, { cliPath, run = runUpdateCli } = {}) {
+export function createUpdates(store, { cliPath, run = runUpdateCli, cacheRoot, sourceBuilder = createSourceBuilder({ cacheRoot }) } = {}) {
   const plans = new Map(); let pending, stopped = false;
   const scope = () => hash(store.list('project').map(p => [p.id, p.path, p.revision]));
   const save = batch => store.put('agent-update', { ...batch, updatedAt: now() }, store.need('agent-update', batch.id).revision);
@@ -65,8 +66,8 @@ export function createUpdates(store, { cliPath, run = runUpdateCli } = {}) {
     requireThat(!view.project.problem && !view.running.entryPackage?.problem, 'version-error', view.project.problem || view.running.entryPackage?.problem);
     return view;
   }
-  async function target() {
-    const cli = findCodeAgent(cliPath), fingerprint = installationFingerprint(cli);
+  async function target(override = cliPath) {
+    const cli = findCodeAgent(override), fingerprint = installationFingerprint(cli);
     const neutral = mkdtempSync(join(tmpdir(), 'master-agent-version-'));
     let view;
     try { view = await version(cli, neutral); } finally { rmdirSync(neutral); }
@@ -85,19 +86,22 @@ export function createUpdates(store, { cliPath, run = runUpdateCli } = {}) {
       const maintenance = store.get('project-maintenance', project.id);
       const reasons = [...view.project.busy, ...(store.lock(project.id) ? ['master-agent 작업 실행 중'] : []),
         ...(maintenance?.active ? ['업데이트 진행 중 또는 중단 점검 필요'] : [])];
-      return { ...row, state: reasons.length ? 'skipped' : 'ready', detail: reasons.join(' · ') || '현재 PC 설치본과 템플릿을 적용합니다.' };
+      return { ...row, state: reasons.length ? 'skipped' : 'ready', detail: reasons.join(' · ') || '상태를 다시 확인한 뒤 선택한 버전을 적용합니다.' };
     } catch (error) { return { ...row, state: 'skipped', detail: error.message }; }
   }
-  async function preview() {
+  async function preview({ mode = 'remote' } = {}) {
     requireThat(!stopped, 'update-stopped', '서버가 종료 중입니다.');
+    requireThat(['remote', 'installed'].includes(mode), 'invalid-input', '업데이트 방식은 remote 또는 installed입니다.');
     const scopeHash = scope(), projects = store.list('project'), installed = await target();
+    const source = mode === 'remote' ? await sourceBuilder.audit(installed.cli) : null;
     const rows = [], queue = [...projects];
     await Promise.all(Array.from({ length: Math.min(4, queue.length) }, async () => {
       while (queue.length) rows.push(await inspect(queue.shift(), installed));
     }));
     requireThat(scope() === scopeHash, 'stale-state', '조회 중 프로젝트 목록이 바뀌었습니다. 다시 조회하세요.');
-    const plan = { id: randomUUID(), createdAt: now(), scopeHash, target: installed, projects: rows.sort((a, b) => a.id.localeCompare(b.id)) };
-    plans.set(plan.id, plan);
+    const plan = { id: randomUUID(), createdAt: now(), mode, scopeHash, target: installed,
+      ...(source ? { source: sourceSummary(source) } : {}), projects: rows.sort((a, b) => a.id.localeCompare(b.id)) };
+    plans.set(plan.id, { plan, source });
     while (plans.size > 10) plans.delete(plans.keys().next().value);
     return plan;
   }
@@ -115,9 +119,24 @@ export function createUpdates(store, { cliPath, run = runUpdateCli } = {}) {
     const record = store.need('project-maintenance', id);
     store.put('project-maintenance', { ...record, active: false }, record.revision);
   }
-  async function execute(batch) {
+  async function execute(batch, source) {
     let changed = false;
     try {
+      if (source) {
+        batch.preparation = { phase: 'clone', state: 'running', steps: [] }; save(batch);
+        const built = await sourceBuilder.prepare(source, { stopped: () => stopped, progress: progress => {
+          if (progress.commit) batch.source.commit = progress.commit;
+          if (progress.buildRoot) batch.source.buildRoot = progress.buildRoot;
+          batch.preparation = { ...batch.preparation, ...progress, steps: batch.preparation.steps.filter(s => s.phase !== progress.phase).concat(progress) };
+          save(batch);
+        } });
+        const installed = await target(built.cli);
+        requireThat(installed.packageId, 'invalid-package', '검증된 빌드가 패키지 릴리스로 인식되지 않습니다. 프로젝트에 적용하지 않았습니다.');
+        batch.target = installed;
+        batch.source = { ...batch.source, commit: built.commit, buildRoot: built.buildRoot };
+        batch.preparation = { ...batch.preparation, phase: 'validate', state: 'completed', steps: batch.preparation.steps.filter(s => s.phase !== 'validate').concat({ phase: 'validate', state: 'completed' }) };
+        save(batch);
+      }
       for (const row of batch.projects) {
         if (row.state !== 'ready') continue;
         if (stopped || changed) { row.state = 'cancelled'; row.detail = stopped ? '서버 종료로 미실행' : '적용 중 설치본이 변경되어 중단'; save(batch); continue; }
@@ -153,9 +172,13 @@ export function createUpdates(store, { cliPath, run = runUpdateCli } = {}) {
       }
     } catch (error) {
       batch.error = clip(error.message);
-      for (const row of batch.projects) if (['ready', 'running'].includes(row.state)) { row.state = 'interrupted'; row.detail = '일괄 실행이 중단되었습니다.'; }
+      if (batch.preparation && batch.preparation.state !== 'completed') batch.preparation = { ...batch.preparation, state: 'failed' };
+      for (const row of batch.projects) {
+        if (row.state === 'ready') { row.state = 'cancelled'; row.detail = '새 버전 준비 또는 일괄 실행 실패로 미적용'; }
+        else if (row.state === 'running') { row.state = 'interrupted'; row.detail = '적용 중 실행이 중단되었습니다. 프로젝트 상태를 점검하세요.'; }
+      }
     } finally {
-      batch.state = batch.projects.every(row => row.state === 'completed') ? 'completed' : 'needs-attention';
+      batch.state = batch.error ? 'failed' : batch.projects.every(row => row.state === 'completed') ? 'completed' : 'needs-attention';
       save(batch);
     }
   }
@@ -164,7 +187,7 @@ export function createUpdates(store, { cliPath, run = runUpdateCli } = {}) {
     const existing = store.get('agent-update', id);
     if (existing) return existing;
     requireThat(!stopped && !pending && !store.list('agent-update').some(b => b.state === 'running' && !abandoned(b)), 'request-busy', '다른 일괄 업데이트가 진행 중입니다.');
-    const plan = plans.get(id);
+    const { plan, source } = plans.get(id) ?? {};
     requireThat(plan && Date.now() - Date.parse(plan.createdAt) < 15 * 60000 && plan.scopeHash === scope(), 'stale-state', '미리보기가 만료되거나 프로젝트 목록이 바뀌었습니다. 다시 조회하세요.');
     requireThat(installationFingerprint(plan.target.cli) === plan.target.fingerprint, 'stale-state', '설치본이 변경되었습니다. 다시 조회하세요.');
     const batch = structuredClone(plan);
@@ -173,7 +196,7 @@ export function createUpdates(store, { cliPath, run = runUpdateCli } = {}) {
       requireThat(!store.list('agent-update').some(b => b.state === 'running' && !abandoned(b)), 'request-busy', '다른 일괄 업데이트가 진행 중입니다.');
       store.put('agent-update', batch);
     });
-    pending = execute(batch).finally(() => { pending = null; });
+    pending = execute(batch, source).finally(() => { pending = null; });
     return store.need('agent-update', id);
   }
   async function recover(id) {
