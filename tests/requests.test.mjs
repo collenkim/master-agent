@@ -8,6 +8,7 @@ import { acceptRequest, continueRequest, runRequest, launchRequest, requestStatu
 import { verificationFixture } from './verification-fixture.mjs';
 import { startDashboard } from '../packages/dashboard/server.mjs';
 import { answerFor, planningSetup } from './planning-fixture.mjs';
+import { hostPrompt } from '../packages/runner/claude-host.mjs';
 
 test('service group membership is versioned; accepted requests keep their original scope and are idempotent', t => {
   const { store, engine, fixture } = setup(t);
@@ -15,15 +16,22 @@ test('service group membership is versioned; accepted requests keep their origin
   group = engine.catalog.membership(group.id, fixture.projects[0].id, 'add', group.revision);
   group = engine.catalog.membership(group.id, fixture.projects[1].id, 'add', group.revision);
   assert.throws(() => engine.catalog.membership(group.id, fixture.projects[2].id, 'add', 1), { code: 'stale-state' });
-  const input = { targetType: 'group', targetId: group.id, groupRevision: group.revision, goal: '두 서비스 수정', requestKey: 'stable' };
+  const input = { targetType: 'group', targetId: group.id, groupRevision: group.revision, goal: '두 서비스 수정', taskNumber: 'UZRF-392', requestKey: 'stable' };
   const accepted = acceptRequest(store, input);
   engine.catalog.membership(group.id, fixture.projects[0].id, 'remove', group.revision);
   assert.deepEqual(accepted.request.projectIds, fixture.projects.slice(0, 2).map(p => p.id).sort());
   assert.equal(acceptRequest(store, input).created, false);
+  assert.equal(accepted.request.taskNumber, 'UZRF-392');
+  assert.equal(store.need('mission', accepted.request.id).taskNumber, 'UZRF-392');
+  assert.throws(() => acceptRequest(store, { ...input, taskNumber: 'UZRF-393' }), { code: 'request-conflict' });
   assert.throws(() => acceptRequest(store, { ...input, goal: '다른 요청' }), { code: 'request-conflict' });
   assert.throws(() => acceptRequest(store, { ...input, requestKey: 'new' }), { code: 'stale-state' });
   const single = acceptRequest(store, { targetType: 'project', targetId: fixture.projects[2].id, goal: '한 프로젝트 수정' });
   assert.deepEqual(single.request.projectIds, [fixture.projects[2].id]);
+  assert.equal(Object.hasOwn(single.request, 'taskNumber'), false);
+  for (const taskNumber of ['', 'hello world', '../work', 'x'.repeat(65), 392, null]) {
+    assert.throws(() => acceptRequest(store, { targetType: 'project', targetId: fixture.projects[2].id, goal: '잘못된 번호', taskNumber }), { code: 'invalid-input' });
+  }
   engine.catalog.group({ id: 'empty', name: '빈 그룹', projectIds: [] });
   assert.throws(() => acceptRequest(store, { targetType: 'group', targetId: 'empty', goal: '수정' }), { code: 'empty-scope' });
 });
@@ -37,13 +45,21 @@ for (const targetType of ['group', 'project']) test(`${targetType} requests exec
     if (targetType === 'project') recipe.checks = recipe.checks.filter(c => c.id === 'check-one');
     return { id: `template-${task.id}`, projectId: task.projectId, domain: task.domain, kinds: [task.kind], criteria: task.criteria, outputs: task.outputs, recipe };
   });
-  const { request } = acceptRequest(f.store, { targetType, targetId: targetType === 'group' ? 'service' : 'one', goal: '값을 2로 변경', criteria: [{ id: 'value', description: '값이 2다' }], templates });
+  const { request } = acceptRequest(f.store, { targetType, targetId: targetType === 'group' ? 'service' : 'one', goal: '값을 2로 변경', taskNumber: 'UZRF-392', criteria: [{ id: 'value', description: '값이 2다' }], templates });
   const provider = { name: 'fixture-not-ai', model: 'fixture', async generate({ context }) {
+    assert.equal(context.mission.taskNumber, 'UZRF-392');
     const answer = answerFor(context);
     answer.plan.tasks = tasks.map(task => ({ ...task, planAcknowledgements: [], coordination: '', references: context.projects.find(p => p.id === task.projectId).sources.map(s => s.id) }));
     return { data: answer };
   } };
   const inspect = f.host.inspect;
+  const execute = f.host.execute;
+  f.host.execute = async (ticket, options) => {
+    assert.equal(ticket.taskNumber, 'UZRF-392');
+    assert.notEqual(ticket.codeAgentWorkId, ticket.taskNumber);
+    assert.match(hostPrompt(ticket, { control: true }), /"taskNumber": "UZRF-392"/);
+    return execute(ticket, options);
+  };
   f.host.inspect = async project => {
     const attempt = f.store.need('mission', request.id).attempts.filter(a => a.projectId === project.id).at(-1);
     if (attempt?.state === 'verified') Object.assign(f.states[project.id], { work: null, request: null, resume: { code: 'no-work' }, stateVersion: `ended-${attempt.id}` });
@@ -76,7 +92,7 @@ test('automatic polling does not invalidate a plan, but actual state changes sti
 
 test('worker claim excludes duplicates and failure/continue preserve the same mission', async t => {
   const { store, fixture } = setup(t);
-  const { request } = acceptRequest(store, { targetType: 'project', targetId: fixture.projects[0].id, goal: '작업' });
+  const { request } = acceptRequest(store, { targetType: 'project', targetId: fixture.projects[0].id, goal: '작업', taskNumber: 'TASK-77' });
   let release;
   const gate = new Promise(resolve => { release = resolve; });
   const options = { host: {}, provider: {}, workflow: { async run() { await gate; throw Object.assign(new Error('근거를 준비하세요'), { code: 'missing-knowledge' }); } } };
@@ -85,7 +101,8 @@ test('worker claim excludes duplicates and failure/continue preserve the same mi
   assert.throws(() => continueRequest(store, request.id, store.need('target-request', request.id).revision), { code: 'request-busy' });
   release(); const failed = await running;
   assert.equal(failed.state, 'failed'); assert.equal(failed.error.code, 'missing-knowledge');
-  assert.equal(continueRequest(store, request.id, failed.revision).id, request.id);
+  const continued = continueRequest(store, request.id, failed.revision);
+  assert.equal(continued.id, request.id); assert.equal(continued.taskNumber, 'TASK-77');
   assert.equal(requestStatus({ state: 'running', pid: 999999999, host: (await import('node:os')).hostname() }).state, 'interrupted');
 });
 
@@ -109,10 +126,12 @@ test('dashboard authenticates writes, edits membership and submits group/project
     assert.equal((await post('/api/groups', groupInput, 'wrong')).status, 403);
     const group = await (await post('/api/groups', groupInput)).json(); assert.equal(group.revision, 1);
     assert.equal((await post('/api/groups', { ...groupInput, revision: 99 })).status, 409);
-    const input = { targetType: 'group', targetId: group.id, groupRevision: group.revision, goal: '요청', requestKey: 'web-stable' };
+    const input = { targetType: 'group', targetId: group.id, groupRevision: group.revision, goal: '요청', taskNumber: 'WEB-1', requestKey: 'web-stable' };
     assert.equal((await post('/api/requests', input)).status, 202);
     assert.equal((await post('/api/requests', input)).status, 202); assert.equal(launches, 1);
     assert.equal((await post('/api/requests', { targetType: 'project', targetId: fixture.projects[1].id, goal: '단일 요청' })).status, 202);
     assert.equal(launches, 2); assert.equal(store.list('target-request').length, 2);
+    const updated = await (await fetch(dashboard.url + '/api/overview')).json();
+    assert.equal(updated.requests.find(r => r.targetType === 'group').taskNumber, 'WEB-1');
   } finally { await dashboard.close(); }
 });

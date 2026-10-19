@@ -37,8 +37,8 @@ master-agent group list
 그룹은 서비스 유지보수 범위다. `group create <ID> <이름> --description <범위>`로 만들고 `group add/remove <그룹ID> <프로젝트ID> --revision <그룹버전>`으로 소속을 바꾼다. `group show <ID>`에서 최신 버전을 확인한다. 기존 `group save <JSON> --revision <N>`도 지원하며 JSON은 id, name, description, projectIds다. 빈 그룹 저장은 가능하지만 실행 요청은 거부한다.
 
 ```powershell
-master-agent group request commerce "주문 취소 오류 수정" --criterion "취소 회귀 통과" --request-key cancel-fix-001
-master-agent project request order-api "조회 오류 수정" --criterion "조회 회귀 통과" --input request-options.json
+master-agent group request commerce "주문 취소 오류 수정" --task-number UZRF-392 --criterion "취소 회귀 통과" --request-key cancel-fix-001
+master-agent project request order-api "조회 오류 수정" --task-number UZRF-393 --criterion "조회 회귀 통과" --input request-options.json
 master-agent request show <요청ID>
 master-agent mission progress <요청ID>
 master-agent request continue <요청ID> --revision <요청버전>
@@ -46,7 +46,9 @@ master-agent request continue <요청ID> --revision <요청버전>
 
 `--criterion`은 여러 번 지정할 수 있으며 criterion-1부터 ID를 부여한다. 생략하면 요청 원문을 request 완료 조건으로 보존한다. `--provider` 기본값은 claude이고 codex도 지원한다. 요청 ID는 목표 ID다. 그룹 구성은 접수 때 고정하며 같은 request-key와 같은 입력은 같은 요청을 반환한다. 동일 키의 다른 내용은 거부한다. `--revision`을 그룹 요청에 주면 접수 전 그룹 버전을 대조한다.
 
-`--input`은 선택 설정 JSON이다. 예를 들어 `{ "criteria": [{ "id": "cancel", "description": "취소 회귀 통과" }], "templates": [] }` 형태이며 검증 템플릿 배열은 [검증 계약 재사용](autonomous-progress.md)을 따른다. CLI의 --criterion, --provider, --model, --request-key, --revision을 함께 주면 해당 옵션이 우선한다. 요청 대상과 원문은 명령의 위치 인자를 사용한다. 대시보드에서도 같은 검증 설정을 전달할 수 있다.
+`--input`은 선택 설정 JSON이다. 예를 들어 `{ "taskNumber": "UZRF-392", "criteria": [{ "id": "cancel", "description": "취소 회귀 통과" }], "templates": [] }` 형태이며 검증 템플릿 배열은 [검증 계약 재사용](autonomous-progress.md)을 따른다. CLI의 --task-number, --criterion, --provider, --model, --request-key, --revision을 함께 주면 해당 옵션이 우선한다. 요청 대상과 원문은 명령의 위치 인자를 사용한다. 대시보드에서도 같은 검증 설정을 전달할 수 있다.
+
+선택 TASK 번호는 요청·목표 기록과 AI 계획·프로젝트별 개발 지시에 전달하고 이어 실행에서도 유지한다. 그룹의 하위 작업은 같은 번호를 참조하며 내부 작업·실행 ID를 대체하지 않는다. 형식은 영문·숫자로 시작하는 64자 이하의 영문·숫자·점·밑줄·하이픈이다. TASK 번호만으로 요청을 중복 판정하지 않으며, 같은 request-key로 번호를 바꾸면 충돌로 거부한다.
 
 실행 전 준비는 다음과 같다.
 

@@ -35,6 +35,8 @@ export function validateProject(input) {
 
 export function validateMission(input) {
   object(input, 'mission'); string(input.goal, 'goal'); string(input.requestKey, 'requestKey');
+  requireThat(input.taskNumber === undefined || typeof input.taskNumber === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(input.taskNumber),
+    'invalid-input', 'TASK 번호는 영문·숫자로 시작하는 64자 이하의 영문·숫자·점·밑줄·하이픈이어야 합니다.');
   requireThat(['live', 'simulation'].includes(input.mode), 'invalid-input', 'mode는 live 또는 simulation입니다.');
   object(input.scope, 'scope');
   strings(input.scope.projectIds, 'scope.projectIds'); strings(input.scope.groupIds, 'scope.groupIds');

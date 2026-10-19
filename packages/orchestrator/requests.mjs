@@ -25,13 +25,14 @@ export function requestStatus(record) {
   return record;
 }
 
-export function acceptRequest(store, { targetType, targetId, goal, criteria, requestKey = randomUUID(), groupRevision, provider = 'claude', model, templates = [] }) {
+export function acceptRequest(store, { targetType, targetId, goal, taskNumber, criteria, requestKey = randomUUID(), groupRevision, provider = 'claude', model, templates = [] }) {
   requireThat(['project', 'group'].includes(targetType), 'invalid-input', '프로젝트 또는 그룹을 선택하세요.');
   string(targetId, 'targetId'); string(goal, 'goal');
   requireThat(['claude', 'codex'].includes(provider), 'invalid-provider', '계획·판단 provider는 claude 또는 codex입니다.');
   requireThat(Array.isArray(templates), 'invalid-input', '검증 템플릿은 배열이어야 합니다.');
   requireThat(model === undefined || typeof model === 'string', 'invalid-input', '모델 이름은 문자열이어야 합니다.');
   const input = { mode: 'live', goal, requestKey, criteria: criteria ?? [{ id: 'request', description: goal }],
+    ...(taskNumber === undefined ? {} : { taskNumber }),
     scope: { projectIds: targetType === 'project' ? [targetId] : [], groupIds: targetType === 'group' ? [targetId] : [] },
     requestOptions: { provider, model: model ?? null, templates, groupRevision: groupRevision ?? null } };
   return store.transaction(() => {
@@ -43,6 +44,7 @@ export function acceptRequest(store, { targetType, targetId, goal, criteria, req
     const previous = store.get('target-request', mission.id);
     if (previous) return { request: requestStatus(previous), created: false };
     const request = store.put('target-request', { id: mission.id, targetType, targetId, goal, provider, model: model ?? null,
+      ...(taskNumber === undefined ? {} : { taskNumber }),
       templates: structuredClone(templates), templatesRegistered: false, projectIds: mission.scope.projectIds,
       groupRevision: mission.scope.groups[0]?.revision ?? null, state: 'queued', createdAt: now(), updatedAt: now(), blockers: [] });
     return { request, created: true };

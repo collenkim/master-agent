@@ -30,6 +30,7 @@ export class Engine {
       }
       const mission = {
         id: randomUUID(), goal: request.goal, mode: request.mode, criteria: request.criteria,
+        ...(request.taskNumber === undefined ? {} : { taskNumber: request.taskNumber }),
         scope: this.catalog.snapshot(request.scope), requestedScope: request.scope,
         state: 'received', plans: [], tasks: [], attempts: [], createdAt: now(), reason: '실행 계획이 필요합니다.',
       };

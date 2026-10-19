@@ -50,7 +50,7 @@ export function dashboardSnapshot(store, { live = false, refreshing = false, int
   });
   const groups = store.list('group');
   const requests = store.list('target-request').map(requestStatus).map(r => ({ id: r.id, revision: r.revision, targetType: r.targetType, targetId: r.targetId,
-    goal: text(r.goal), projectIds: r.projectIds, groupRevision: r.groupRevision, state: r.state, provider: r.provider,
+    goal: text(r.goal), taskNumber: r.taskNumber ?? null, projectIds: r.projectIds, groupRevision: r.groupRevision, state: r.state, provider: r.provider,
     progress: missions.find(m => m.id === r.id)?.status ?? null, reason: text(store.get('mission', r.id)?.reason),
     createdAt: r.createdAt, updatedAt: r.updatedAt, blockers: r.blockers, error: r.error }));
   return { generatedAt: new Date(now).toISOString(), live, refreshing, intervalMs, projects, missions, groups, requests,

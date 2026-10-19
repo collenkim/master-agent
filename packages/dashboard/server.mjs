@@ -9,6 +9,7 @@ import { Catalog } from '../catalog/catalog.mjs';
 import { acceptRequest, launchRequest, continueRequest } from '../orchestrator/requests.mjs';
 import { createMonitor } from './monitor.mjs';
 import { projectCandidates } from './project-candidates.mjs';
+import { createUpdates } from './updates.mjs';
 
 export function validateDashboardOptions({ port = 4310, cliPath, intervalMs = 5000, observe = true } = {}) {
   requireThat(Number.isInteger(port) && port >= 0 && port <= 65535, 'usage', '--port는 0~65535 정수입니다.');
@@ -16,7 +17,8 @@ export function validateDashboardOptions({ port = 4310, cliPath, intervalMs = 50
   return observe ? findCodeAgent(cliPath, { required: false }) : null;
 }
 
-export async function startDashboard({ dbPath, port = 4310, cliPath, intervalMs = 5000, observe = true, launch = launchRequest, candidateOptions = {}, management } = {}) {
+export async function startDashboard({ dbPath, port = 4310, cliPath, intervalMs = 5000, observe = true, launch = launchRequest, candidateOptions = {}, updateOptions = {}, management } = {}) {
+  const updateCliPath = cliPath;
   cliPath = validateDashboardOptions({ port, cliPath, intervalMs, observe });
   const assets = new Map([
     ['/', ['text/html; charset=utf-8', 'index.html']],
@@ -24,6 +26,7 @@ export async function startDashboard({ dbPath, port = 4310, cliPath, intervalMs 
     ['/style.css', ['text/css; charset=utf-8', 'style.css']],
   ].map(([path, [type, file]]) => [path, { type, body: readFileSync(new URL(`../../apps/dashboard/${file}`, import.meta.url)) }]));
   const store = new Store(dbPath), monitor = createMonitor(store, { cliPath, intervalMs });
+  const updates = createUpdates(store, { cliPath: updateCliPath ?? cliPath, ...updateOptions });
   const token = randomUUID(), catalog = new Catalog(store);
   let candidateScan;
   let origin;
@@ -62,6 +65,9 @@ export async function startDashboard({ dbPath, port = 4310, cliPath, intervalMs 
           return send(200, JSON.stringify(await candidateScan));
         }
         if (path === '/api/projects') return send(201, JSON.stringify(catalog.registerManual(input.project)));
+        if (path === '/api/updates/preview') return send(200, JSON.stringify(await updates.preview()));
+        if (path === '/api/updates/apply') return send(202, JSON.stringify(updates.apply(input.id)));
+        if (path === '/api/updates/recover') return send(200, JSON.stringify(await updates.recover(input.id)));
         if (path === '/api/groups') return send(200, JSON.stringify(catalog.group(input.group, input.revision ?? 0, { newProjects: input.newProjects })));
         if (path === '/api/requests') {
           const accepted = acceptRequest(store, input);
@@ -75,7 +81,7 @@ export async function startDashboard({ dbPath, port = 4310, cliPath, intervalMs 
         return send(404, '{"error":"not-found"}');
       }
       if (request.method !== 'GET') return send(405, '{"error":"method-not-allowed"}');
-      if (path === '/api/overview') return send(200, JSON.stringify({ ...monitor.snapshot(), token, codeAgent: cliPath,
+      if (path === '/api/overview') return send(200, JSON.stringify({ ...monitor.snapshot(), updates: updates.snapshot(), token, codeAgent: cliPath,
         discovery: cliPath ? 'installed' : observe ? 'not-found' : 'saved' }));
       const asset = assets.get(path);
       if (asset) return send(200, asset.body, asset.type);
@@ -99,8 +105,10 @@ export async function startDashboard({ dbPath, port = 4310, cliPath, intervalMs 
       closing ??= (async () => {
         const closed = new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
         server.closeIdleConnections();
+        const updating = updates.stop();
         await monitor.stop();
         await closed;
+        await updating;
         store.close();
       })();
       return closing;

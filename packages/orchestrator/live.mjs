@@ -81,6 +81,7 @@ export class LiveExecution {
         inputHash: hash({ task, goal: m.goal, state, codeAgentWorkId }),
       });
       const attempt = { id: randomUUID(), token: randomUUID(), missionId: id, taskId, projectId: project.id, planVersion: plan.version,
+        ...(m.taskNumber === undefined ? {} : { taskNumber: m.taskNumber }),
         mode: 'live', state: 'running', invocationId: randomUUID(), codeAgentWorkId, initialState: state, provider: host.name, model: host.model ?? 'cli-default', decisionId: d.id, startedAt: now(), turns: [],
         ...(recipe ? { recipe: structuredClone(recipe), baseline } : {}) };
       this.store.acquire(project.id, id, attempt.id);

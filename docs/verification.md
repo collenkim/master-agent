@@ -1,20 +1,22 @@
 # 검증 기록
 
-기능 검증 기준은 **2026-10-19, 대시보드 재시작·실행 중 설치 감지 반영 후**다. Windows·Node.js 24.19.0에서 자동 회귀와 화면을 확인했다. 실제 모델 전체 흐름의 최근 검증일은 2026-10-17이다. 아래 결과는 해당 검증 시점의 기록이며 실제 모델 시험의 재수행을 뜻하지 않는다.
+기능 검증 기준은 **2026-10-19, 일괄 업데이트·TASK 번호·빈 그룹 생성 반영 후**다. Windows·Node.js 24.19.0에서 자동 회귀와 화면을 확인했다. 실제 모델 전체 흐름의 최근 검증일은 2026-10-17이다. 아래 결과는 해당 검증 시점의 기록이며 실제 모델 시험의 재수행을 뜻하지 않는다.
 
 | 검증 | 결과 | 근거 |
 | --- | --- | --- |
-| 자동 회귀 | 192개 통과, 실패·건너뜀 0 | `npm.cmd test`, 로컬 `.master-agent/dashboard-lifecycle-tests.log` |
+| 자동 회귀 | 202개 통과, 실패·건너뜀 0 | `npm.cmd test`, 로컬 `.master-agent/dashboard-updates-tests.log` |
+| 일괄 업데이트 | 설치본·카탈로그 변경 거부, 작업·승인·개발 잠금 제외, 부분 실패·충돌·보류 구분, 중복 적용 방지·종료 취소·중단 점검·HTTP 인증 | `tests/dashboard-updates.test.mjs` 10개 |
+| 실제 code-agent 업데이트 | 격리 프로젝트의 설치본 적용·버전 확인, 누락 템플릿 복구, 사용자 수정 보존, 접수 중 프로젝트 건너뜀 | 위 테스트의 실제 설치본 연동; 실제 관리 프로젝트는 변경하지 않음 |
 | 서버 재시작·종료 | 실제 CLI 프로세스 교체·DB/URL/설정 유지·종료 후 재시작·중복 서버 차단·무관한 서버 보호·화면 토큰 제어 거부 | `tests/dashboard-lifecycle.test.mjs` 2개 |
 | 설치 자동 탐색 | PATH의 실행 파일·npm shim·Windows npm 설치·명시적 override·미설치 구분, 현재 PC의 실제 설치 진입점 확인 | `tests/discovery.test.mjs` |
-| 그룹·단일 요청 | 서비스 범위 고정·구성원 변경·중복 접수 방지·실행기 중단 및 이어 실행·HTTP 쓰기 인증 | `tests/requests.test.mjs` |
+| 그룹·단일 요청 | 서비스 범위 고정·중복 접수 방지, TASK 번호 입력 검증·기록·AI 계획·프로젝트별 개발 지시 전달·이어 실행 보존, HTTP 인증 | `tests/requests.test.mjs` |
 | 프로젝트 후보·등록 | 설치 표시 기반 후보 조회·검색 범위/한도·중복 구분, 단독 등록·그룹과 원자적 저장·오류 시 전체 롤백, 후보 API 인증·자동 등록 금지 | `tests/project-candidates.test.mjs` 2개, `tests/project-registration.test.mjs` 6개 |
 | 요청 전체 실행 | 그룹/단일 요청 각각 모의 AI 계획 → 템플릿 연결 → 실제 파일 변경·Node 검사 → 인계·succeeded | `tests/requests.test.mjs`; AI와 개발 호스트는 모의 응답 |
 | 명령 설치 | 임시 npm 전역 prefix에 로컬 패키지 설치 후 저장소 밖에서 프로젝트 조회·데모 완료 | `npm.cmd install --global --prefix <임시경로> --offline --ignore-scripts <소스경로>` |
 | 관제 서버 | 전체 등록 프로젝트·독립 작업 관측, 조회 실패·오래된 관측 구분, 중복 조회 제한, HTTP 조회 경계 | `tests/dashboard.test.mjs` 6개 |
-| 실제 브라우저 | 등록 창을 열어 둔 상태의 새 설치 자동 감지·입력 보존, 후보 검색·선택·직접 입력·그룹 저장·취소·롤백, 그룹/단일 요청·모바일·연결 끊김 통과 | 로컬 `.master-agent/dashboard-browser-TafsPI/`의 desktop.png·mobile.png·mobile-registration.png; 화면 시험의 실행기 접수는 모의 처리 |
+| 실제 브라우저 | 신규 빈 그룹 생성 후 구성 편집·등록·취소·롤백, 그룹/단일 TASK 번호, 업데이트 미리보기·실행·결과·출력 펼침 유지, 설치 자동 감지·입력 보존, 모바일·연결 끊김 통과 | 로컬 `.master-agent/dashboard-browser-to02aE/`의 desktop.png·mobile.png·mobile-registration.png·mobile-update.png; 화면의 개발 접수·업데이트 CLI 응답은 모의 처리 |
 | 진행 상태·병렬 제어 | 5개 회귀 통과, 실제 CLI 조회에서도 확인 | `tests/parallel-progress.test.mjs` |
-| 구문·문서 | JavaScript 79개·Markdown 18개 검사 통과 | `npm.cmd run check` |
+| 구문·문서 | JavaScript 81개·Markdown 18개 검사 통과 | `npm.cmd run check` |
 | 실제 code-agent 계약 등록 | 등록 성공, 원문과 다른 claim·변경된 문서 거부 | `tests/handoff-contracts.test.mjs`의 실제 빌드 연동 |
 | 실제 code-agent 통신 | 접수·중복·이벤트·재부착·협력 정지·제어권 인계 통과 | `tests/code-agent-control.test.mjs`, 가짜 개발 호스트 |
 | 앞선 답의 실제 AI 판단 | 5건 통과: routine 3·ambiguous 1·critical 1 | [판단 증거](evidence/2026-10-16-answer-context.json) |

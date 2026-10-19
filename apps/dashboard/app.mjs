@@ -11,6 +11,7 @@ const labels = {
   'replan-required': '재계획 필요', 'reapproval-required': '재승인 필요', 'limit-reached': '한도 도달',
   'stale-request': '요청 상태 변경', wait: '대기',
   queued: '접수·시작 대기', failed: '실행 오류', interrupted: '실행기 중단',
+  skipped: '건너뜀', 'needs-attention': '결과 확인 필요',
 };
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const date = value => value ? new Date(value).toLocaleString('ko-KR') : '기록 없음';
@@ -58,6 +59,7 @@ function render() {
     <h3>최근 이벤트</h3><ol class="events">${m.events.map(e => `<li><time>${escape(date(e.at))}</time> ${escape(e.type)} ${escape(e.taskId)}</li>`).join('') || '<li>기록 없음</li>'}</ol>
   </details>`).join('') || '<div class="empty">등록된 목표가 없습니다.</div>';
   renderManagement();
+  renderUpdates();
 }
 
 async function refresh() {
@@ -115,6 +117,7 @@ function renderManagement() {
     <div class="filters"><button type="button" class="edit-group" data-id="${escape(g.id)}">구성 편집</button><button type="button" class="group-request" data-id="${escape(g.id)}" ${g.projectIds.length ? '' : 'disabled'}>그룹에 요청</button></div></article>`).join('') || '<div class="empty">서비스 그룹을 만들고 유지보수할 프로젝트를 선택하세요.</div>';
   $('requests').innerHTML = [...latest.requests].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(r => `<article class="mission"><div class="card-head"><h3>${escape(r.goal)}</h3>${badge(r.state === 'waiting' ? r.progress ?? 'waiting' : r.state)}</div>
     <p>${r.targetType === 'group' ? '그룹' : '프로젝트'} ${escape(r.targetId)} · ${escape(r.projectIds.join(', '))}</p>
+    ${r.taskNumber ? `<p>TASK: <strong>${escape(r.taskNumber)}</strong></p>` : ''}
     <p class="muted">${escape(r.id)} · ${escape(date(r.updatedAt))}</p>
     ${r.state === 'waiting' ? `<p>${escape(r.reason)}</p>` : ''}
     ${r.error ? `<p class="error">${escape(r.error.message)}</p>` : ''}${r.blockers.length ? `<p>${escape(r.blockers.join(' · '))}</p>` : ''}
@@ -125,9 +128,11 @@ function openGroup(id) {
   groupDrafts = [];
   $('group-form').reset(); $('group-error').textContent = '';
   $('group-title').textContent = editingGroup ? '서비스 그룹 편집' : '서비스 그룹 만들기';
+  $('group-composition').hidden = !editingGroup;
+  $('group-create-help').hidden = Boolean(editingGroup);
   $('group-id').value = editingGroup?.id ?? ''; $('group-id').disabled = Boolean(editingGroup);
   $('group-name').value = editingGroup?.name ?? ''; $('group-description').value = editingGroup?.description ?? '';
-  $('group-members').innerHTML = latest.projects.map(p => `<label class="member"><input type="checkbox" name="member" value="${escape(p.id)}" ${editingGroup?.projectIds.includes(p.id) ? 'checked' : ''}>${escape(p.name || p.id)}</label>`).join('') || '<p>아래 버튼으로 이 그룹에 새 프로젝트를 등록하세요.</p>';
+  $('group-members').innerHTML = editingGroup ? latest.projects.map(p => `<label class="member"><input type="checkbox" name="member" value="${escape(p.id)}" ${editingGroup.projectIds.includes(p.id) ? 'checked' : ''}>${escape(p.name || p.id)}</label>`).join('') || '<p>아래 버튼으로 이 그룹에 새 프로젝트를 등록하세요.</p>' : '';
   renderDrafts();
   $('group-dialog').showModal();
 }
@@ -196,7 +201,7 @@ $('group-form').addEventListener('submit', async event => {
   event.preventDefault(); const button = event.submitter; button.disabled = true;
   try {
     const group = { id: $('group-id').value.trim(), name: $('group-name').value.trim(), description: $('group-description').value,
-      projectIds: [...document.querySelectorAll('#group-members input:checked')].map(e => e.value).concat(groupDrafts.map(p => p.id)) };
+      projectIds: editingGroup ? [...document.querySelectorAll('#group-members input:checked')].map(e => e.value).concat(groupDrafts.map(p => p.id)) : [] };
     await post('/api/groups', { group, revision: editingGroup?.revision ?? 0, newProjects: groupDrafts });
     $('group-dialog').close(); $('action-status').textContent = '그룹 구성을 저장했습니다.'; await refresh();
   } catch (error) { $('group-error').textContent = error.message; } finally { button.disabled = false; }
@@ -224,8 +229,47 @@ $('request-form').addEventListener('submit', async event => {
   try {
     const config = $('request-config').value.trim() ? JSON.parse($('request-config').value) : {};
     const request = await post('/api/requests', { targetType: $('request-type').value, targetId: $('request-target').value,
+      ...($('request-task-number').value.trim() ? { taskNumber: $('request-task-number').value.trim() } : {}),
       groupRevision: requestGroupRevision, requestKey, goal: $('request-goal').value.trim(), provider: $('request-provider').value,
       criteria: config.criteria ?? $('request-criteria').value.split('\n').map(s => s.trim()).filter(Boolean).map((description, i) => ({ id: `criterion-${i + 1}`, description })), templates: config.templates ?? [] });
     $('request-dialog').close(); $('action-status').textContent = `요청을 접수했습니다: ${request.id}`; await refresh();
   } catch (error) { $('request-error').textContent = error.message; } finally { button.disabled = false; }
+});
+
+let updatePlan;
+const updateTable = (projects, batchId = '', open = new Set()) => `<table><thead><tr><th>프로젝트</th><th>현재 버전</th><th>상태·결과</th></tr></thead><tbody>${projects.map(p => `<tr><td>${escape(p.name)}<small class="path">${escape(p.path)}</small></td><td>${escape(p.current ?? '미확인')}</td><td>${badge(p.state)}<small>${escape(p.detail)}</small>${p.output ? `<details data-output="${escape(`${batchId}/${p.id}`)}" ${open.has(`${batchId}/${p.id}`) ? 'open' : ''}><summary>명령 출력</summary><pre>${escape(p.output)}</pre></details>` : ''}</td></tr>`).join('')}</tbody></table>`;
+function renderUpdates() {
+  const updates = latest.updates ?? { batches: [], maintenance: [] };
+  const open = new Set([...document.querySelectorAll('#updates details[open][data-id]')].map(e => e.dataset.id));
+  const outputs = new Set([...document.querySelectorAll('#updates details[open][data-output]')].map(e => e.dataset.output));
+  $('updates').innerHTML = updates.maintenance.filter(r => r.recoverable).map(r => `<p class="error">${escape(r.id)}: 업데이트 중단 점검 필요 <button type="button" class="recover-update" data-id="${escape(r.id)}">종료·유휴 상태 확인 후 잠금 해제</button></p>`).join('') +
+    updates.batches.map(b => `<details class="mission" data-id="${escape(b.id)}" ${open.has(b.id) || b.state === 'running' ? 'open' : ''}><summary><span>${escape(date(b.createdAt))} · 설치본 ${escape(b.target.version)}</span>${badge(b.state)}</summary>${b.error ? `<p class="error">${escape(b.error)}</p>` : ''}<div class="table-wrap">${updateTable(b.projects, b.id, outputs)}</div></details>`).join('');
+}
+$('preview-updates').addEventListener('click', async () => {
+  if (!latest) return;
+  const button = $('preview-updates'); button.disabled = true; updatePlan = null;
+  $('update-error').textContent = ''; $('update-preview').textContent = '버전과 작업 상태를 확인하고 있습니다…';
+  $('update-target').textContent = ''; $('apply-updates').disabled = true; $('update-dialog').showModal();
+  try {
+    updatePlan = await post('/api/updates/preview', {});
+    $('update-target').textContent = `적용할 설치본: ${updatePlan.target.version} (${updatePlan.target.fingerprint.slice(0, 12)})${updatePlan.target.resetsPin ? ' · 기존 릴리스 고정을 해제하고 현재 번들을 적용합니다.' : ' · 현재 설치 패키지 릴리스를 적용합니다.'}`;
+    $('update-preview').innerHTML = updateTable(updatePlan.projects);
+    $('apply-updates').disabled = !updatePlan.projects.some(p => p.state === 'ready');
+  } catch (error) { $('update-preview').textContent = ''; $('update-error').textContent = error.message; }
+  finally { button.disabled = false; }
+});
+$('apply-updates').addEventListener('click', async () => {
+  if (!updatePlan) return;
+  $('apply-updates').disabled = true;
+  try {
+    await post('/api/updates/apply', { id: updatePlan.id });
+    $('update-dialog').close(); $('action-status').textContent = '일괄 업데이트를 시작했습니다. 아래에서 프로젝트별 결과를 확인하세요.';
+    await refresh();
+  } catch (error) { $('update-error').textContent = error.message; $('apply-updates').disabled = false; }
+});
+$('updates').addEventListener('click', async event => {
+  const button = event.target.closest('.recover-update'); if (!button) return;
+  button.disabled = true;
+  try { const result = await post('/api/updates/recover', { id: button.dataset.id }); $('action-status').textContent = result.detail; await refresh(); }
+  catch (error) { $('action-status').textContent = error.message; button.disabled = false; }
 });

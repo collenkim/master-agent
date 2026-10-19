@@ -103,6 +103,7 @@ export class Planner {
       };
     });
     const context = { mission: { id: mission.id, goal: mission.goal, mode: mission.mode, criteria: mission.criteria, scope: mission.scope,
+      ...(mission.taskNumber === undefined ? {} : { taskNumber: mission.taskNumber }),
       clarifications: mission.clarifications ?? [], verificationTemplates: Object.values(mission.verificationTemplates ?? {}) }, projects,
       previousPlan: mission.plans.at(-1)?.proposal ?? null,
       replan: mission.replanPending ? mission.replanContext : null };

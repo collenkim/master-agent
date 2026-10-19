@@ -56,8 +56,8 @@ code-agent는 설치된 명령에서 자동 탐색합니다. --cli는 별도 빌
   group show <ID>                      그룹 구성·버전 조회
   group add <ID> <프로젝트ID> --revision <N>    그룹에 프로젝트 추가
   group remove <ID> <프로젝트ID> --revision <N> 그룹에서 프로젝트 제외
-  group request <ID> <요청내용> [--criterion <완료조건>] [--input <JSON>]  그룹에 요청·백그라운드 실행
-  project request <ID> <요청내용> [--criterion <완료조건>] [--input <JSON>] 단일 프로젝트 요청·실행
+  group request <ID> <요청내용> [--task-number <TASK번호>] [--criterion <완료조건>] [--input <JSON>] 그룹 요청·실행
+  project request <ID> <요청내용> [--task-number <TASK번호>] [--criterion <완료조건>] [--input <JSON>] 단일 요청·실행
   request list                        접수한 요청·실행 상태 조회
   request show <ID>                    요청 상태·대기·실패 사유 조회
   request continue <ID> --revision <N> 설정·응답 보완 후 기존 목표 이어 실행
@@ -124,7 +124,7 @@ async function main() {
     force: { type: 'boolean' }, 'wait-ms': { type: 'string' }, 'poll-ms': { type: 'string' }, 'follow-timeout-ms': { type: 'string' },
     port: { type: 'string' }, 'refresh-ms': { type: 'string' },
     saved: { type: 'boolean' }, description: { type: 'string' }, input: { type: 'string' },
-    criterion: { type: 'string', multiple: true }, 'request-key': { type: 'string' },
+    criterion: { type: 'string', multiple: true }, 'request-key': { type: 'string' }, 'task-number': { type: 'string' },
   } });
   if (values.help || !args.length || args[0] === 'help') { console.log(help); return; }
   if (args[0] === 'dashboard') {
@@ -215,6 +215,7 @@ async function main() {
       case 'group request': case 'project request': {
         const input = values.input ? json(values.input) : {};
         const accepted = acceptRequest(store, { ...input, targetType: category, targetId: id, goal: file,
+          ...(values['task-number'] === undefined ? {} : { taskNumber: values['task-number'] }),
           ...(values.criterion ? { criteria: values.criterion.map((description, i) => ({ id: `criterion-${i + 1}`, description })) } : {}),
           ...(values.provider ? { provider: values.provider } : {}), ...(values.model ? { model: values.model } : {}),
           ...(values['request-key'] ? { requestKey: values['request-key'] } : {}), ...(revision ? { groupRevision: revision } : {}) });
