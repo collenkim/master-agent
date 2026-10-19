@@ -108,7 +108,7 @@ code-agent는 설치된 명령에서 자동 탐색합니다. --cli는 별도 빌
 
 --control: dispatch·continue·verify·handoff·reconcile·replan·recover·advance·drive 를 code-agent 통신 계약(원자적 접수·이벤트·정지·위임 판단)으로
            실행합니다. project control 연결이 필요하고 reattach·stop·delegate·relay 는 항상 이 경로입니다. --poll-ms·--follow-timeout-ms 로 주기를 정합니다.
-JSON은 UTF-8입니다. live 호스트 종료는 작업 완료가 아닙니다. 승인 응답은 기존 code-agent 호스트에서 처리합니다.
+JSON은 UTF-8입니다. live 호스트 종료는 작업 완료가 아닙니다. 사람 질문·승인은 대시보드 공통 요청함(별도 사람 채널 연결 필요) 또는 원래 code-agent 호스트에서 처리합니다.
 위임 판단은 사람이 code-agent 에서 준 권한(grant) 범위의 routine 판단만 보내고, 나머지는 사람에게 넘깁니다.
 모의 실행은 실제 프로젝트를 수정하지 않으며 simulation-complete로 종료합니다.`;
 
