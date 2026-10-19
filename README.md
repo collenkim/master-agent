@@ -2,7 +2,7 @@
 
 여러 프로젝트의 code-agent를 연결해 목표를 분석하고, 작업을 배정·검증·인계하는 CLI 오케스트레이터입니다. `master-agent` 명령으로 실행하고 `master-agent dashboard`로 등록 프로젝트 전체를 감시합니다. LangGraph JS가 실행 흐름을 제어하고 SQLite에 판단·증거·체크포인트를 저장합니다.
 
-2026-10-17 **실제 Claude로 두 프로젝트의 병렬 개발·계약 인계·통합 작업까지 완료**했습니다. 세 작업 모두 succeeded이며, 후속 계획 담당 배정 7건에서 두 선행 계약의 사본과 입력 해시를 대조했습니다. 위임 승인 9건, master 검사 8개는 반영 전후 통과했고 질문·사람 이관은 0건입니다. 2026-10-19 대시보드 프로젝트 수동 등록 추가 후 자동 회귀 187개와 Chrome 화면 검증을 통과했습니다. 요청 전체 실행 회귀의 AI·개발 호스트는 모의 응답입니다. [검증 결과와 한계](docs/verification.md)를 참고하세요.
+현재 대시보드에서 프로젝트 수동 등록·서비스 그룹 관리·그룹/단일 프로젝트 요청을 제공합니다. 실제 Claude로 두 프로젝트의 병렬 개발·계약 인계·통합 완료를 검증했으며, 최신 자동 회귀와 브라우저 시험의 결과·범위는 [검증 기록](docs/verification.md)에 정리했습니다.
 
 ## 실행 프로세스
 
@@ -72,12 +72,14 @@ master-agent dashboard --db C:\workspace\control\master.db
 
 출력된 `http://127.0.0.1:4310`을 브라우저에서 엽니다. **설치된 code-agent는 자동 탐색**합니다. PATH의 실행 파일·npm 전역 설치와 링크를 확인하며 Windows npm 설치 경로도 확인합니다. 별도 빌드를 사용할 때만 `CODE_AGENT_CLI` 또는 `--cli`를 지정합니다. `--port <번호>`로 포트를 바꾸고, Ctrl+C로 대시보드 서버를 종료합니다. `--refresh-ms 5000`은 전체 조회가 끝난 뒤 다음 조회까지의 간격입니다.
 
+대시보드를 사용하는 동안 실행 터미널을 유지해야 합니다. `Failed to fetch`가 표시되면 서버 실행 여부와 접속 포트를 확인하고 **기존과 같은 DB**로 다시 실행하세요. 자동 시작 서비스는 제공하지 않습니다. 코드 변경 후에는 서버를 재시작하고 화면을 새로고침합니다. [연결 오류 해결](docs/ui.md#실행과-연결)에 증상별 확인 방법이 있습니다.
+
 - 같은 DB에 등록된 **모든 프로젝트**를 조회합니다. master 목표에 연결되지 않은 독립 code-agent 작업도 포함합니다. 미등록 프로젝트를 디스크에서 자동 탐색하지는 않습니다.
 - 프로젝트별 작업·단계·승인·질문 대기·리뷰 차단·임대 상태, 목표별 작업 진행과 최근 이벤트를 표시합니다. 검색과 판단 필요·조회 오류 필터를 제공합니다.
 - 설치된 code-agent의 `status --json`을 자동 조회합니다. 설치를 찾지 못하거나 `--saved`로 실행하면 저장된 관측과 master 기록을 표시합니다. 조회 실패·오래된 관측·이전 작업을 구분하고 프로세스 생존을 추정하지 않습니다.
 - 프로젝트 수동 등록, 서비스 그룹 생성·구성원 편집, 그룹·단일 프로젝트 요청과 기존 요청 이어 실행을 화면에서 제공합니다. code-agent 제어 토큰과 원본 모델 입력은 화면 API에 보내지 않습니다. 실행 중지·승인·답변 전달은 기존 CLI를 사용합니다.
 
-자세한 범위는 [대시보드와 UI 계획](docs/ui.md)을 참고하세요.
+관측 규칙과 HTTP 계약은 [로컬 대시보드](docs/ui.md)를 참고하세요.
 
 ## 서비스 그룹과 유지보수 요청
 
@@ -127,7 +129,7 @@ master-agent mission escalations <목표ID>
 master-agent mission graph <목표ID>
 ```
 
-`mission pause`는 새 배정을 멈춥니다. 이미 실행 중인 호스트의 정지는 `mission stop <목표ID> <시도ID> --cli <경로> --mode pause`를 사용합니다. 재개·정지·사람 답 전달 조건은 [통신 계약](docs/code-agent-control.md)에 있습니다.
+`mission pause`는 새 배정을 멈춥니다. 이미 실행 중인 호스트의 정지는 `mission stop <목표ID> <시도ID> --mode pause`를 사용합니다. 재개·정지·사람 답 전달 조건은 [통신 계약](docs/code-agent-control.md)에 있습니다.
 
 `progress.tasks`에는 `status`, `phase`, `reason`, `runId`, `lastProgressAt`, `nextAction`이 있습니다. `approval-pending`은 위임 판단 전, `approval-processing`은 판단·전송 중, `human-input`은 사람 응답 필요, `blocked`는 실패·미확인 등 점검 필요 상태입니다. 여러 작업이 병행되므로 목표의 요약 상태와 함께 `counts`와 작업별 상태를 확인하세요. 이 조회는 마지막 저장 관측을 표시하며 원격 조회를 새로 수행하지 않습니다.
 
@@ -139,11 +141,11 @@ master-agent mission graph <목표ID>
 
 | 문서 | 내용 |
 | --- | --- |
-| [구현 현황과 다음 작업](docs/implementation.md) | 두 저장소별 보완 우선순위, code-agent 담당 Codex 전달 지시 |
+| [구현 현황과 다음 작업](docs/implementation.md) | 현재 기능·최근 변경·보완 우선순위, code-agent 담당 전달 지시 |
 | [검증 기록](docs/verification.md) | 최신 결과·재현 방법·증거·미검증 범위 |
 | [CLI 사용법](docs/usage.md) | 등록·목표·실행·조회 명령 |
 | [LangGraph 구조](docs/langgraph.md) | 그래프·SQLite·재시작 규칙 |
 | [code-agent 통신 계약](docs/code-agent-control.md) | 위임 판단·이벤트·재부착·정지·제어권 인계 |
 | [복구](docs/recovery.md) / [재계획](docs/replanning.md) / [반영 대조](docs/delivery-reconciliation.md) / [중단 처리](docs/interruption.md) | 실패·중단별 처리 경계 |
-| [대시보드와 UI 계획](docs/ui.md) | 관제·그룹 관리·요청 실행과 후속 화면 설계 |
+| [로컬 대시보드](docs/ui.md) | 연결 오류 해결·등록·그룹·요청·관측·HTTP 계약·후속 범위 |
 | [요구사항](docs/requirements.md) / [설계](docs/architecture.md) / [오케스트레이션](docs/orchestration.md) | 제품 목표와 확장 설계 |

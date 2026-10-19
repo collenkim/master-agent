@@ -30,7 +30,7 @@ master-agent group list
 
 ## 서비스 그룹과 단일 프로젝트 요청
 
-대시보드에서 `그룹 만들기 → 새 프로젝트 수동 등록 → 그룹 저장`으로 프로젝트와 그룹을 함께 만들 수 있다. 기존 그룹의 `구성 편집`에서도 새 프로젝트를 등록하거나 기존 프로젝트를 선택·제외한다. 프로젝트 목록의 `프로젝트 수동 등록`은 그룹 없이 등록한다. 이름·서버 PC의 기존 폴더 절대 경로·쉼표로 구분한 담당 업무가 필수이며 ID는 생략하면 자동 생성한다. 추가 설정에 제약·참고 근거를 줄 단위로 입력할 수 있다. 그룹 저장 전 신규 항목은 수정·제외할 수 있으며 취소하면 저장되지 않는다. 경로 중복·입력 오류·버전 충돌 시 신규 프로젝트와 그룹 모두 저장하지 않는다.
+웹의 프로젝트 등록·그룹 생성 및 편집은 [대시보드](ui.md#프로젝트와-서비스-그룹)를 따른다. 아래는 같은 카탈로그를 사용하는 CLI와 실제 실행 준비 절차다.
 
 그룹은 서비스 유지보수 범위다. `group create <ID> <이름> --description <범위>`로 만들고 `group add/remove <그룹ID> <프로젝트ID> --revision <그룹버전>`으로 소속을 바꾼다. `group show <ID>`에서 최신 버전을 확인한다. 기존 `group save <JSON> --revision <N>`도 지원하며 JSON은 id, name, description, projectIds다. 빈 그룹 저장은 가능하지만 실행 요청은 거부한다.
 
@@ -68,7 +68,7 @@ master-agent mission show <목표ID>
 master-agent mission run <목표ID> --simulate
 ```
 
-프로젝트 등록은 중복 경로를 거부한다. 같은 requestKey와 내용의 목표 접수는 기존 목표를 반환하며, 같은 키의 다른 내용은 오류다. 그룹 JSON은 `id`, `name`, `projectIds`로 구성해 `group save <JSON>`으로 저장한다. 그룹 수정에는 마지막 revision을 전달한다. 목표 접수 때 고정한 대상 목록은 이후 그룹 변경으로 바뀌지 않는다.
+프로젝트 등록은 중복 경로를 거부한다. 직접 목표를 접수할 때도 같은 requestKey와 내용은 기존 목표를 반환하며, 같은 키의 다른 내용은 오류다. 그룹 형식·버전과 접수 대상 고정 규칙은 위의 서비스 그룹 절차와 같다.
 
 계획에는 모든 작업의 프로젝트·도메인·배정 이유·근거·선행 작업·완료 조건·허용 범위·산출물·검증 방법이 필요하다. 등록된 근거 ID에 없는 참조, 도메인 불일치, 미지원 기능, 순환 의존, 후행 검증 누락을 거부한다. 여러 프로젝트 계획에는 전체 작업과 완료 조건을 연결하는 통합 검증 작업이 필요하다.
 
@@ -95,10 +95,10 @@ revision은 오래된 조작을 거부하는 상태 버전이며 승인 값이 �
 
 ## code-agent 상태 조회
 
-실제 프로젝트의 절대 경로와 도메인 정보를 JSON으로 작성해 등록한 뒤 실행한다.
+대시보드 또는 `project add`로 등록한 프로젝트를 조회한다. 설치된 code-agent는 자동 탐색한다.
 
 ```powershell
-master-agent project observe <프로젝트ID> --cli C:/IdeaProjects/code-agent/dist/agent/cli.js
+master-agent project observe <프로젝트ID>
 ```
 
 설치 마커 `.code-agent/version`이 있어야 하며 지원하는 실행 진입점은 절대 경로의 `.js`, `.cjs`, `.mjs`, `.exe`다. `.cmd`·`.bat`는 실행하지 않는다. 마커는 조회 전 검사이며 전체 설치 무결성을 보장하지 않는다.
@@ -118,10 +118,10 @@ node scripts/smoke-code-agent.mjs C:/IdeaProjects/code-agent/dist/agent/cli.js
 사람이 대상 프로젝트에서 `code-agent master enable`로 연동을 켜고 위임 권한(`code-agent master grant`)을 준 경우에만 쓴다. 연결은 승인 권한이 아니다.
 
 ```powershell
-master-agent project control <프로젝트ID> --cli C:/IdeaProjects/code-agent/dist/agent/cli.js --controller <제어자ID> --token-file <절대경로>
-master-agent mission drive <목표ID> --cli C:/IdeaProjects/code-agent/dist/agent/cli.js --control --provider claude
+master-agent project control <프로젝트ID> --controller <제어자ID> --token-file <절대경로>
+master-agent mission drive <목표ID> --control --provider claude
 master-agent mission escalations <목표ID>
-master-agent mission stop <목표ID> <시도ID> --cli C:/IdeaProjects/code-agent/dist/agent/cli.js --mode pause
+master-agent mission stop <목표ID> <시도ID> --mode pause
 ```
 
 원자적 접수·이벤트 재동기화·재부착·정지·위임 판단·제어권 인계의 조건은 [code-agent 통신 계약 연동](code-agent-control.md)을 따른다.
@@ -134,8 +134,8 @@ master-agent mission stop <목표ID> <시도ID> --cli C:/IdeaProjects/code-agent
 
 배정 전 `delivery` 검증 계약을 등록하면 handoff에서 code-agent 커밋의 동의 기록과 반영 후 테스트를 대조한다. 호스트 반환 뒤 관측이 끊긴 unknown 시도는 `mission reconcile`로 실행 없이 검증 단계에 복구할 수 있다. 적용 조건과 증거 수준은 [반영 기록·관측 복구](delivery-reconciliation.md)를 따른다.
 
-재계획으로 보류된 실패 시도는 `mission replan <목표ID> <시도ID> --revision <버전> --expect-state <상태버전> --cli <경로> [--provider claude|codex]`로 인계한다. provider가 있는 drive도 외부 종료 확인 후 같은 흐름을 사용한다. [재계획 인계](replanning.md)의 보존·재수집·재분석 계약을 따른다.
+재계획으로 보류된 실패 시도는 `mission replan <목표ID> <시도ID> --revision <버전> --expect-state <상태버전> [--provider claude|codex]`로 인계한다. provider가 있는 drive도 외부 종료 확인 후 같은 흐름을 사용한다. [재계획 인계](replanning.md)의 보존·재수집·재분석 계약을 따른다.
 
 규칙 판단은 Decision.actor=rule-engine, 검증된 AI 계획 활성화는 ai+validator, 사용자 질문 응답은 human, 검증 계약 등록은 operator로 기록한다. 카탈로그의 도메인·기능·수집 경로는 직접 지정하며 AI가 수집된 코드·문서를 근거로 프로젝트 역할과 계획을 생성한다. 실제 검증은 파일 스냅샷과 독립 명령의 조건별 결과·산출물 해시를 보존한다. 사용법은 [실제 검증과 자동 진행](live-verification.md)을 따른다.
 
-mode=live 목표는 등록·AI 분석·계획 검증과 Claude 호스트 배정·관측·계속 실행, 검증 계약 등록·독립 테스트·로컬 인계·완료 판정을 지원한다. `mission drive`는 가능한 배정·검증·인계·후행 작업을 자동 진행하며 `--provider` 지정 시 [검증 실패 복구](recovery.md)를 수행한다. 개별 복구는 `mission recover`로 실행한다. code-agent 통신 계약 경로(`--control`)는 사람이 준 권한 범위의 위임 판단, 실행 정지·취소, 재시작 뒤 재부착, 제어권 인계를 지원한다. 로컬 웹은 관제·그룹 편집·그룹/단일 요청·이어 실행을 제공한다. 웹 중지·승인·답변, API 기반 모델 연결, 원격 러너·운영 예산은 구현하지 않았다.
+`mission drive`는 가능한 배정·검증·인계·후행 작업을 진행하고 `--provider` 지정 시 [검증 실패 복구](recovery.md)를 수행한다. 개별 복구는 `mission recover`로 실행한다. 제공 기능과 남은 작업은 [구현 현황](implementation.md), 화면 조작 범위는 [대시보드](ui.md)를 기준으로 한다.

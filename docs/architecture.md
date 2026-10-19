@@ -137,6 +137,8 @@ Task 상태는 `queued → running → succeeded / failed / cancelled`를 기본
 
 ## 7. 저장소와 API 설계
 
+아래 모델과 API 표는 확장 설계다. 현재 구현한 로컬 HTTP 경로·입력·보호 조건은 [대시보드 HTTP 계약](ui.md#로컬-http-계약)을 기준으로 한다.
+
 로컬 영속 저장소에는 Mission, AcceptanceCriterion, ScopeSnapshot, PlanVersion, Task, Dependency, Attempt, Artifact, Evidence, Decision, Finding, Budget, Event, StateObservation을 둡니다. 카탈로그는 Project, Group, GroupMember, ServiceContract, KnowledgeReference로 구성하고 보조 명령은 Command로 기록합니다. 계획 버전과 작업·의존 관계의 활성화는 하나의 트랜잭션으로 처리합니다. 실행 시작 의도는 프로세스를 띄우기 전에 저장하고, 시작 직후 중단된 경우 복구 시 대조합니다.
 
 | API 초안 | 역할 |
@@ -172,4 +174,4 @@ Task 상태는 `queued → running → succeeded / failed / cancelled`를 기본
 - CLI 연결: `C:\IdeaProjects\code-agent\src\agent\cliMain.ts`
 - 호스트 설치 정보: `C:\IdeaProjects\code-agent\src\agent\hosts.ts`
 
-확인 기준은 2026년 10월 14일 로컬 소스입니다. 실제 설치 번들의 지원 여부는 프로젝트 등록 시 별도로 검사합니다.
+위 참고 소스의 확인 기준은 2026년 10월 14일입니다. 현재 수동 등록은 기존 디렉터리와 카탈로그 입력을 검사하고, code-agent 설치·JSON 호환성은 후속 상태 조회에서 확인합니다.
