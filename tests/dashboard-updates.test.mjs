@@ -8,6 +8,7 @@ import { setup } from './helpers.mjs';
 import { createUpdates, runUpdateCli } from '../packages/dashboard/updates.mjs';
 import { startDashboard } from '../packages/dashboard/server.mjs';
 import { findCodeAgent } from '../packages/code-agent-adapter/discovery.mjs';
+import { SimulationRunner } from '../packages/runner/simulation.mjs';
 
 function fixture(t) {
   const f = setup(t), pkg = join(f.root, 'code-agent'), cliPath = join(pkg, 'dist/agent/cli.js');
@@ -54,6 +55,20 @@ test('preview binds the exact install and catalog, rejecting changed builds and 
   f.store.put('project', { ...project, name: 'changed' }, project.revision);
   assert.throws(() => f.updates.apply(next.id), { code: 'stale-state' });
   assert.equal(f.calls.some(c => c.args[0] === 'update'), false);
+});
+
+test('deleting a project invalidates old update previews and excludes its path from new updates', async t => {
+  const f = fixture(t);
+  await f.engine.run(f.mission.id, new SimulationRunner());
+  const plan = await f.updates.preview({ mode: 'installed' }), project = f.store.need('project', plan.projects[0].id);
+  f.engine.catalog.remove(project.id, project.revision);
+  assert.throws(() => f.updates.apply(plan.id), { code: 'stale-state' });
+  f.calls.length = 0;
+  const next = await f.updates.preview({ mode: 'installed' });
+  assert.equal(next.projects.length, 2);
+  f.updates.apply(next.id); await f.updates.idle();
+  assert.equal(f.calls.some(c => c.cwd === project.path), false);
+  assert.equal(f.updates.snapshot().batches[0].state, 'completed');
 });
 
 test('master execution and maintenance mutually exclude each other; shutdown cancels remaining projects', async t => {

@@ -1,9 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
+import { hostname } from 'node:os';
 import { setup } from './helpers.mjs';
 import { startDashboard } from '../packages/dashboard/server.mjs';
+import { SimulationRunner } from '../packages/runner/simulation.mjs';
 
 async function dashboardFixture(t) {
   const context = setup(t);
@@ -118,4 +120,78 @@ registrationTest('candidate list requires dashboard authentication, ignores clie
   assert.equal((await post('/api/projects', { project })).status, 201);
   const refreshed = await post('/api/project-candidates', {});
   assert.equal(refreshed.body.projects.find(p => p.path === project.path).registeredId, project.id);
+});
+
+registrationTest('deletion releases registration and all group memberships while keeping files and historical identity', async ({ store, engine, fixture, mission, dashboard, post }) => {
+  await engine.run(mission.id, new SimulationRunner());
+  const project = store.need('project', fixture.projects[0].id), before = engine.describe(mission.id);
+  const group = store.need('group', fixture.group.id);
+  const other = engine.catalog.group({ id: 'other-group', name: '다른 그룹', projectIds: [project.id] });
+  mkdirSync(join(project.path, '.code-agent')); writeFileSync(join(project.path, '.code-agent/version'), 'kept');
+  writeFileSync(join(project.path, 'source.txt'), 'user source');
+  // An independent code-agent cursor does not prevent removing master registration.
+  writeFileSync(join(project.path, '.code-agent/active.json'), '{"id":"independent-work"}');
+  const removed = await post('/api/projects/delete', { id: project.id, revision: project.revision });
+  assert.equal(removed.status, 200);
+  assert.deepEqual(new Set(removed.body.removedFromGroups), new Set([group.id, other.id]));
+  assert.equal(store.need('group', group.id).revision, group.revision + 1);
+  assert.equal(store.need('group', group.id).projectIds.includes(project.id), false);
+  assert.deepEqual(store.need('group', other.id).projectIds, []);
+  assert.ok(store.need('project', project.id).deletedAt);
+  assert.equal(engine.catalog.status().some(p => p.id === project.id), false);
+  assert.equal(store.db.prepare('SELECT project_id FROM paths WHERE path=?').get(project.path), undefined);
+  assert.equal(readFileSync(join(project.path, 'source.txt'), 'utf8'), 'user source');
+  assert.equal(readFileSync(join(project.path, '.code-agent/version'), 'utf8'), 'kept');
+  assert.deepEqual(engine.describe(mission.id), before);
+  const overview = await (await fetch(dashboard.url + '/api/overview')).json();
+  assert.equal(overview.projects.length, 2);
+  assert.equal(overview.missions.find(m => m.id === mission.id).status, 'completed');
+  const candidates = await post('/api/project-candidates', {});
+  assert.equal(candidates.body.projects.find(p => p.path.toLowerCase() === project.path.toLowerCase()).registeredId, null);
+  assert.equal((await post('/api/projects', { project })).body.error, 'already-exists');
+  const fresh = await post('/api/projects', { project: { ...project, id: 'new-identity' } });
+  assert.equal(fresh.status, 201); assert.equal(fresh.body.deletedAt, undefined);
+  assert.deepEqual(engine.describe(mission.id), before);
+  assert.equal(store.need('mission', mission.id).scope.projectIds.includes('new-identity'), false);
+  assert.throws(() => engine.catalog.snapshot({ projectIds: [project.id], groupIds: [] }), { code: 'not-found' });
+  assert.throws(() => store.acquire(project.id, mission.id, 'archived'), { code: 'not-found' });
+  const request = await post('/api/requests', { targetType: 'project', targetId: project.id, goal: '삭제된 대상' });
+  assert.equal(request.status, 404);
+  const oldGroup = await post('/api/groups', { group, revision: group.revision });
+  assert.equal(oldGroup.status, 409);
+  assert.equal((await post('/api/groups', { group: { ...other, projectIds: [project.id] }, revision: other.revision + 1 })).status, 404);
+});
+
+registrationTest('deletion requires authentication and exact revision and leaves registration intact on rejection', async ({ store, engine, post, draft }) => {
+  const project = engine.catalog.registerManual(draft('deleting'));
+  const input = { id: project.id, revision: project.revision };
+  for (const headers of [{ 'X-Master-Token': '' }, { Origin: 'https://other.example' }]) {
+    assert.equal((await post('/api/projects/delete', input, headers)).status, 403);
+  }
+  assert.equal((await post('/api/projects/delete', { id: project.id })).status, 400);
+  assert.equal((await post('/api/projects/delete', { ...input, revision: project.revision + 1 })).status, 409);
+  assert.deepEqual(store.need('project', project.id), project);
+  assert.equal((await post('/api/projects/delete', input)).status, 200);
+  assert.equal((await post('/api/projects/delete', input)).status, 404);
+});
+
+registrationTest('unfinished missions and active execution or update locks prevent deletion', async ({ store, engine, fixture, post, draft }) => {
+  const project = store.need('project', fixture.projects[0].id), group = store.need('group', fixture.group.id);
+  const busy = await post('/api/projects/delete', { id: project.id, revision: project.revision });
+  assert.equal(busy.status, 409); assert.equal(busy.body.error, 'project-in-use');
+  assert.deepEqual(store.need('group', group.id), group);
+  assert.deepEqual(store.need('project', project.id), project);
+  const independent = engine.catalog.registerManual(draft('locked'));
+  const input = { id: independent.id, revision: independent.revision };
+  store.acquire(independent.id, 'mission', 'attempt');
+  assert.equal((await post('/api/projects/delete', input)).body.error, 'project-busy');
+  store.release(independent.id, 'attempt');
+  const maintenance = store.put('project-maintenance', { id: independent.id, active: true });
+  assert.equal((await post('/api/projects/delete', input)).body.error, 'project-busy');
+  store.put('project-maintenance', { ...maintenance, active: false }, maintenance.revision);
+  const batch = store.put('agent-update', { id: 'preparing', state: 'running', host: hostname(), pid: process.pid,
+    projects: [{ id: independent.id, state: 'ready' }] });
+  assert.equal((await post('/api/projects/delete', input)).body.error, 'project-busy');
+  store.put('agent-update', { ...batch, state: 'completed' }, batch.revision);
+  assert.equal((await post('/api/projects/delete', input)).status, 200);
 });

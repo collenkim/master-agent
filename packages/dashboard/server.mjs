@@ -63,10 +63,11 @@ export async function startDashboard({ dbPath, port = 4310, cliPath, intervalMs 
           return;
         }
         if (path === '/api/project-candidates') {
-          candidateScan ??= projectCandidates(store.list('project'), { ...candidateOptions, cliPath }).finally(() => { candidateScan = null; });
+          candidateScan ??= projectCandidates(catalog.projects(), { ...candidateOptions, cliPath }).finally(() => { candidateScan = null; });
           return send(200, JSON.stringify(await candidateScan));
         }
         if (path === '/api/projects') return send(201, JSON.stringify(catalog.registerManual(input.project)));
+        if (path === '/api/projects/delete') return send(200, JSON.stringify(catalog.remove(input.id, input.revision)));
         if (path === '/api/updates/preview') return send(200, JSON.stringify(await updates.preview(input)));
         if (path === '/api/updates/apply') return send(202, JSON.stringify(updates.apply(input.id)));
         if (path === '/api/updates/recover') return send(200, JSON.stringify(await updates.recover(input.id)));
@@ -89,7 +90,7 @@ export async function startDashboard({ dbPath, port = 4310, cliPath, intervalMs 
       if (asset) return send(200, asset.body, asset.type);
       send(404, '{"error":"not-found"}');
     } catch (error) {
-      const status = error.code === 'forbidden' ? 403 : ['stale-state', 'request-busy', 'request-conflict', 'already-exists', 'duplicate-path'].includes(error.code) ? 409 : error.code === 'not-found' ? 404 : error.code ? 400 : 500;
+      const status = error.code === 'forbidden' ? 403 : ['stale-state', 'request-busy', 'request-conflict', 'project-busy', 'project-in-use', 'already-exists', 'duplicate-path'].includes(error.code) ? 409 : error.code === 'not-found' ? 404 : error.code ? 400 : 500;
       send(status, JSON.stringify({ error: error.code ?? 'internal-error', message: error.code ? error.message : '요청 처리 중 오류가 발생했습니다.' }));
     }
   });

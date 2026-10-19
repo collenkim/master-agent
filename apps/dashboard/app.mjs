@@ -32,7 +32,7 @@ function render() {
   const openProjects = new Set([...document.querySelectorAll('#projects details[open]')].map(e => e.dataset.id));
   $('projects').innerHTML = visible.map(p => `<article class="project">
     <div class="card-head"><h3>${escape(p.name || p.id)}</h3>${badge(p.observation.status)}</div>
-    <button type="button" class="project-request" data-id="${escape(p.id)}">이 프로젝트에 요청</button>
+    <div class="filters"><button type="button" class="project-request" data-id="${escape(p.id)}">이 프로젝트에 요청</button><button type="button" class="delete-project" data-id="${escape(p.id)}">프로젝트 삭제</button></div>
     <p class="path">${escape(p.path)}</p>
     <div class="work"><span class="muted">${p.observation.historical || p.observation.stale ? '마지막 관측 작업' : '현재 관측 작업'}</span><strong>${escape(p.work?.id ?? (p.observation.status === 'observed' ? '작업 없음' : '확인되지 않음'))}</strong><span>${escape(p.work?.phase ?? '—')}</span></div>
     <div class="chips">${p.resume ? badge(p.resume.code) : ''}${p.observation.stale ? '<span class="badge warning">오래됨·미조회</span>' : ''}${p.observation.historical && p.work ? '<span class="badge warning">이전 관측</span>' : ''}</div>
@@ -83,7 +83,7 @@ $('search').addEventListener('input', render); $('filter').addEventListener('cha
 $('refresh').addEventListener('click', refresh);
 void refresh();
 
-let editingGroup = null, requestKey, requestGroupRevision;
+let editingGroup = null, deletingProject = null, requestKey, requestGroupRevision;
 let groupDrafts = [], projectInGroup = false, editingDraftId = null, projectDraftId;
 let candidates = [], candidateLoading = false, candidateInfo = '';
 function renderCandidates() {
@@ -151,6 +151,16 @@ function openProject(inGroup, id) {
   $('project-dialog').showModal();
   $('candidate-search').value = ''; void loadCandidates();
 }
+function openDeleteProject(id) {
+  deletingProject = latest.projects.find(p => p.id === id);
+  if (!deletingProject) return;
+  $('delete-project-name').textContent = `${deletingProject.name} (${deletingProject.id})`;
+  $('delete-project-path').textContent = deletingProject.path;
+  const groups = latest.groups.filter(g => g.projectIds.includes(id));
+  $('delete-project-groups').textContent = `함께 제외할 그룹: ${groups.map(g => g.name).join(' · ') || '없음'}`;
+  $('delete-project-error').textContent = '';
+  $('delete-project-dialog').showModal();
+}
 function scopeChanged() {
   const type = $('request-type').value, id = $('request-target').value;
   const group = latest.groups.find(g => g.id === id);
@@ -182,6 +192,7 @@ document.addEventListener('click', async event => {
   if (button.classList.contains('edit-group')) openGroup(button.dataset.id);
   if (button.classList.contains('group-request')) openRequest('group', button.dataset.id);
   if (button.classList.contains('project-request')) openRequest('project', button.dataset.id);
+  if (button.classList.contains('delete-project')) openDeleteProject(button.dataset.id);
   if (button.classList.contains('edit-draft')) openProject(true, button.dataset.id);
   if (button.classList.contains('candidate-pick') && !button.disabled) {
     const project = candidates.find(p => p.path === button.dataset.path);
@@ -196,6 +207,15 @@ document.addEventListener('click', async event => {
     try { const r = latest.requests.find(r => r.id === button.dataset.id); await post('/api/requests/continue', { id: r.id, revision: r.revision }); $('action-status').textContent = '기존 대상과 목표에서 이어 실행합니다.'; await refresh(); }
     catch (error) { $('action-status').textContent = error.message; } finally { button.disabled = false; }
   }
+});
+$('delete-project-form').addEventListener('submit', async event => {
+  event.preventDefault(); const button = event.submitter; button.disabled = true;
+  try {
+    await post('/api/projects/delete', { id: deletingProject.id, revision: deletingProject.revision });
+    $('delete-project-dialog').close();
+    $('action-status').textContent = '프로젝트 등록을 해제하고 그룹에서 제외했습니다. 프로젝트 폴더와 이전 요청 이력은 보존됩니다.';
+    await refresh();
+  } catch (error) { $('delete-project-error').textContent = error.message; } finally { button.disabled = false; }
 });
 $('group-form').addEventListener('submit', async event => {
   event.preventDefault(); const button = event.submitter; button.disabled = true;

@@ -3,7 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, lstatSync, mkdtempSync, rmdirSync } from 'node:fs';
 import { tmpdir, hostname } from 'node:os';
 import { join, resolve, extname } from 'node:path';
-import { normalizedPath } from '../catalog/catalog.mjs';
+import { Catalog, normalizedPath } from '../catalog/catalog.mjs';
 import { hash, now, requireThat } from '../domain/contracts.mjs';
 import { findCodeAgent } from '../code-agent-adapter/discovery.mjs';
 import { createSourceBuilder, sourceSummary } from './source-update.mjs';
@@ -52,7 +52,8 @@ export function installationFingerprint(cliPath) {
 
 export function createUpdates(store, { cliPath, run = runUpdateCli, cacheRoot, sourceBuilder = createSourceBuilder({ cacheRoot }) } = {}) {
   const plans = new Map(); let pending, stopped = false;
-  const scope = () => hash(store.list('project').map(p => [p.id, p.path, p.revision]));
+  const catalog = new Catalog(store);
+  const scope = () => hash(catalog.projects().map(p => [p.id, p.path, p.revision]));
   const save = batch => store.put('agent-update', { ...batch, updatedAt: now() }, store.need('agent-update', batch.id).revision);
   async function version(cli, path) {
     const result = await run(cli, ['version', '--json'], path);
@@ -92,7 +93,7 @@ export function createUpdates(store, { cliPath, run = runUpdateCli, cacheRoot, s
   async function preview({ mode = 'remote' } = {}) {
     requireThat(!stopped, 'update-stopped', '서버가 종료 중입니다.');
     requireThat(['remote', 'installed'].includes(mode), 'invalid-input', '업데이트 방식은 remote 또는 installed입니다.');
-    const scopeHash = scope(), projects = store.list('project'), installed = await target();
+    const scopeHash = scope(), projects = catalog.projects(), installed = await target();
     const source = mode === 'remote' ? await sourceBuilder.audit(installed.cli) : null;
     const rows = [], queue = [...projects];
     await Promise.all(Array.from({ length: Math.min(4, queue.length) }, async () => {

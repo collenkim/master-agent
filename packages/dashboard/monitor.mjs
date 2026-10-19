@@ -1,6 +1,7 @@
 import { Engine } from '../orchestrator/engine.mjs';
 import { observeProject } from '../code-agent-adapter/observe.mjs';
 import { requestStatus } from '../orchestrator/requests.mjs';
+import { Catalog } from '../catalog/catalog.mjs';
 
 const text = value => typeof value === 'string' ? value.slice(0, 2000) : '';
 const list = value => Array.isArray(value) ? value : [];
@@ -19,7 +20,7 @@ export function dashboardSnapshot(store, { live = false, refreshing = false, int
         error: text(error.message), tasks: [], events: [] };
     }
   });
-  const projects = store.list('project').map(project => {
+  const projects = new Catalog(store).projects().map(project => {
     const observation = store.get('observation', project.id);
     const state = observation?.state ?? observation?.lastSuccessfulState;
     const observedAt = state?.observedAt ?? null;
@@ -29,7 +30,7 @@ export function dashboardSnapshot(store, { live = false, refreshing = false, int
     const observationStatus = failure ? 'process-error' : observation?.status ?? 'unobserved';
     const binding = store.get('control-binding', project.id);
     const tasks = missions.flatMap(m => m.tasks.filter(t => t.projectId === project.id).map(t => ({ ...t, missionId: m.id, missionGoal: m.goal, mode: m.mode })));
-    return { id: project.id, name: text(project.name), path: project.path, domains: project.domains,
+    return { id: project.id, revision: project.revision, name: text(project.name), path: project.path, domains: project.domains,
       observation: { status: observationStatus, stale, observedAt, checkedAt: failure?.at ?? observation?.recordedAt ?? null,
         historical: observationStatus !== 'observed', error: text(failure?.message ?? observation?.error) },
       work: state?.work ? { id: text(state.work.id), phase: text(state.work.phase) } : null,
@@ -66,11 +67,12 @@ export function createMonitor(store, { cliPath, intervalMs = 5000, timeoutMs = 5
   function refresh() {
     if (pending) return pending;
     if (stopped || !cliPath) return Promise.resolve();
-    const queue = store.list('project');
+    const queue = new Catalog(store).projects();
     pending = (async () => {
       await Promise.all(Array.from({ length: Math.min(4, queue.length) }, async () => {
         while (queue.length && !stopped) {
           const project = queue.shift();
+          if (store.need('project', project.id).deletedAt) { errors.delete(project.id); continue; }
           try { await observe(store, project.id, { cliPath, timeoutMs }); errors.delete(project.id); }
           catch (error) { errors.set(project.id, { message: error.message, at: new Date().toISOString() }); }
         }

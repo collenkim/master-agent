@@ -1,23 +1,24 @@
 # 검증 기록
 
-기능 검증 기준은 **2026-10-19, 원격 pull·빌드·테스트를 포함한 일괄 업데이트 반영 후**다. Windows·Node.js 24.19.0에서 자동 회귀와 화면을 확인했다. 실제 모델 전체 흐름의 최근 검증일은 2026-10-17이다. 아래 결과는 해당 검증 시점의 기록이며 실제 모델 시험의 재수행을 뜻하지 않는다.
+기능 검증 기준은 **2026-10-19, 대시보드 프로젝트 삭제·업데이트 건너뜀 안내 반영 후**다. Windows·Node.js 24.19.0에서 자동 회귀와 화면을 확인했다. 실제 모델 전체 흐름의 최근 검증일은 2026-10-17이다. 아래 결과는 해당 검증 시점의 기록이며 실제 모델 시험의 재수행을 뜻하지 않는다.
 
 | 검증 | 결과 | 근거 |
 | --- | --- | --- |
-| 자동 회귀 | 211개 통과, 실패·건너뜀 0 | `npm.cmd test`, 로컬 `.master-agent/remote-update-tests.log` |
+| 자동 회귀 | 219개 통과, 실패·건너뜀 0 | `npm.cmd test`, 로컬 `.master-agent/project-deletion-tests.log` |
 | 원격 업데이트 준비 | 실제 로컬 Git remote·pull·npm ci/build/test 후 동일 패키지 적용, 각 준비 단계 실패 시 미적용, upstream 변경·분기·미설정 거부, 원본 변경 보존·종료 처리·HTTP 비동기 실행 | `tests/source-update.test.mjs` 9개; 합성 code-agent 패키지 사용, 외부 원격 서버·실제 관리 프로젝트는 변경하지 않음 |
-| 일괄 업데이트 | 설치본·카탈로그 변경 거부, 작업·승인·개발 잠금 제외, 부분 실패·충돌·보류 구분, 중복 적용 방지·종료 취소·중단 점검·HTTP 인증 | `tests/dashboard-updates.test.mjs` 10개 |
+| 일괄 업데이트 | 설치본·카탈로그 변경 거부, 삭제된 프로젝트 제외·이전 미리보기 무효화, 작업·승인·개발 잠금 제외, 부분 실패·충돌·보류 구분, 중복 적용 방지·종료 취소·중단 점검·HTTP 인증 | `tests/dashboard-updates.test.mjs` 11개 |
 | 실제 code-agent 업데이트 | 격리 프로젝트의 설치본 적용·버전 확인, 누락 템플릿 복구, 사용자 수정 보존, 접수 중 프로젝트 건너뜀 | 위 테스트의 실제 설치본 연동; 실제 관리 프로젝트는 변경하지 않음 |
 | 서버 재시작·종료 | 실제 CLI 프로세스 교체·DB/URL/설정 유지·종료 후 재시작·중복 서버 차단·무관한 서버 보호·화면 토큰 제어 거부 | `tests/dashboard-lifecycle.test.mjs` 2개 |
 | 설치 자동 탐색 | PATH의 실행 파일·npm shim·Windows npm 설치·명시적 override·미설치 구분, 현재 PC의 실제 설치 진입점 확인 | `tests/discovery.test.mjs` |
 | 그룹·단일 요청 | 서비스 범위 고정·중복 접수 방지, TASK 번호 입력 검증·기록·AI 계획·프로젝트별 개발 지시 전달·이어 실행 보존, HTTP 인증 | `tests/requests.test.mjs` |
-| 프로젝트 후보·등록 | 설치 표시 기반 후보 조회·검색 범위/한도·중복 구분, 단독 등록·그룹과 원자적 저장·오류 시 전체 롤백, 후보 API 인증·자동 등록 금지 | `tests/project-candidates.test.mjs` 2개, `tests/project-registration.test.mjs` 6개 |
+| 프로젝트 후보·등록·삭제 | 후보 조회·중복 구분·API 인증, 단독/그룹 등록·원자적 저장, 삭제 시 그룹 제외·폴더와 완료 이력 보존·새 ID 재등록·오래된 편집 거부·미완료 목표/실행/업데이트 보호 | `tests/project-candidates.test.mjs` 2개, `tests/project-registration.test.mjs` 9개 |
 | 요청 전체 실행 | 그룹/단일 요청 각각 모의 AI 계획 → 템플릿 연결 → 실제 파일 변경·Node 검사 → 인계·succeeded | `tests/requests.test.mjs`; AI와 개발 호스트는 모의 응답 |
 | 명령 설치 | 임시 npm 전역 prefix에 로컬 패키지 설치 후 저장소 밖에서 프로젝트 조회·데모 완료 | `npm.cmd install --global --prefix <임시경로> --offline --ignore-scripts <소스경로>` |
-| 관제 서버 | 전체 등록 프로젝트·독립 작업 관측, 조회 실패·오래된 관측 구분, 중복 조회 제한, HTTP 조회 경계 | `tests/dashboard.test.mjs` 6개 |
-| 실제 브라우저 | 원격 업데이트 기본 선택·upstream 미리보기·단계별 진행·적용 커밋·결과·출력 펼침 유지, 빈 그룹·등록·TASK 번호·설치 감지·모바일·연결 끊김 통과 | 로컬 `.master-agent/dashboard-browser-APVurE/`의 desktop.png·mobile.png·mobile-registration.png·mobile-update.png; 화면의 개발 접수·업데이트 실행은 모의 처리 |
+| 관제 서버 | 전체 등록 프로젝트·독립 작업 관측, 조회 실패·오래된 관측 구분, 중복 조회 제한, 삭제 시 기존 대기열·이후 조회에서 제외, HTTP 조회 경계 | `tests/dashboard.test.mjs` 7개 |
+| 실제 브라우저 | 삭제 취소·확정·미완료 목표 거부·그룹 제외·후보 재선택·요청 대상 제외, 원격 업데이트·출력 펼침 유지, 빈 그룹·등록·TASK 번호·설치 감지·모바일·연결 끊김 통과 | 로컬 `.master-agent/dashboard-browser-xHIfJ9/`의 desktop.png·mobile.png·mobile-deletion.png·mobile-registration.png·mobile-update.png; 화면의 개발 접수·업데이트 실행은 모의 처리 |
+| 브랜치별 작업과 업데이트 판정 | 다른 브랜치 체크아웃에서 `status --json`은 `work: null`·`no-work`, `version --json`은 이전 브랜치 미완료 작업을 `project.busy`로 반환함을 읽기 전용 확인 | code-agent 소스·빌드·설치 릴리스의 `currentCursor`/`allCursors` 사용 대조; 실제 프로젝트 상태·브랜치는 변경하지 않음 |
 | 진행 상태·병렬 제어 | 5개 회귀 통과, 실제 CLI 조회에서도 확인 | `tests/parallel-progress.test.mjs` |
-| 구문·문서 | JavaScript 83개·Markdown 18개 검사 통과 | `npm.cmd run check` |
+| 구문·문서 | JavaScript 84개·Markdown 18개 검사 통과 | `npm.cmd run check` |
 | 실제 code-agent 계약 등록 | 등록 성공, 원문과 다른 claim·변경된 문서 거부 | `tests/handoff-contracts.test.mjs`의 실제 빌드 연동 |
 | 실제 code-agent 통신 | 접수·중복·이벤트·재부착·협력 정지·제어권 인계 통과 | `tests/code-agent-control.test.mjs`, 가짜 개발 호스트 |
 | 앞선 답의 실제 AI 판단 | 5건 통과: routine 3·ambiguous 1·critical 1 | [판단 증거](evidence/2026-10-16-answer-context.json) |

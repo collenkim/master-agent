@@ -88,6 +88,26 @@ test('overlapping refreshes share one bounded sweep; a failing project does not 
   await monitor.stop(); await monitor.refresh(); assert.equal(calls, 5);
 });
 
+test('monitor drops deleted projects from an existing queue and later sweeps', async t => {
+  const { store, fixture, engine, root } = setup(t);
+  for (const id of ['zz-extra-1', 'zz-extra-2']) {
+    const path = join(root, id); mkdirSync(path);
+    engine.catalog.register({ ...fixture.projects[0], id, path });
+  }
+  let release;
+  const gate = new Promise(resolve => { release = resolve; }), calls = [];
+  const monitor = createMonitor(store, { cliPath: 'fixture', observe: async (_, id) => { calls.push(id); await gate; } });
+  const pending = monitor.refresh();
+  assert.equal(calls.length, 4);
+  for (const id of ['zz-extra-1', 'zz-extra-2']) engine.catalog.remove(id, store.need('project', id).revision);
+  release(); await pending;
+  assert.equal(calls.includes('zz-extra-2'), false);
+  assert.equal(monitor.snapshot().projects.length, 3);
+  calls.length = 0; await monitor.refresh();
+  assert.deepEqual(calls, fixture.projects.map(p => p.id).sort());
+  await monitor.stop();
+});
+
 test('HTTP serves local UI and saved DB, rejects writes, foreign origins and host rebinding', async t => {
   const { db, store } = setup(t);
   const before = store.list('mission');

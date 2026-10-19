@@ -1,5 +1,6 @@
 import { realpathSync, statSync } from 'node:fs';
 import { resolve, isAbsolute } from 'node:path';
+import { hostname } from 'node:os';
 import { validateProject, requireThat, string, strings, now, object } from '../domain/contracts.mjs';
 
 export function normalizedPath(path) {
@@ -9,6 +10,36 @@ export function normalizedPath(path) {
 }
 export class Catalog {
   constructor(store) { this.store = store; }
+  projects() { return this.store.list('project').filter(p => !p.deletedAt); }
+  active(id) {
+    const project = this.store.need('project', id);
+    requireThat(!project.deletedAt, 'not-found', `프로젝트 ${id}는 등록 해제되었습니다. 다시 등록하려면 새 ID를 사용하세요.`);
+    return project;
+  }
+  remove(id, expectedRevision) {
+    string(id, 'project.id');
+    requireThat(Number.isInteger(expectedRevision) && expectedRevision > 0, 'invalid-input', '프로젝트 버전이 필요합니다.');
+    return this.store.transaction(() => {
+      const project = this.active(id);
+      requireThat(project.revision === expectedRevision, 'stale-state', '프로젝트 정보가 변경되었습니다. 다시 조회하세요.');
+      requireThat(!this.store.lock(id) && !this.store.get('project-maintenance', id)?.active,
+        'project-busy', '프로젝트 실행 또는 업데이트 잠금이 있습니다. 완료하거나 중단 상태를 먼저 점검하세요.');
+      const mission = this.store.list('mission').find(m => m.scope.projectIds.includes(id) && !['simulation-complete', 'succeeded', 'cancelled'].includes(m.state));
+      requireThat(!mission, 'project-in-use', `미완료 목표 ${mission?.id}에서 사용하는 프로젝트입니다. 목표를 완료하거나 취소한 뒤 삭제하세요.`);
+      const updating = this.store.list('agent-update').some(batch => {
+        if (batch.state !== 'running' || !batch.projects.some(p => p.id === id && ['ready', 'running'].includes(p.state))) return false;
+        if (batch.host !== hostname()) return true;
+        try { process.kill(batch.pid, 0); return true; } catch (error) { return error.code !== 'ESRCH'; }
+      });
+      requireThat(!updating, 'project-busy', '이 프로젝트를 포함한 일괄 업데이트가 진행 중입니다. 완료 후 삭제하세요.');
+      const groups = this.store.list('group').filter(g => g.projectIds.includes(id));
+      for (const group of groups) this.store.put('group', { ...group, projectIds: group.projectIds.filter(pid => pid !== id) }, group.revision);
+      // Keep immutable identity and historical references; release only the active path registration.
+      const removed = this.store.put('project', { ...project, deletedAt: now() }, expectedRevision);
+      this.store.db.prepare('DELETE FROM paths WHERE project_id=?').run(id);
+      return { id, deletedAt: removed.deletedAt, removedFromGroups: groups.map(g => g.id) };
+    });
+  }
   register(input, { inTransaction = false } = {}) {
     validateProject(input);
     const path = normalizedPath(input.path);
@@ -35,7 +66,7 @@ export class Catalog {
   registerManual(input) { return this.register(this.manualProject(input)); }
   updateKnowledge(id, patch, expectedRevision) {
     return this.store.transaction(() => {
-      const project = this.store.need('project', id);
+      const project = this.active(id);
       const next = { ...project };
       for (const field of ['domains', 'capabilities', 'constraints', 'currentPlans', 'references']) if (patch[field] !== undefined) next[field] = patch[field];
       validateProject(next);
@@ -57,7 +88,7 @@ export class Catalog {
         requireThat(input.projectIds.includes(project.id), 'invalid-input', '새 프로젝트는 이 그룹의 소속으로 선택해야 합니다.');
         this.register(project, { inTransaction: true });
       }
-      input.projectIds.forEach(id => this.store.need('project', id));
+      input.projectIds.forEach(id => this.active(id));
       return this.store.put('group', { id: input.id, name: input.name, description: input.description ?? '', projectIds: input.projectIds }, expectedRevision);
     });
   }
@@ -65,7 +96,7 @@ export class Catalog {
     requireThat(['add', 'remove'].includes(action), 'invalid-input', '그룹 구성원 추가 또는 제외가 필요합니다.');
     const group = this.store.need('group', id);
     requireThat(group.revision === expectedRevision, 'stale-state', '그룹이 변경되었습니다. 다시 조회하세요.');
-    this.store.need('project', projectId);
+    this.active(projectId);
     const projectIds = action === 'add' ? [...new Set([...group.projectIds, projectId])] : group.projectIds.filter(pid => pid !== projectId);
     return this.group({ ...group, projectIds }, expectedRevision);
   }
@@ -73,11 +104,11 @@ export class Catalog {
     const groups = scope.groupIds.map(id => this.store.need('group', id));
     const ids = [...new Set([...scope.projectIds, ...groups.flatMap(g => g.projectIds)])].sort();
     requireThat(ids.length, 'empty-scope', '대상 프로젝트가 없습니다.');
-    const projects = ids.map(id => this.store.need('project', id));
+    const projects = ids.map(id => this.active(id));
     return { projectIds: ids, projects: projects.map(p => ({ id: p.id, path: p.path })), groups: groups.map(g => ({ id: g.id, name: g.name, description: g.description ?? '', revision: g.revision, projectIds: g.projectIds })) };
   }
   status() {
-    return this.store.list('project').map(p => {
+    return this.projects().map(p => {
       const lock = this.store.lock(p.id) ?? null;
       const attempt = lock ? this.store.need('mission', lock.mission_id).attempts.find(a => a.id === lock.attempt_id) : null;
       return { ...p, observation: this.store.get('observation', p.id) ?? { status: 'unobserved' }, execution: lock,

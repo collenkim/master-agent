@@ -62,6 +62,7 @@ export class Store {
   events(id) { return this.db.prepare('SELECT * FROM events WHERE mission_id=? ORDER BY sequence').all(id).map(e => ({ sequence: e.sequence, type: e.type, at: e.at, ...JSON.parse(e.body) })); }
   lock(projectId) { return this.db.prepare('SELECT * FROM locks WHERE project_id=?').get(projectId); }
   acquire(projectId, missionId, attemptId) {
+    requireThat(!this.get('project', projectId)?.deletedAt, 'not-found', `프로젝트 ${projectId}는 등록 해제되었습니다.`);
     requireThat(!this.get('project-maintenance', projectId)?.active, 'project-busy', `프로젝트 ${projectId}의 code-agent 업데이트가 진행 중이거나 중단 점검이 필요합니다.`);
     requireThat(!this.lock(projectId), 'project-busy', `프로젝트 ${projectId}에 실행 중이거나 확인되지 않은 작업이 있습니다.`);
     this.db.prepare('INSERT INTO locks VALUES (?,?,?)').run(projectId, missionId, attemptId);

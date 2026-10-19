@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import { extname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
-import { normalizedPath } from '../catalog/catalog.mjs';
+import { Catalog, normalizedPath } from '../catalog/catalog.mjs';
 import { requireThat, hash, now } from '../domain/contracts.mjs';
 import { findCodeAgent } from './discovery.mjs';
 
@@ -38,7 +38,7 @@ export async function observeProject(store, projectId, { cliPath, timeoutMs = 30
   cliPath = findCodeAgent(cliPath);
   const extension = extname(cliPath).toLowerCase();
   requireThat(Number.isInteger(timeoutMs) && timeoutMs > 0, 'invalid-input', '조회 시간 제한은 양의 정수여야 합니다.');
-  const project = store.need('project', projectId);
+  const project = new Catalog(store).active(projectId);
   const observedAt = now();
   const requestId = randomUUID();
   store.transaction(() => {

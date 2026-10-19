@@ -20,6 +20,7 @@
     <section id="requests" aria-label="보낸 요청"></section>
     <div class="toolbar"><h2>code-agent 업데이트</h2><div class="filters"><label>업데이트 방식<select id="update-mode"><option value="remote">원격 최신 버전 받아 적용</option><option value="installed">현재 설치본만 적용</option></select></label><button id="preview-updates" type="button">전체 프로젝트 업데이트 확인</button></div></div>
     <p class="muted">원격 변경 받기 → 의존성 설치 → 빌드·테스트 → 등록 프로젝트 적용. 작업·승인 진행 중인 프로젝트는 건너뜁니다.</p>
+    <p class="muted">건너뜀 사유는 code-agent의 업데이트 가능 여부 조회 결과입니다. 현재 브랜치의 작업 조회와 달리 다른 브랜치의 미완료 작업도 업데이트를 막을 수 있습니다. 저장된 작업 상태이며 프로세스 실행 여부를 뜻하지 않습니다.</p>
     <section id="updates" aria-label="업데이트 결과"></section>
     <div class="toolbar"><h2>프로젝트 <span id="project-count" class="muted"></span></h2><div class="filters"><button id="new-project" type="button">프로젝트 수동 등록</button><label>검색 <input id="search" type="search" placeholder="프로젝트·작업·경로"></label><label>표시 <select id="filter"><option value="all">전체</option><option value="attention">판단·점검 필요</option><option value="unavailable">조회 오류·오래된 관측</option><option value="working">현재 작업 있음</option></select></label></div></div>
     <section id="projects" class="projects" aria-label="등록 프로젝트"></section>
@@ -31,6 +32,7 @@
     <h2>code-agent 일괄 업데이트</h2>
     <p id="update-target"></p>
     <p class="muted">원격 업데이트는 설치 소스의 추적 브랜치를 격리 사본에서 pull하고 npm 설치·빌드·테스트 스크립트를 실행합니다. 검증 실패 시 프로젝트에 적용하지 않습니다. 원본 소스의 미커밋 변경은 포함하지 않습니다.</p>
+    <p class="muted">code-agent가 미완료 작업을 보고하면 건너뜁니다. 현재 브랜치에 작업이 없어도 다른 브랜치에 보관된 작업이 사유에 포함될 수 있습니다. 해당 프로젝트에서 작업의 완료·중단 상태를 먼저 확인하세요.</p>
     <div id="update-preview" class="table-wrap"></div>
     <p id="update-error" class="error" role="alert"></p>
     <div class="dialog-actions"><button type="button" data-close="update-dialog">닫기</button><button id="apply-updates" type="button" disabled>적용 가능한 프로젝트 모두 업데이트</button></div>
@@ -67,6 +69,17 @@
     <p class="muted">대시보드가 실행 중인 PC의 기존 폴더를 등록합니다. 개발 실행에는 code-agent 설치·연동과 문서·코드 근거 수집이 별도로 필요합니다.</p>
     <p id="project-error" role="alert" class="error"></p>
     <div class="dialog-actions"><button type="button" data-close="project-dialog">취소</button><button id="project-submit" type="submit">프로젝트 등록</button></div>
+  </form></dialog>
+  <dialog id="delete-project-dialog" aria-labelledby="delete-project-title"><form id="delete-project-form">
+    <h2 id="delete-project-title">프로젝트 삭제</h2>
+    <p id="delete-project-name"></p>
+    <p id="delete-project-path" class="path"></p>
+    <p id="delete-project-groups"></p>
+    <p>대시보드 등록을 해제하고 모든 그룹에서 제외합니다. 자동 조회·새 요청·일괄 업데이트 대상에서도 빠집니다.</p>
+    <p>프로젝트 폴더·소스·설치된 code-agent와 이전 요청·실행 이력은 보존합니다. 다시 등록할 때는 새 프로젝트 ID가 필요합니다.</p>
+    <p class="muted">미완료 master-agent 목표나 실행·업데이트 잠금이 있으면 삭제할 수 없습니다.</p>
+    <p id="delete-project-error" class="error" role="alert"></p>
+    <div class="dialog-actions"><button type="button" data-close="delete-project-dialog">취소</button><button type="submit">등록 해제</button></div>
   </form></dialog>
   <dialog id="request-dialog"><form id="request-form">
     <h2>유지보수 요청 보내기</h2>
