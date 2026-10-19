@@ -1,0 +1,101 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { setup } from './helpers.mjs';
+import { startDashboard } from '../packages/dashboard/server.mjs';
+
+async function dashboardFixture(t) {
+  const context = setup(t);
+  const dashboard = await startDashboard({ dbPath: context.db, port: 0, observe: false });
+  const { token } = await (await fetch(dashboard.url + '/api/overview')).json();
+  const post = async (path, body, headers = {}) => {
+    const response = await fetch(dashboard.url + path, { method: 'POST',
+      headers: { Origin: dashboard.url, 'Content-Type': 'application/json', 'X-Master-Token': token, ...headers }, body: JSON.stringify(body) });
+    return { status: response.status, body: await response.json() };
+  };
+  const draft = id => {
+    const path = join(context.root, id); mkdirSync(path);
+    return { id, name: `프로젝트 ${id}`, path, domains: ['주문'] };
+  };
+  return { ...context, dashboard, post, draft };
+}
+
+function registrationTest(name, run) {
+  test(name, async t => {
+    const context = await dashboardFixture(t);
+    try { await run(context); } finally { await context.dashboard.close(); }
+  });
+}
+
+registrationTest('manual registration persists an existing folder without installing, granting control or accepting forged evidence', async ({ store, post, draft }) => {
+  const project = draft('manual');
+  const result = await post('/api/projects', { project: { ...project, knowledgeSnapshotId: 'forged', control: { owner: true } } });
+  assert.equal(result.status, 201);
+  const saved = store.need('project', project.id);
+  assert.deepEqual(saved.references, ['operator:project:manual']);
+  assert.deepEqual(saved.constraints, []);
+  assert.equal(saved.knowledgeSnapshotId, undefined);
+  assert.equal(saved.control, undefined);
+  assert.deepEqual(store.list('control-binding'), []);
+  assert.deepEqual(readdirSync(project.path), []);
+  assert.equal((await post('/api/projects', { project }, { 'X-Master-Token': '' })).status, 403);
+  assert.equal((await post('/api/projects', { project }, { Origin: 'https://other.example' })).status, 403);
+});
+
+registrationTest('manual registration rejects relative, absent and file paths, malformed metadata and duplicate real directories', async ({ root, store, post, draft }) => {
+  const project = draft('valid');
+  const file = join(root, 'file.txt'); writeFileSync(file, 'unchanged');
+  for (const path of ['relative-project', join(root, 'absent'), file]) {
+    const response = await post('/api/projects', { project: { ...project, path } });
+    assert.equal(response.status, 400); assert.equal(response.body.error, 'invalid-path');
+  }
+  assert.equal((await post('/api/projects', { project: { ...project, domains: [] } })).status, 400);
+  assert.equal((await post('/api/projects', { project: { ...project, references: 'invalid' } })).status, 400);
+  assert.equal((await post('/api/projects', { project })).status, 201);
+  const duplicate = await post('/api/projects', { project: { ...project, id: 'duplicate', path: join(project.path, '..', 'valid') } });
+  assert.equal(duplicate.status, 409); assert.equal(duplicate.body.error, 'duplicate-path');
+  const other = draft('other');
+  const duplicateId = await post('/api/projects', { project: { ...other, id: project.id } });
+  assert.equal(duplicateId.status, 409); assert.equal(duplicateId.body.error, 'already-exists');
+  assert.equal(store.list('project').length, 4);
+});
+
+registrationTest('group creation and editing register new projects together with selected existing members', async ({ fixture, store, post, draft }) => {
+  const first = draft('first'), second = draft('second');
+  const group = { id: 'manual-group', name: '수동 그룹', projectIds: [fixture.projects[0].id, first.id] };
+  const created = await post('/api/groups', { group, newProjects: [first] });
+  assert.equal(created.status, 200);
+  assert.deepEqual(store.need('group', group.id).projectIds, group.projectIds);
+  assert.equal(store.need('project', first.id).name, first.name);
+  const edited = await post('/api/groups', { group: { ...group, projectIds: [first.id, second.id] },
+    revision: created.body.revision, newProjects: [second] });
+  assert.equal(edited.status, 200);
+  assert.deepEqual(edited.body.projectIds, [first.id, second.id]);
+  assert.equal(store.need('project', second.id).name, second.name);
+  assert.ok(store.need('project', fixture.projects[0].id));
+});
+
+registrationTest('invalid or duplicate later drafts roll back both the group and earlier project/path records', async ({ root, store, post, draft }) => {
+  const first = draft('first'), second = draft('second');
+  const group = { id: 'atomic-group', name: '원자적 그룹', projectIds: [first.id, second.id] };
+  for (const invalid of [{ ...second, path: join(root, 'missing') }, { ...second, path: first.path }, { ...second, id: first.id }, { ...second, domains: [] }]) {
+    const result = await post('/api/groups', { group, newProjects: [first, invalid] });
+    assert.ok([400, 409].includes(result.status));
+    assert.equal(store.list('project').length, 3);
+    assert.equal(store.list('group').some(g => g.id === group.id), false);
+    assert.equal(store.db.prepare('SELECT COUNT(*) AS count FROM paths').get().count, 3);
+  }
+  assert.equal((await post('/api/groups', { group, newProjects: [first, second] })).status, 200);
+});
+
+registrationTest('stale group edits and unselected drafts cannot register orphan projects or change group membership', async ({ fixture, store, post, draft }) => {
+  const group = store.need('group', fixture.group.id), project = draft('unselected');
+  const stale = await post('/api/groups', { group: { ...group, projectIds: [...group.projectIds, project.id] },
+    revision: group.revision + 1, newProjects: [project] });
+  assert.equal(stale.status, 409); assert.equal(stale.body.error, 'stale-state');
+  const unselected = await post('/api/groups', { group, revision: group.revision, newProjects: [project] });
+  assert.equal(unselected.status, 400);
+  assert.equal(store.list('project').length, 3);
+  assert.deepEqual(store.need('group', group.id), group);
+});

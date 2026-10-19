@@ -30,6 +30,8 @@ master-agent group list
 
 ## 서비스 그룹과 단일 프로젝트 요청
 
+대시보드에서 `그룹 만들기 → 새 프로젝트 수동 등록 → 그룹 저장`으로 프로젝트와 그룹을 함께 만들 수 있다. 기존 그룹의 `구성 편집`에서도 새 프로젝트를 등록하거나 기존 프로젝트를 선택·제외한다. 프로젝트 목록의 `프로젝트 수동 등록`은 그룹 없이 등록한다. 이름·서버 PC의 기존 폴더 절대 경로·쉼표로 구분한 담당 업무가 필수이며 ID는 생략하면 자동 생성한다. 추가 설정에 제약·참고 근거를 줄 단위로 입력할 수 있다. 그룹 저장 전 신규 항목은 수정·제외할 수 있으며 취소하면 저장되지 않는다. 경로 중복·입력 오류·버전 충돌 시 신규 프로젝트와 그룹 모두 저장하지 않는다.
+
 그룹은 서비스 유지보수 범위다. `group create <ID> <이름> --description <범위>`로 만들고 `group add/remove <그룹ID> <프로젝트ID> --revision <그룹버전>`으로 소속을 바꾼다. `group show <ID>`에서 최신 버전을 확인한다. 기존 `group save <JSON> --revision <N>`도 지원하며 JSON은 id, name, description, projectIds다. 빈 그룹 저장은 가능하지만 실행 요청은 거부한다.
 
 ```powershell
@@ -46,7 +48,7 @@ master-agent request continue <요청ID> --revision <요청버전>
 
 실행 전 준비는 다음과 같다.
 
-1. 각 code-agent 프로젝트를 `project add`로 등록하고 `project collect`로 정책·코드 근거를 수집한다.
+1. 각 code-agent 프로젝트를 대시보드의 수동 등록 또는 `project add`로 등록하고 `project collect`로 정책·코드 근거를 수집한다. 수동 등록은 기존 폴더와 담당 업무를 선언하는 단계이며 code-agent 설치·권한 부여·근거 수집을 대신하지 않는다.
 2. 프로젝트 사용자가 code-agent master 연동과 위임 grant를 설정하고 `project control`로 연결한다. 자동 탐색은 설치 경로만 찾으며 제어 권한을 대신 부여하지 않는다.
 3. 요청의 완료 조건·작업 범위·검사 명령에 맞는 templates를 전달하거나 계획 후 `mission verification` / `mission verification-template`으로 보완한다.
 4. 그룹·단일 요청을 보내면 별도 실행기가 AI 계획·검증 계약 연결·개발·검증·인계를 진행한다. 준비가 부족하면 failed 또는 waiting에 사유를 남긴다. 분석 질문은 `mission clarify`, code-agent 질문은 기존 relay로 답한다. 보완 후 `request continue`로 동일 목표를 이어간다.

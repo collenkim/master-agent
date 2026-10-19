@@ -18,7 +18,7 @@
     <section id="groups" class="projects" aria-label="서비스 그룹"></section>
     <div class="toolbar"><h2>보낸 요청</h2><span class="muted">접수 시 확정한 대상에서 실행</span></div>
     <section id="requests" aria-label="보낸 요청"></section>
-    <div class="toolbar"><h2>프로젝트 <span id="project-count" class="muted"></span></h2><div class="filters"><label>검색 <input id="search" type="search" placeholder="프로젝트·작업·경로"></label><label>표시 <select id="filter"><option value="all">전체</option><option value="attention">판단·점검 필요</option><option value="unavailable">조회 오류·오래된 관측</option><option value="working">현재 작업 있음</option></select></label></div></div>
+    <div class="toolbar"><h2>프로젝트 <span id="project-count" class="muted"></span></h2><div class="filters"><button id="new-project" type="button">프로젝트 수동 등록</button><label>검색 <input id="search" type="search" placeholder="프로젝트·작업·경로"></label><label>표시 <select id="filter"><option value="all">전체</option><option value="attention">판단·점검 필요</option><option value="unavailable">조회 오류·오래된 관측</option><option value="working">현재 작업 있음</option></select></label></div></div>
     <section id="projects" class="projects" aria-label="등록 프로젝트"></section>
     <div class="toolbar"><h2>목표별 진행</h2><span class="muted">저장된 master 실행 기록</span></div>
     <section id="missions" aria-label="목표별 작업"></section>
@@ -29,10 +29,25 @@
     <label>그룹 ID<input id="group-id" required placeholder="예: commerce"></label>
     <label>그룹 이름<input id="group-name" required placeholder="예: 커머스 서비스"></label>
     <label>유지보수 범위<textarea id="group-description" rows="3" placeholder="이 그룹이 담당하는 서비스와 유지보수 범위"></textarea></label>
-    <fieldset><legend>소속 프로젝트</legend><div id="group-members"></div></fieldset>
+    <fieldset><legend>소속 프로젝트</legend><div id="group-members"></div><button id="group-new-project" type="button">새 프로젝트 수동 등록</button><div id="group-drafts"></div></fieldset>
+    <p class="muted">새 프로젝트는 그룹 저장 시 함께 등록됩니다. 취소하면 입력한 새 프로젝트도 저장되지 않습니다.</p>
     <p class="muted">프로젝트를 제외해도 이미 접수한 요청의 대상은 바뀌지 않습니다.</p>
     <p id="group-error" role="alert" class="error"></p>
     <div class="dialog-actions"><button type="button" data-close="group-dialog">취소</button><button type="submit">그룹 저장</button></div>
+  </form></dialog>
+  <dialog id="project-dialog"><form id="project-form">
+    <h2>프로젝트 수동 등록</h2>
+    <label>프로젝트 이름<input id="project-name" required placeholder="예: 주문 API"></label>
+    <label>프로젝트 폴더 절대 경로<input id="project-path" required placeholder="예: C:\workspace\order-api"></label>
+    <label>담당 업무<input id="project-domains" required placeholder="예: 주문, 결제 (쉼표로 구분)"></label>
+    <details><summary>추가 설정</summary>
+      <label>프로젝트 ID<input id="project-id" placeholder="비워 두면 자동 생성"></label>
+      <label>제약 사항<textarea id="project-constraints" rows="2" placeholder="한 줄에 하나씩 입력"></textarea></label>
+      <label>참고 문서·근거 식별자<textarea id="project-references" rows="2" placeholder="선택 사항, 한 줄에 하나씩 입력"></textarea></label>
+    </details>
+    <p class="muted">대시보드가 실행 중인 PC의 기존 폴더를 등록합니다. 개발 실행에는 code-agent 설치·연동과 문서·코드 근거 수집이 별도로 필요합니다.</p>
+    <p id="project-error" role="alert" class="error"></p>
+    <div class="dialog-actions"><button type="button" data-close="project-dialog">취소</button><button id="project-submit" type="submit">프로젝트 등록</button></div>
   </form></dialog>
   <dialog id="request-dialog"><form id="request-form">
     <h2>유지보수 요청 보내기</h2>

@@ -1,5 +1,5 @@
 import { realpathSync, statSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { resolve, isAbsolute } from 'node:path';
 import { validateProject, requireThat, string, strings, now, object } from '../domain/contracts.mjs';
 
 export function normalizedPath(path) {
@@ -9,16 +9,30 @@ export function normalizedPath(path) {
 }
 export class Catalog {
   constructor(store) { this.store = store; }
-  register(input) {
+  register(input, { inTransaction = false } = {}) {
     validateProject(input);
     const path = normalizedPath(input.path);
-    return this.store.transaction(() => {
+    const persist = () => {
       requireThat(!this.store.db.prepare('SELECT project_id FROM paths WHERE path=?').get(path), 'duplicate-path', '이미 등록된 실행 경로입니다.');
       const project = this.store.put('project', { ...input, path, registeredAt: now() });
       this.store.db.prepare('INSERT INTO paths VALUES (?,?)').run(path, input.id);
       return project;
-    });
+    };
+    return inTransaction ? persist() : this.store.transaction(persist);
   }
+  manualProject(input) {
+    object(input, 'project');
+    string(input.path, 'project.path');
+    if (input.references !== undefined) strings(input.references, 'references');
+    requireThat(isAbsolute(input.path), 'invalid-path', '프로젝트 폴더의 절대 경로를 입력하세요.');
+    try { normalizedPath(input.path); }
+    catch { requireThat(false, 'invalid-path', `${input.name ?? input.id ?? '프로젝트'}: 존재하고 접근 가능한 프로젝트 폴더를 입력하세요.`); }
+    // Registration is an operator declaration, not collected policy/code evidence or a control grant.
+    return { id: input.id, name: input.name, path: input.path, domains: input.domains,
+      capabilities: input.capabilities ?? ['code-agent:claude'], constraints: input.constraints ?? [], currentPlans: input.currentPlans ?? [],
+      references: input.references?.length ? input.references : [`operator:project:${input.id}`] };
+  }
+  registerManual(input) { return this.register(this.manualProject(input)); }
   updateKnowledge(id, patch, expectedRevision) {
     return this.store.transaction(() => {
       const project = this.store.need('project', id);
@@ -28,12 +42,21 @@ export class Catalog {
       return this.store.put('project', next, expectedRevision);
     });
   }
-  group(input, expectedRevision = 0) {
+  group(input, expectedRevision = 0, { newProjects = [] } = {}) {
     object(input, 'group');
     string(input.id, 'group.id'); string(input.name, 'group.name'); strings(input.projectIds, 'group.projectIds');
     requireThat(Number.isInteger(expectedRevision) && expectedRevision >= 0, 'invalid-input', '그룹 버전이 필요합니다.');
     requireThat(input.description === undefined || typeof input.description === 'string', 'invalid-input', '서비스 범위 설명은 문자열이어야 합니다.');
+    requireThat(Array.isArray(newProjects) && newProjects.length <= 100, 'invalid-input', '새 프로젝트는 최대 100개까지 등록할 수 있습니다.');
     return this.store.transaction(() => {
+      const current = this.store.get('group', input.id);
+      requireThat(expectedRevision === 0 ? !current : current?.revision === expectedRevision,
+        expectedRevision === 0 ? 'already-exists' : 'stale-state', '그룹이 이미 존재하거나 변경되었습니다. 다시 조회하세요.');
+      for (const draft of newProjects) {
+        const project = this.manualProject(draft);
+        requireThat(input.projectIds.includes(project.id), 'invalid-input', '새 프로젝트는 이 그룹의 소속으로 선택해야 합니다.');
+        this.register(project, { inTransaction: true });
+      }
       input.projectIds.forEach(id => this.store.need('project', id));
       return this.store.put('group', { id: input.id, name: input.name, description: input.description ?? '', projectIds: input.projectIds }, expectedRevision);
     });

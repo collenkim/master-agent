@@ -48,7 +48,7 @@ function render() {
       ${p.lock ? `<p>master 잠금: ${escape(p.lock.missionId)}</p>` : ''}
       ${p.tasks.map(t => `<p>${badge(t.status)} ${escape(t.taskId)} · ${t.mode === 'simulation' ? '모의' : '실제'} · ${escape(t.missionGoal)}</p>`).join('')}
     </details>
-  </article>`).join('') || `<div class="empty">${projects.length ? '조건에 맞는 프로젝트가 없습니다.' : '등록된 프로젝트가 없습니다. master-agent project add &lt;JSON&gt;으로 등록하거나 --db 경로를 확인하세요.'}</div>`;
+  </article>`).join('') || `<div class="empty">${projects.length ? '조건에 맞는 프로젝트가 없습니다.' : '등록된 프로젝트가 없습니다. 프로젝트 수동 등록으로 기존 폴더를 추가하세요.'}</div>`;
   const open = new Set([...document.querySelectorAll('#missions details[open]')].map(e => e.dataset.id));
   $('missions').innerHTML = missions.map(m => `<details class="mission" data-id="${escape(m.id)}" ${open.has(m.id) ? 'open' : ''}>
     <summary><span>${escape(m.goal)} <small>${m.mode === 'simulation' ? '모의 실행' : '실제 실행'}</small></span>${badge(m.status)}</summary>
@@ -81,6 +81,7 @@ $('refresh').addEventListener('click', refresh);
 void refresh();
 
 let editingGroup = null, requestKey, requestGroupRevision;
+let groupDrafts = [], projectInGroup = false, editingDraftId = null, projectDraftId;
 async function post(path, body) {
   const response = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Master-Token': latest.token }, body: JSON.stringify(body) });
   const result = await response.json();
@@ -100,12 +101,28 @@ function renderManagement() {
 }
 function openGroup(id) {
   editingGroup = latest.groups.find(g => g.id === id) ?? null;
+  groupDrafts = [];
   $('group-form').reset(); $('group-error').textContent = '';
   $('group-title').textContent = editingGroup ? '서비스 그룹 편집' : '서비스 그룹 만들기';
   $('group-id').value = editingGroup?.id ?? ''; $('group-id').disabled = Boolean(editingGroup);
   $('group-name').value = editingGroup?.name ?? ''; $('group-description').value = editingGroup?.description ?? '';
-  $('group-members').innerHTML = latest.projects.map(p => `<label class="member"><input type="checkbox" name="member" value="${escape(p.id)}" ${editingGroup?.projectIds.includes(p.id) ? 'checked' : ''}>${escape(p.name || p.id)}</label>`).join('') || '<p>등록된 프로젝트가 없습니다. project add 명령으로 먼저 등록하세요.</p>';
+  $('group-members').innerHTML = latest.projects.map(p => `<label class="member"><input type="checkbox" name="member" value="${escape(p.id)}" ${editingGroup?.projectIds.includes(p.id) ? 'checked' : ''}>${escape(p.name || p.id)}</label>`).join('') || '<p>아래 버튼으로 이 그룹에 새 프로젝트를 등록하세요.</p>';
+  renderDrafts();
   $('group-dialog').showModal();
+}
+function renderDrafts() {
+  $('group-drafts').innerHTML = groupDrafts.map(p => `<article class="project-draft"><strong>${escape(p.name)}</strong><span class="badge">등록 예정</span><p class="path">${escape(p.path)}</p><button type="button" class="edit-draft" data-id="${escape(p.id)}">수정</button> <button type="button" class="remove-draft" data-id="${escape(p.id)}">제외</button></article>`).join('');
+}
+function openProject(inGroup, id) {
+  projectInGroup = inGroup; editingDraftId = id ?? null;
+  const draft = groupDrafts.find(p => p.id === id);
+  projectDraftId = draft?.id ?? crypto.randomUUID();
+  $('project-form').reset(); $('project-error').textContent = '';
+  $('project-name').value = draft?.name ?? ''; $('project-path').value = draft?.path ?? '';
+  $('project-domains').value = draft?.domains.join(', ') ?? ''; $('project-id').value = draft?.id ?? '';
+  $('project-constraints').value = draft?.constraints.join('\n') ?? ''; $('project-references').value = draft?.references.join('\n') ?? '';
+  $('project-submit').textContent = inGroup ? '그룹에 추가 예정으로 담기' : '프로젝트 등록';
+  $('project-dialog').showModal();
 }
 function scopeChanged() {
   const type = $('request-type').value, id = $('request-target').value;
@@ -125,6 +142,8 @@ function openRequest(type = 'group', id) {
   $('request-type').value = type; requestTargets(id); $('request-dialog').showModal();
 }
 $('new-group').addEventListener('click', () => latest && openGroup());
+$('new-project').addEventListener('click', () => latest && openProject(false));
+$('group-new-project').addEventListener('click', () => openProject(true));
 $('new-request').addEventListener('click', () => latest && openRequest());
 $('request-type').addEventListener('change', () => requestTargets());
 $('request-target').addEventListener('change', scopeChanged);
@@ -134,6 +153,8 @@ document.addEventListener('click', async event => {
   if (button.classList.contains('edit-group')) openGroup(button.dataset.id);
   if (button.classList.contains('group-request')) openRequest('group', button.dataset.id);
   if (button.classList.contains('project-request')) openRequest('project', button.dataset.id);
+  if (button.classList.contains('edit-draft')) openProject(true, button.dataset.id);
+  if (button.classList.contains('remove-draft')) { groupDrafts = groupDrafts.filter(p => p.id !== button.dataset.id); renderDrafts(); }
   if (button.classList.contains('continue-request')) {
     button.disabled = true;
     try { const r = latest.requests.find(r => r.id === button.dataset.id); await post('/api/requests/continue', { id: r.id, revision: r.revision }); $('action-status').textContent = '기존 대상과 목표에서 이어 실행합니다.'; await refresh(); }
@@ -144,10 +165,28 @@ $('group-form').addEventListener('submit', async event => {
   event.preventDefault(); const button = event.submitter; button.disabled = true;
   try {
     const group = { id: $('group-id').value.trim(), name: $('group-name').value.trim(), description: $('group-description').value,
-      projectIds: [...document.querySelectorAll('#group-members input:checked')].map(e => e.value) };
-    await post('/api/groups', { group, revision: editingGroup?.revision ?? 0 });
+      projectIds: [...document.querySelectorAll('#group-members input:checked')].map(e => e.value).concat(groupDrafts.map(p => p.id)) };
+    await post('/api/groups', { group, revision: editingGroup?.revision ?? 0, newProjects: groupDrafts });
     $('group-dialog').close(); $('action-status').textContent = '그룹 구성을 저장했습니다.'; await refresh();
   } catch (error) { $('group-error').textContent = error.message; } finally { button.disabled = false; }
+});
+$('project-form').addEventListener('submit', async event => {
+  event.preventDefault(); const button = event.submitter; button.disabled = true;
+  const lines = value => [...new Set(value.split('\n').map(s => s.trim()).filter(Boolean))];
+  try {
+    const project = { id: $('project-id').value.trim() || projectDraftId, name: $('project-name').value.trim(), path: $('project-path').value.trim(),
+      domains: [...new Set($('project-domains').value.split(',').map(s => s.trim()).filter(Boolean))],
+      constraints: lines($('project-constraints').value), references: lines($('project-references').value) };
+    if (!project.name || !project.path || !project.domains.length) throw new Error('이름·폴더 경로·담당 업무를 입력하세요.');
+    if (projectInGroup) {
+      if (latest.projects.some(p => p.id === project.id) || groupDrafts.some(p => p.id === project.id && p.id !== editingDraftId)) throw new Error('이미 사용 중인 프로젝트 ID입니다. 기존 프로젝트는 소속 목록에서 선택하세요.');
+      groupDrafts = groupDrafts.filter(p => p.id !== editingDraftId).concat(project);
+      renderDrafts(); $('project-dialog').close();
+    } else {
+      await post('/api/projects', { project });
+      $('project-dialog').close(); $('action-status').textContent = '프로젝트를 등록했습니다. 그룹 구성 편집에서 포함할 수 있습니다.'; await refresh();
+    }
+  } catch (error) { $('project-error').textContent = error.message; } finally { button.disabled = false; }
 });
 $('request-form').addEventListener('submit', async event => {
   event.preventDefault(); const button = event.submitter; button.disabled = true;
