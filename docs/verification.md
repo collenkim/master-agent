@@ -1,13 +1,14 @@
 # 검증 기록
 
-기능 검증 기준은 **2026-10-20, 요청 준비 점검·기본 근거 수집·공통 요청함 복구 반영 후**다. Windows·Node.js 24.19.0에서 회귀·실제 CLI·브라우저를 확인했다. 실제 모델 전체 흐름의 최근 검증일은 2026-10-17이며, 관제·질문 계약·화면 시험은 해당 모델 시험의 재수행을 뜻하지 않는다.
+기능 검증 기준은 **2026-10-20, code-agent 호스트 설정 주입·Codex 관리 실행 연동 반영 후**다. Windows·Node.js 24.19.0에서 회귀·실제 CLI·브라우저를 확인했다. 실제 모델 전체 흐름의 최근 검증일은 2026-10-17이며, 관제·질문 계약·화면 시험은 해당 모델 시험의 재수행을 뜻하지 않는다.
 
 | 검증 | 결과 | 근거 |
 | --- | --- | --- |
-| 자동 회귀 | 전체 실행 247개 중 246개 통과. 외부 설치본 변경으로 중단된 업데이트 1개는 고정 사본으로 재통과. 최종 추가 검사를 포함한 관련 38개 통과, 건너뜀 0 | `npm.cmd test`, `.master-agent/preparation-tests.log`, `.master-agent/preparation-update-recheck.log`, `.master-agent/preparation-final-focused.log` |
-| 요청 준비·복구 | 표준 근거·폴더 목록·최신성, 기존 명시 근거 보존, 그룹별 설치·소유권·인증 점검, 준비 중 모델 미호출, 기존 실패 요청의 보류·동일 TASK 재개·중복/오래된 답 거부, 검증 계약 등록 안내 | `tests/preparation.test.mjs` 7개. 실제 authorization-api의 YSIJ-254도 기본 근거 수집 후 설치·제어 연결 대기로 전환하고 요청함 표시 확인. 개발 모델 미호출 |
+| 자동 회귀 | 전체 253개, 최종 관제 보완 후 관련 17개 통과. 실패·건너뜀 0 | `npm.cmd test`, `.master-agent/managed-host-full-tests.log`, `.master-agent/managed-host-final-tests.log`. 전체 회귀는 최신 code-agent 고정 사본 사용 |
+| 호스트 설정 주입 | 호스트 공통 지시문·기능 등록·배정, Claude 파일 없는 준비 점검, Codex thread 확정·같은 thread 재개·재부착, 호스트 변경 재개 거부·미확정 세션 차단·실제 호스트 관제 | `tests/managed-host.test.mjs` 5개. 실제 code-agent 감독과 모의 Codex 모델, 격리 프로젝트의 합성 TTY·신뢰 기록. 사용자 권한·설정은 변경하지 않음 |
+| 요청 준비·복구 | 표준 근거·폴더 목록·최신성, 기존 명시 근거 보존, 그룹별 설치·관리 실행 지원·소유권·인증 점검, 준비 중 모델 미호출, 기존 실패 요청의 보류·동일 TASK 재개·중복/오래된 답 거부, 검증 계약 등록 안내 | `tests/preparation.test.mjs` 7개. 실제 authorization-api의 YSIJ-254도 같은 TASK의 준비 대기·요청함 표시 확인. 개발 모델 미호출 |
 | 단계 이력 | 세부 단계·검증 정보와 비공개 필드 제외, 독립 관측 누적·재시작·시도/브랜치/조회 실패 구분, 커서 격리·중복 방지·원장 교체·보존 구간 복구, 그룹/TASK 연결·페이지 조회·요청함 변화·HTTP 경계 | `tests/dashboard-history.test.mjs` 7개. 상태·이벤트 발행자는 합성 fixture |
-| 단계 타임라인 브라우저 | 세부 단계·검증 표시, 실제 API의 프로젝트/그룹/TASK 필터·이전 페이지·자동 갱신 후 페이지 유지·재조회, 1440/390/320px·XSS | `scripts/smoke-dashboard-history.mjs`, `.master-agent/stage-history-browser-efpNRQ/`. 격리 카탈로그·합성 상태와 이벤트, 개발 모델 미호출 |
+| 단계 타임라인 브라우저 | 세부 단계·검증 표시, 실제 API의 프로젝트/그룹/TASK 필터·이전 페이지·자동 갱신 후 페이지 유지·재조회, 1440/390/320px·XSS | `scripts/smoke-dashboard-history.mjs`, `.master-agent/stage-history-browser-0F0WEp/`. 격리 카탈로그·합성 상태와 이벤트, 개발 모델 미호출 |
 | 공통 요청함 회귀 | 추천 미추정·보류·답 적용, 동일 명령/두 탭·재시작·master 재개, 오래된 내용/문맥·등록 해제·업데이트, 원장 복사/교체·그룹 범위 고정, HTTP 인증, 기존 시도·세션에서 복구 후 실제 재검증 | `tests/dashboard-interactions.test.mjs` 13개 |
 | 실제 code-agent 질문 API | 빈/기존 격리 프로젝트 각 10단계의 질문 수신·소비·적용, 다중 선택·옵션 입력·직접 입력, 보류/재열기, 같은 명령 재전송, 브랜치 변경·키 부재 거부, docs 동의의 실제 적용 | `scripts/smoke-interactions-live.mjs`, `.master-agent/interactions-live.json`. 발행자·최초 인증은 합성 fixture, 개발 모델 미호출 |
 | 실제 API·브라우저·중단 복구 | 모바일 브라우저의 다중 답과 별도 동의가 실제 서명·CLI를 통과. 전송 전 단절 후 DB 재시작·같은 envelope 재전송, 미확인 중 삭제 거부, 실제 docs 적용 확인 | `.master-agent/interactions-live-browser.json`, `.master-agent/interactions-live-browser-2pNLLS/`. 실제 사용자 TTY·개발/반영/운영 전체 모델 완주와 구분 |
@@ -23,20 +24,19 @@
 | 요청 전체 실행 | 그룹/단일 요청 각각 모의 AI 계획 → 템플릿 연결 → 실제 파일 변경·Node 검사 → 인계·succeeded | `tests/requests.test.mjs`; AI와 개발 호스트는 모의 응답 |
 | 명령 설치 | 임시 npm 전역 prefix에 로컬 패키지 설치 후 저장소 밖에서 프로젝트 조회·데모 완료 | `npm.cmd install --global --prefix <임시경로> --offline --ignore-scripts <소스경로>` |
 | 관제 서버 | 전체 등록 프로젝트·독립 작업 관측, 조회 실패·오래된 관측 구분, 중복 조회 제한, 삭제 시 기존 대기열·이후 조회에서 제외, HTTP 조회 경계 | `tests/dashboard.test.mjs` 7개 |
-| 기존 대시보드 브라우저 | 삭제·그룹·후보·TASK·원격 업데이트·설치 감지·모바일·연결 끊김 회귀 통과 | 로컬 `.master-agent/dashboard-browser-NM3mYE/`; 화면의 개발 접수·업데이트 실행은 모의 처리 |
-| 브랜치별 작업과 업데이트 판정 | 다른 브랜치 체크아웃에서 `status --json`은 `work: null`·`no-work`, `version --json`은 이전 브랜치 미완료 작업을 `project.busy`로 반환함을 읽기 전용 확인 | code-agent 소스·빌드·설치 릴리스의 `currentCursor`/`allCursors` 사용 대조; 실제 프로젝트 상태·브랜치는 변경하지 않음 |
+| 대시보드 기본 기능 | 삭제·그룹·후보·TASK·원격 업데이트·설치 감지·모바일·연결 끊김 회귀 통과 | `.master-agent/dashboard-browser-NM3mYE/`; 화면의 개발 접수·업데이트 실행은 모의 처리 |
 | 진행 상태·병렬 제어 | 5개 회귀 통과, 실제 CLI 조회에서도 확인 | `tests/parallel-progress.test.mjs` |
-| 구문·문서 | JavaScript 100개·Markdown 19개 검사 통과 | `npm.cmd run check` |
+| 구문·문서 | JavaScript 101개·Markdown 19개 검사 통과 | `npm.cmd run check` |
 | 실제 code-agent 계약 등록 | 등록 성공, 원문과 다른 claim·변경된 문서 거부 | `tests/handoff-contracts.test.mjs`의 실제 빌드 연동 |
 | 실제 code-agent 통신 | 접수·중복·이벤트·재부착·협력 정지·제어권 인계, 대시보드의 실제 이벤트 수집·반복 조회 중복 방지·실행 호스트 커서 보존 통과 | `tests/code-agent-control.test.mjs`, 실제 빌드와 가짜 개발 호스트. 타임라인 연동 추가 후 별도 재통과 |
 | 앞선 답의 실제 AI 판단 | 5건 통과: routine 3·ambiguous 1·critical 1 | [판단 증거](evidence/2026-10-16-answer-context.json) |
-| 실제 병렬·계약 인계·통합 | 두 프로젝트·세 작업 succeeded, 56분 30초, 계약 입력 7건 대조 | [v4 전체 흐름 증거](evidence/2026-10-17-parallel-contract-flow.json) |
+| 실제 병렬·계약 인계·통합 | 두 프로젝트·세 작업 succeeded, 56분 30초, 계약 입력 7건 대조 | [전체 흐름 증거](evidence/2026-10-17-parallel-contract-flow.json) |
 
 code-agent 연동 시험은 외부 빌드가 없으면 건너뛴다. 위 회귀 결과에는 건너뜀이 없다. 현재 구현과 남은 작업은 [구현 현황](implementation.md)을 따른다.
 
-이번 전체 회귀 중 code-agent의 `dist/session-recovery-full-tests.log`가 외부에서 갱신돼 설치본 해시 대조가 업데이트를 중단했다. 고정 사본으로 같은 시험을 통과했으며 설치본 변경 차단을 완화하지 않았다. 사본 내용 해시는 `0673ff416c5f9f9fb203e79e06c1f63a49c31f67fc13546c5d82f42c23253ec0`이다.
+전체 회귀에 사용한 code-agent는 캡처 시 소스 `800918a`이며 미커밋 변경이 없었다. 고정 사본의 내용 해시는 `8480744ed3d993709afc8e95a5f5492568dfde675452eab894a2a391ec8b25fd`다. 외부 빌드·로그 갱신이 설치본 변경 대조에 영향을 주지 않도록 사본을 사용하며 변경 차단 규칙은 유지한다.
 
-공통 요청함은 `C:/IdeaProjects/code-agent/dist/agent/cli.js`의 1.0.0·stateSchema 7·interaction schema 1에서 확인했다. 확인 당시 소스 HEAD는 `e289829`이며 interaction 변경이 아직 커밋되지 않은 작업 빌드였다. 이 커밋만 체크아웃하면 새 기능이 있다는 뜻이 아니다. `scripts/check-interaction-support.mjs`가 빈/기존 두 격리 저장소에서 실제 hello·명령·빌드 수정 시각·소스 변경 여부를 저장한다. 프로젝트 식별자는 실제 응답의 `hello.result.project.projectId`를 사용한다.
+공통 요청함의 실제 CLI·브라우저 시험은 1.0.0·stateSchema 7·interaction schema 1 빌드에서 수행했다. 당시 소스 `e289829`에는 미커밋 interaction 변경이 있어 해당 커밋만으로 재현할 수 없다. 기능 지원은 `scripts/check-interaction-support.mjs`로 실제 hello·명령·빌드 출처를 확인한다.
 
 질문 단계별 계약 시험의 host 소비/complete는 합성 발행자가 수행했다. 실제 모델의 개발·리뷰·반영 완주나 운영 변경 전체를 검증한 결과로 확장하지 않는다.
 
@@ -52,7 +52,7 @@ code-agent 연동 시험은 외부 빌드가 없으면 건너뛴다. 위 회귀 
 
 ## 실제 병렬·계약 인계 검증
 
-**v4 완료:** mission `2a776eaa-e5dd-4e43-94e9-ace0d66e759d`, 2026-10-17 09:04:41~10:01:11 KST, 56분 30초. 두 프로젝트·세 작업이 모두 succeeded다. [검증 증거](evidence/2026-10-17-parallel-contract-flow.json)에 실제 프로세스 실행 구간·커밋·검사 출력·계약 입력 해시를 보존했다.
+mission `2a776eaa-e5dd-4e43-94e9-ace0d66e759d`, 2026-10-17 09:04:41~10:01:11 KST, 56분 30초. 두 프로젝트·세 작업이 모두 succeeded다. [검증 증거](evidence/2026-10-17-parallel-contract-flow.json)에 실제 프로세스 실행 구간·커밋·검사 출력·계약 입력 해시를 보존했다.
 
 | 작업 | 프로젝트 전체 테스트 | master 검사 | 반영 커밋 |
 | --- | ---: | ---: | --- |
@@ -64,9 +64,7 @@ code-agent 연동 시험은 외부 빌드가 없으면 건너뛴다. 위 회귀 
 
 할인·합계의 커밋된 계약 문서 두 개가 첫 planning 배정 전에 등록됐다. checkout의 분석·조사·설계·계획·독립 검토 등 배정 7건(보정 재배정 포함) 모두에서 사본 파일 해시와 계약 입력 해시가 일치했다. 이번 실행에서는 기존 계약을 다시 묻지 않았다. 계약 답의 `contract` 출처 재사용 명령을 실제 모델이 호출한 시험은 아니며, 해당 출처의 검증은 code-agent 자체 회귀 범위다.
 
-자동 보정도 있었다. 할인·합계 설계의 수락 기준 ID 중복, checkout 영향 조사 문서의 계약 사본 경로 누락을 검사로 거부한 뒤 수정했다. 합계 리뷰의 부연 설명은 형식 오류로 남았고, 지적에 따른 코드 수정·재검증·두 번째 리뷰가 수행됐다. 최신 빌드에서 다시 확인할 생성 품질 항목은 [구현 현황](implementation.md#code-agent-연동-후속-확인)에 정리했다.
-
-원본 DB·모델 입출력·저장소는 로컬 `.master-agent/full-flow-7a0b56e5-dbdc-4b63-a0ef-02a7f897bfa8/`에 있다. 앞선 중단 시도는 성공으로 집계하지 않는다.
+원본 DB·모델 입출력·저장소는 로컬 `.master-agent/full-flow-7a0b56e5-dbdc-4b63-a0ef-02a7f897bfa8/`에 있다. 최종 성공까지 자동 보정·재검증이 포함된 결과다.
 
 실제 시험은 code-agent 빌드·템플릿의 별도 사본을 사용했다. 캡처 당시 HEAD `2552d3a`에는 미커밋 보완이 있었으며, 당시 후속 `8085647` 빌드와 사본의 1,027개 파일이 동일함을 확인했다. 사본 전체 해시는 `e4cf2a7845978a83c9f7cce5154047fb607449608c52342f21db19bfa30ea021`이다. 이는 시험 시점의 출처 기록이며 이후 code-agent 빌드와의 동일성을 보장하지 않는다.
 
@@ -90,9 +88,8 @@ node scripts/smoke-full-flow.mjs report <root>
 
 | 증거 | 확인한 내용과 한계 |
 | --- | --- |
-| [2026-10-16 전체 흐름](evidence/2026-10-16-full-flow.json) | 세 작업 완료. 후속 담당 입력의 계약 누락을 발견해 v4에서 보완 검증 |
 | [2026-10-16 앞선 답 판단](evidence/2026-10-16-answer-context.json) | 실제 Claude 판단·답 CLI 5건: routine 3, ambiguous 1, critical 1. 질문·앞선 답·도입 TTY는 합성 자료 |
-| [2026-10-17 병렬·계약 인계](evidence/2026-10-17-parallel-contract-flow.json) | 위 v4 결과의 프로세스 구간·커밋·검사·계약 입력 해시 |
+| [2026-10-17 병렬·계약 인계](evidence/2026-10-17-parallel-contract-flow.json) | 프로세스 구간·커밋·검사·계약 입력 해시 |
 
 실제 모델의 앞선 답 판단 시험은 [smoke-answer-context.mjs](../scripts/smoke-answer-context.mjs)로 재현한다. 실제 모델의 증거 JSON과 로컬 실행 원본은 보존한다. 회귀 로그·합성 브라우저 산출물은 최신 통과 결과를 유지하며, 중복 로그·실패한 시험 프로필·과거 실행 지시를 누적하지 않는다. 상세 변경은 Git 이력을 따른다.
 
@@ -100,7 +97,7 @@ node scripts/smoke-full-flow.mjs report <root>
 
 - 자유 목표의 AI 계획 생성부터 전체 완료까지의 연속 실행.
 - 실제 모델의 실패 수정·재계획·프로세스 중단·재부착에 대한 추가 연속 시험.
-- Codex 개발 호스트, 다중 사용자·원격 운영·배포, 다양한 실제 업무 규모의 판단 품질.
+- 실제 Codex 모델의 개발 전체 흐름, 다중 사용자·원격 운영·배포, 다양한 실제 업무 규모의 판단 품질.
 - 직접 실행 ClaudeHost의 전체 사이클. 현재 권장 검증 경로는 `--control`이다.
 
 검증 상태나 완료 조건을 수동으로 바꿔 성공시키지 않는다. 미반환·미확인 실행은 자동 성공이나 중복 실행으로 바꾸지 않는다.

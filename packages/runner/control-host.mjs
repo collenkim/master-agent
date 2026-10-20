@@ -1,6 +1,8 @@
 import { setTimeout as delay } from 'node:timers/promises';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { ControlClient, ControlError, validCli } from '../code-agent-adapter/control.mjs';
-import { checkClaudeInstallation, hostPrompt, inspectState } from './claude-host.mjs';
+import { hostPrompt, inspectState } from './claude-host.mjs';
 import { hash, now, requireThat, string } from '../domain/contracts.mjs';
 
 /** master 기록에 남길 code-agent 이벤트 — 진척·질문·동의·검증·실행·연결. 나머지는 커서만 넘긴다 */
@@ -9,6 +11,15 @@ const RECORDED = new Set(['run.accepted', 'run.started', 'run.stop-requested', '
   'verification.recorded', 'decision.applied', 'decision.rejected', 'answer.recorded', 'handover.stopped', 'handover.transferred', 'handover.accepted']);
 
 const small = value => { const text = JSON.stringify(value ?? null); return text.length <= 2000 ? value ?? null : { truncated: true, hash: hash(value) }; };
+
+// The supervisor owns selection, installation/trust validation and the frozen host profile.
+export function checkManagedInstallation(project) {
+  requireThat(existsSync(join(project.path, '.code-agent/version')), 'host-not-installed', 'code-agent 설치가 필요합니다. code-agent init과 doctor로 확인하세요.');
+}
+export function checkManagedSupport(hello) {
+  requireThat(hello.versions?.includes(1) && hello.hosts?.some(h => ['claude', 'codex'].includes(h.kind) && h.supported),
+    'control-unsupported', 'Claude 또는 Codex 관리 실행을 지원하는 code-agent가 필요합니다.');
+}
 
 /**
  * 사람이 `code-agent master enable` 로 켠 프로젝트에 제어자를 연결한다. 토큰 파일 경로만 저장한다(토큰 값은 저장하지 않는다).
@@ -19,7 +30,7 @@ export async function bindControl(store, projectId, { cliPath, controller, token
   const client = new ControlClient({ cliPath, projectPath: project.path, controller, tokenFile });
   const hello = await client.result('hello');
   requireThat(hello.project?.enabled === true, 'control-not-enabled', '이 프로젝트는 code-agent master 연동이 꺼져 있습니다 — 사람이 code-agent master enable 로 켭니다.');
-  requireThat(hello.versions?.includes(1) && hello.hosts?.some(h => h.kind === 'claude' && h.supported), 'control-unsupported', '지원하는 프로토콜 버전·호스트가 없습니다.');
+  checkManagedSupport(hello);
   requireThat(hello.controllers?.includes(controller), 'control-unknown-controller', 'code-agent 에 등록되지 않은 제어자입니다.');
   const owner = hello.ownership?.controller === controller;
   const heartbeat = await client.result('heartbeat'); // 토큰 확인(읽기는 인증이 필요하다)
@@ -84,11 +95,11 @@ export async function acceptControl(store, projectId, { cliPath, controller, tok
  */
 export class ControlHost {
   mode = 'live';
-  name = 'claude';
+  name = 'code-agent';
   transport = 'code-agent-master';
-  constructor(store, { cliPath, pollMs = 2000, followTimeoutMs = 4 * 3600 * 1000, callTimeoutMs = 60000, model, sleep } = {}) {
+  constructor(store, { cliPath, pollMs = 2000, followTimeoutMs = 4 * 3600 * 1000, callTimeoutMs = 60000, sleep } = {}) {
     this.store = store; this.cliPath = validCli(cliPath); this.pollMs = pollMs; this.followTimeoutMs = followTimeoutMs; this.callTimeoutMs = callTimeoutMs;
-    this.model = model ?? 'cli-default'; this.sleep = sleep ?? (ms => delay(ms));
+    this.model = 'code-agent-configured'; this.sleep = sleep ?? (ms => delay(ms));
   }
   binding(projectId) {
     const binding = this.store.get('control-binding', projectId);
@@ -107,7 +118,7 @@ export class ControlHost {
     return prompt;
   }
   checkInstallation(project) {
-    checkClaudeInstallation(project);
+    checkManagedInstallation(project);
     const binding = this.binding(project.id);
     requireThat(binding.owner && Number.isInteger(binding.generation), 'control-not-owner', '이 제어자는 지금 소유자가 아닙니다 — 인계를 인수(accept)한 뒤 실행합니다.');
   }
@@ -188,8 +199,11 @@ export class ControlHost {
     if (!run) return;
     this.store.transaction(() => {
       const record = this.store.get('control-run', runId);
-      if (!record || record.state === run.state) return;
-      this.store.put('control-run', { ...record, state: run.state, outcome: run.outcome ?? null, updatedAt: now() }, record.revision);
+      const metadata = { state: run.state, outcome: run.outcome ?? null, sessionId: run.sessionId ?? record?.sessionId,
+        hostKind: run.hostKind ?? record?.hostKind ?? null, sessionConfirmed: run.sessionConfirmed ?? record?.sessionConfirmed ?? null,
+        sessionAlias: run.sessionAlias ?? record?.sessionAlias ?? null };
+      if (!record || Object.entries(metadata).every(([key, value]) => hash(record[key] ?? null) === hash(value ?? null))) return;
+      this.store.put('control-run', { ...record, ...metadata, updatedAt: now() }, record.revision);
     });
   }
   /** 이벤트를 커서 다음부터 받아 남긴다. 기록 ID 가 다르거나 구간이 비면 스냅샷으로 다시 맞춘다(누락을 추측으로 채우지 않는다) */
@@ -235,10 +249,11 @@ export class ControlHost {
     return {
       sessionId: result?.sessionId ?? run.sessionId,
       summary: String(result?.host?.finalMessage ?? `code-agent master 실행 ${runId}: ${run.state}`).slice(0, 16000),
-      status: run.state === 'completed' ? 'returned' : 'blocked',
+      status: run.state === 'completed' && run.sessionConfirmed !== false ? 'returned' : 'blocked',
       permissionDenials: (result?.host?.permissionDenials ?? []).map(d => ({ tool: String(d.tool_name ?? d.tool ?? 'unknown') })).slice(0, 100),
       outputHash: result?.host?.outputHash ?? hash(view),
-      control: { runId, state: run.state, outcome: run.outcome ?? null, stop: run.stop ?? null, stateBefore: result?.state?.before ?? null, stateAfter: result?.state?.after ?? null,
+      control: { runId, state: run.state, hostKind: run.hostKind ?? null, sessionConfirmed: run.sessionConfirmed ?? null, sessionAlias: run.sessionAlias ?? null,
+        outcome: run.outcome ?? null, stop: run.stop ?? null, stateBefore: result?.state?.before ?? null, stateAfter: result?.state?.after ?? null,
         resume: result?.state?.resume ?? null, commits: result?.changes?.commits ?? [], files: (result?.changes?.files ?? []).slice(0, 500),
         verification: result?.verification ? { bound: result.verification.bound ?? null, evidence: result.verification.evidence ?? null } : null },
     };

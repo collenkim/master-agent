@@ -1,14 +1,22 @@
 # code-agent 통신 계약 연동
 
-code-agent가 제공하는 master 통신 계약(`code-agent.master` v1, code-agent 저장소 `doc/master-control.md`)으로 실행을 접수·관찰·정지·재개·인계하고, 사람이 code-agent에서 준 권한 범위의 일상 판단을 위임 판단으로 보낸다. 기존 직접 실행 호스트(`ClaudeHost`)와 기존 명령의 동작은 그대로이며, `--control`을 붙인 명령과 이 문서의 명령만 이 경로를 쓴다.
+code-agent가 제공하는 master 통신 계약(`code-agent.master` v1, code-agent 저장소 `doc/master-control.md`)으로 실행을 접수·관찰·정지·재개·인계하고, 사람이 code-agent에서 준 권한 범위의 일상 판단을 위임 판단으로 보낸다. 대시보드·CLI의 프로젝트/그룹 요청과 `--control` 실행이 이 경로를 쓴다. 직접 실행 호스트(`ClaudeHost`)는 [별도 계약](live-execution.md)을 따른다.
 
 ## 역할과 적용 조건
+
+관리 실행의 호스트는 code-agent가 정한다. 프로젝트의 `execution claude|codex` 선택, `execution both --main claude|codex`의 주 호스트, `master enable --host <JSON 파일>`에 등록한 실행 파일·모델·권한 설정을 따른다. `auto` 또는 main 없는 `both`는 등록된 기본 호스트를 사용한다. master의 `--provider`·`--model`은 계획·판단 설정이며 관리 개발 호스트를 덮어쓰지 않는다.
+
+새 프로젝트 등록의 기본 기능은 `code-agent:managed`다. 기존 `code-agent:claude`와 명시적 `code-agent:codex` 등록·계획도 관리 경로에서 받으며 실제 호스트는 code-agent가 선택한다. 준비 점검은 설치 마커·지원 프로토콜/호스트·제어권·인증을 확인한다. 선택된 호스트의 설치·권한·Codex 프로젝트/hook 신뢰 판정은 code-agent의 접수·감독을 따른다. master는 권한 설정이나 신뢰를 자동 변경하지 않는다.
+
+관리 실행의 지시문은 `.claude` 경로를 지정하지 않고 주입된 호스트 지침과 `code-agent flow advance --json`이 반환한 `procedure`·`instruction`·`agent`·`contextFile`을 따른다. 결과 기록 후 `resume`으로 이어가고 `human`·`wait`는 대기로 남긴다. Claude 직접 실행은 별도의 기존 경로다.
+
+Codex 접수의 세션 ID는 임시 별칭일 수 있다. master는 결과의 `hostKind`·`sessionConfirmed`·`sessionAlias`와 확정된 thread ID를 기록하고 같은 thread만 재개한다. thread 미확인은 새 세션으로 대체하지 않는다. 호스트·권한 설정이 바뀐 세션의 재개는 code-agent가 거부하며, 호스트 전환은 사용자의 `execution --handoff` 절차와 별도 실행 인계가 필요하다.
 
 | 주체 | 하는 일 |
 | --- | --- |
 | master-agent | 목표 분석·작업 배분·의존성·진행·재계획·독립 검증·전체 완료 판정, 위임 판단의 분류·이유·근거 기록 |
 | code-agent | 프로젝트 안의 접수·계획·구현·검증·반영 절차와 승인 조건, 원자적 접수, 위임 판단의 범위 검증과 적용, 사람 응답과의 구분 기록 |
-| code-agent 감독 프로세스 | 실행 세션(Claude) 시작·생존 확인·협력 정지·강제 종료·종료 기록 |
+| code-agent 감독 프로세스 | 등록된 호스트 설정을 주입해 Claude·Codex 실행 세션 시작·생존 확인·협력 정지·강제 종료·종료 기록 |
 | 사람 | 연동 켜기·제어자 등록, 위임 권한(grant) 부여·회수, 중대한 판단, 강제 인계 |
 
 1. 사람이 대상 프로젝트의 TTY에서 `code-agent master enable --controller <ID> --token-out <저장소 밖 파일>`로 연동을 켠다. 켜지 않은 프로젝트는 연결되지 않고(`control-not-enabled`) 기존 직접 실행 경로만 쓴다.

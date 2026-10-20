@@ -79,7 +79,7 @@ export class Catalog {
     catch { requireThat(false, 'invalid-path', `${input.name ?? input.id ?? '프로젝트'}: 존재하고 접근 가능한 프로젝트 폴더를 입력하세요.`); }
     // Registration is an operator declaration, not collected policy/code evidence or a control grant.
     return { id: input.id, name: input.name, path: input.path, domains: input.domains,
-      capabilities: input.capabilities ?? ['code-agent:claude'], constraints: input.constraints ?? [], currentPlans: input.currentPlans ?? [],
+      capabilities: input.capabilities ?? ['code-agent:managed'], constraints: input.constraints ?? [], currentPlans: input.currentPlans ?? [],
       references: input.references?.length ? input.references : [`operator:project:${input.id}`] };
   }
   registerManual(input) { return this.register(this.manualProject(input)); }

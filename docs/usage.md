@@ -1,6 +1,6 @@
 # 실행 기반 사용법
 
-프로젝트·그룹·목표 관리, 근거 수집·AI 계획, Claude 개발 호스트, code-agent 통신 계약의 위임 판단·정지·재부착, 독립 검증·반영 대조·통합 완료와 범위 내 복구를 제공한다. 전체 순서는 [README](../README.md), AI 연결은 [AI 계획 생성](ai-planning.md), 실제 접수·위임은 [code-agent 통신 계약](code-agent-control.md)을 따른다. 모의 실행은 실제 결과와 구분한다.
+프로젝트·그룹·목표 관리, 근거 수집·AI 계획, code-agent의 Claude·Codex 관리 실행, 위임 판단·정지·재부착, 독립 검증·반영 대조·통합 완료와 범위 내 복구를 제공한다. 전체 순서는 [README](../README.md), AI 연결은 [AI 계획 생성](ai-planning.md), 호스트 설정 주입·실제 접수·위임은 [code-agent 통신 계약](code-agent-control.md)을 따른다. 모의 실행은 실제 결과와 구분한다.
 
 ## 준비와 빠른 실행
 

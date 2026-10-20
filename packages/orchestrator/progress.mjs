@@ -66,7 +66,7 @@ export function missionProgress(store, mission, tasks, events) {
     const related = events.filter(e => (attempt && e.attemptId === attempt.id) || e.taskId === task.id || (run && e.runId === run.id));
     const lastProgressAt = [attempt?.startedAt, turn?.at, run?.updatedAt, activity?.at, fault?.at, ...related.map(e => e.at), ...control.map(e => e.at)].filter(Boolean).sort().at(-1) ?? mission.createdAt;
     return { taskId: task.id, projectId: task.projectId, attemptId: attempt?.id ?? null, state: task.state, status, reason,
-      phase, runId: run?.id ?? null, lastProgressAt,
+      phase, executionHost: run?.hostKind ?? attempt?.executionHost ?? null, runId: run?.id ?? null, lastProgressAt,
       nextAction: actions[status] ?? 'review-blockers', escalations: human.map(e => e.id) };
   });
   const request = store.get('target-request', mission.id);

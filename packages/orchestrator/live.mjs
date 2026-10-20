@@ -53,14 +53,16 @@ export class LiveExecution {
     }
   }
   async dispatch(id, taskId, host, { expectedRevision, expectedState, workId, wait = true } = {}) {
-    requireThat(host?.mode === 'live' && host.name === 'claude' && typeof host.inspect === 'function' && typeof host.execute === 'function', 'invalid-runner', 'Claude 개발 호스트가 필요합니다.');
+    requireThat(host?.mode === 'live' && (host.name === 'claude' || host.name === 'code-agent' && host.transport === 'code-agent-master') && typeof host.inspect === 'function' && typeof host.execute === 'function', 'invalid-runner', 'code-agent 관리 실행 또는 Claude 직접 실행 호스트가 필요합니다.');
     string(expectedState, 'expectedState');
     const before = this.engine.checked(id, expectedRevision);
     requireThat(before.mode === 'live', 'wrong-mode', 'live 목표만 실제 호스트로 배정할 수 있습니다.');
     const plan = before.plans.at(-1), task = plan?.proposal.tasks.find(t => t.id === taskId);
     requireThat(task && taskState(before, taskId).state === 'queued', 'invalid-state', '계획의 대기 작업만 배정할 수 있습니다.');
     const project = this.store.need('project', task.projectId);
-    requireThat(project.capabilities.includes('code-agent:claude') && task.requiredCapabilities.includes('code-agent:claude') && !task.requiredCapabilities.includes('simulation'), 'capability-mismatch', '프로젝트와 작업에 code-agent:claude 실행 기능이 필요합니다.');
+    const executionCapabilities = host.transport === 'code-agent-master' ? ['code-agent:managed', 'code-agent:claude', 'code-agent:codex'] : ['code-agent:claude'];
+    requireThat(executionCapabilities.some(c => project.capabilities.includes(c) && task.requiredCapabilities.includes(c)) && !task.requiredCapabilities.includes('simulation'),
+      'capability-mismatch', '프로젝트와 작업에 해당 실행 경로의 code-agent 기능이 필요합니다.');
     host.checkInstallation?.(project);
     const state = await host.inspect(project, expectedState);
     requireThat(state.stateVersion === expectedState, 'stale-remote-state', '조회한 상태와 다릅니다.');
@@ -157,6 +159,7 @@ export class LiveExecution {
       if (state && !ownsLease(state, result?.sessionId)) disposition = 'unknown';
       const turn = { id: randomUUID(), at: now(), expectedState: ticket.expectedState, state: state ?? null, result: result ?? null, error: error ?? null, disposition };
       attempt.turns.push(turn); attempt.state = disposition; attempt.hostReturnedAt = now();
+      if (['claude', 'codex'].includes(result?.control?.hostKind)) attempt.executionHost = result.control.hostKind;
       taskState(m, ticket.taskId).state = disposition;
       const d = this.engine.decision(m, 'observe-live-result', {
         reason: wrongWork ? '다른 code-agent 작업이 관측되어 결과를 격리합니다.' : error?.message ?? '호스트 회차와 code-agent 상태를 기록했습니다. 작업 완료 판정은 별도 검증이 필요합니다.',
@@ -170,7 +173,7 @@ export class LiveExecution {
     });
   }
   async continue(id, attemptId, host, { expectedRevision, expectedState, recoveryRunId, automatic = false, wait = true } = {}) {
-    requireThat(host?.mode === 'live' && host.name === 'claude' && typeof host.inspect === 'function' && typeof host.execute === 'function', 'invalid-runner', 'Claude 개발 호스트가 필요합니다.');
+    requireThat(host?.mode === 'live' && (host.name === 'claude' || host.name === 'code-agent' && host.transport === 'code-agent-master') && typeof host.inspect === 'function' && typeof host.execute === 'function', 'invalid-runner', 'code-agent 관리 실행 또는 Claude 직접 실행 호스트가 필요합니다.');
     string(expectedState, 'expectedState');
     const before = this.engine.checked(id, expectedRevision), attempt = before.attempts.find(a => a.id === attemptId);
     requireThat(before.mode === 'live' && !before.planningHold && !taskHeld(this.store, before, attempt?.taskId) && before.state !== 'paused' && attempt?.mode === 'live' && !attempt.recoveryBusy && !attempt.reconciliationPending &&
@@ -178,6 +181,7 @@ export class LiveExecution {
     'invalid-state', '종료가 관측된 호스트 회차만 이어갈 수 있습니다. unknown은 자동 재실행하지 않습니다.');
     const project = this.store.need('project', attempt.projectId);
     const sessionId = attempt.turns.at(-1).result.sessionId;
+    requireThat(attempt.turns.at(-1).result.control?.sessionConfirmed !== false, 'unconfirmed-session', 'code-agent가 실행 세션을 확인하지 못했습니다. 새 세션으로 대체하지 않고 상태 확인을 기다립니다.');
     const state = await host.inspect(project, expectedState, sessionId);
     requireThat(state.stateVersion === expectedState, 'stale-remote-state', '상태 버전이 다릅니다.');
     // 통신 계약: 검증된 시도는 code-agent 작업이 반영 자리를 떠났거나 반영 확인이 위임 수정 요청을 받았을 때만 이어 간다(반영 자리에서 다시 검증한다)

@@ -67,7 +67,7 @@ test('saved binding is insufficient: preparation checks live ownership/generatio
   let generation = 2, failAuth = false;
   const clientFor = () => ({ async result(type) {
     calls.push(type);
-    if (type === 'hello') return { project: { enabled: true }, ownership: { controller: 'master', generation } };
+    if (type === 'hello') return { versions: [1], hosts: [{ kind: 'codex', supported: true }], project: { enabled: true }, ownership: { controller: 'master', generation } };
     if (failAuth) throw Object.assign(new Error('token access denied'), { code: 'control-unauthorized' });
     return {};
   } });
@@ -85,7 +85,7 @@ test('worker holds preparation before model calls and rechecks on the same TASK 
   writeFileSync(cliPath, '');
   let ready = false, runs = 0;
   const options = { cliPath, prepare: (store, request) => prepareRequest(store, request, { observe: observed, checkHost() {},
-    clientFor: () => ({ async result(type) { return type === 'hello' ? { project: { enabled: true }, ownership: { controller: 'master', generation: 1 } } : {}; } }) }),
+    clientFor: () => ({ async result(type) { return type === 'hello' ? { versions: [1], hosts: [{ kind: 'codex', supported: true }], project: { enabled: true }, ownership: { controller: 'master', generation: 1 } } : {}; } }) }),
     provider: { name: 'fixture' }, workflow: { async run() { runs++; assert.equal(ready, true); return { blockers: [] }; } } };
   const waiting = await runRequest(f.store, request.id, options);
   assert.equal(waiting.state, 'waiting'); assert.equal(runs, 0);

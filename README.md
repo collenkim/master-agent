@@ -41,7 +41,7 @@ flowchart TD
 
 ## 설치와 빠른 확인
 
-Node.js **24.19 이상 24.x**와 Git이 필요합니다. 실제 개발에는 빌드된 code-agent와 인증된 Claude CLI가 추가로 필요합니다. 계획·판단 provider는 Codex·Claude CLI 어댑터를 제공하며, 이번 실제 모델 검증은 Claude로 수행했습니다.
+Node.js **24.19 이상 24.x**와 Git이 필요합니다. 실제 개발에는 빌드된 code-agent와 프로젝트가 선택한 Claude 또는 Codex CLI가 필요합니다. 계획·판단 provider도 Codex·Claude CLI 어댑터를 제공하며 개발 호스트와 별도로 선택합니다. 실제 모델 전체 흐름 검증은 Claude로 수행했습니다.
 
 소스 저장소에서 의존성을 준비한 뒤 로컬 패키지를 전역 명령으로 등록합니다. 현재 공개 npm 배포는 제공하지 않습니다.
 
@@ -126,11 +126,11 @@ master-agent request continue <요청ID> --revision <요청버전>
 
 TASK 번호는 요청 기록·AI 계획·각 프로젝트의 개발 지시에 공통으로 전달하며 이어 실행에서도 유지합니다. 내부 작업 ID와 code-agent 실행 ID는 별도로 유지합니다. 번호는 영문·숫자로 시작하는 64자 이하의 영문·숫자·점·밑줄·하이픈으로 입력하고 생략할 수 있습니다.
 
-요청 ID는 목표 ID와 같습니다. 요청은 별도 백그라운드 실행기에서 `AI 계획 → 검증 계약 연결 → code-agent 개발 → 독립 검증·인계`를 진행하며, 대시보드를 닫아도 계속됩니다. 재전송 중복 방지는 `--request-key`로 지정할 수 있습니다. 기본 계획·판단 provider는 Claude이며 `--provider codex`로 바꿀 수 있습니다. 개발 호스트는 Claude입니다.
+요청 ID는 목표 ID와 같습니다. 요청은 별도 백그라운드 실행기에서 `AI 계획 → 검증 계약 연결 → code-agent 개발 → 독립 검증·인계`를 진행하며, 대시보드를 닫아도 계속됩니다. 재전송 중복 방지는 `--request-key`로 지정할 수 있습니다. 기본 계획·판단 provider는 Claude이며 `--provider codex`로 바꿀 수 있습니다. 개발 호스트·모델·권한은 code-agent의 프로젝트 실행 선택과 등록된 호스트 설정을 따릅니다.
 
 요청 경로는 README·빌드 설정 등 정해진 파일을 자동 수집합니다. 해당 문서가 없으면 실제 최상위 폴더 목록을 근거로 사용하며 기존 구현·정책이 있다고 가정하지 않습니다. 기존에 지정한 정책·코드 근거는 유지하며 읽기 실패를 빈 근거로 바꾸지 않습니다. 수집 규칙은 [AI 계획](docs/ai-planning.md)을 따릅니다.
 
-code-agent 설치·최초 제어 연결·사람 채널과 권한 설정은 별도로 필요합니다. 현재 master의 개발 호스트는 Claude이며 계획 provider 선택과는 별개입니다. 준비가 부족하면 개발을 시작하지 않고 안내하며, 이미 `missing-knowledge`로 실패한 요청도 같은 TASK로 재점검할 수 있습니다. 독립 검증 계약은 화면의 검증 계약 설정 또는 `--input <JSON>`의 `templates`로 전달합니다. 상세 입력과 준비 순서는 [사용법](docs/usage.md)을 따릅니다.
+code-agent 설치·최초 제어 연결·사람 채널과 권한 설정은 별도로 필요합니다. 프로젝트에서 `code-agent execution claude|codex` 또는 `code-agent execution both --main claude|codex`로 개발 호스트를 정합니다. `master enable --host <JSON 파일>`의 실행 파일·모델·권한 설정을 code-agent가 주입하며 master-agent가 덮어쓰지 않습니다. 기본 호스트 선택과 세션 재개 조건은 [통신 계약](docs/code-agent-control.md)을 따릅니다. 준비가 부족하면 안내하며, 이미 실패한 요청도 같은 TASK로 재점검할 수 있습니다. 독립 검증 계약은 화면의 검증 계약 설정 또는 `--input <JSON>`의 `templates`로 전달합니다. 상세 입력과 준비 순서는 [사용법](docs/usage.md)을 따릅니다.
 
 ## 실제 실행과 조회
 
@@ -181,7 +181,7 @@ master-agent dashboard restart --db <기존DB>
 
 ## 현재 경계와 문서
 
-질문과 무관한 웹 실행 중지, 원격 러너·운영 예산·Codex 개발 호스트는 후속 범위입니다. 종료된 독립 세션·Codex 비대화형 세션 자동 재개는 code-agent가 지원하지 않습니다. 후속 우선순위는 [구현 현황](docs/implementation.md#남은-작업), 실제 모델 시험의 범위는 [검증 기록](docs/verification.md#미검증-범위)을 따릅니다.
+질문과 무관한 웹 실행 중지와 원격 러너·운영 예산은 후속 범위입니다. Codex 관리 실행은 확정된 thread ID로 같은 세션을 재개하며, 독립 세션의 재개는 code-agent의 기능 협상과 요청별 계약을 따릅니다. 후속 우선순위는 [구현 현황](docs/implementation.md#남은-작업), 실제 모델 시험의 범위는 [검증 기록](docs/verification.md#미검증-범위)을 따릅니다.
 
 | 문서 | 내용 |
 | --- | --- |

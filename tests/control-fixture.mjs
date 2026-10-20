@@ -18,7 +18,7 @@ import { ControlError } from '../packages/code-agent-adapter/control.mjs';
  * reviewQuestions 의 프로젝트는 구현 회차가 check·test 를 통과한 뒤 리뷰 자리에서 질문을 남기고 멈춘다 — 다음 회차가 반영 자리로 간다.
  * rejectContinue 의 프로젝트는 이어 실행 접수를 응답으로 거부한다(invalid-state — 실행을 만들지 않는다).
  */
-export function controlFixture(t, { questions = {}, humanOnly = {}, grants, reviewQuestions = {}, rejectContinue = {}, contractDocuments = {} } = {}) {
+export function controlFixture(t, { questions = {}, humanOnly = {}, grants, reviewQuestions = {}, rejectContinue = {}, contractDocuments = {}, capability = 'code-agent:claude' } = {}) {
   const root = temporary(t), store = new Store(join(root, 'state.db')); cleanup(t, () => store.close());
   const engine = new Engine(store), verifier = new LiveVerification(store);
   const tasks = [], projects = [], sims = {}, calls = [], events = {};
@@ -32,13 +32,13 @@ export function controlFixture(t, { questions = {}, humanOnly = {}, grants, revi
     }
     writeFileSync(join(path, 'check.mjs'), "import assert from 'node:assert/strict'; import { value } from './source.mjs'; assert.equal(value,2); console.log('실제 입력 검증 통과');\n");
     git(path, ['init', '--quiet']); git(path, ['add', '.']); git(path, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '--quiet', '-m', 'fixture baseline']);
-    let p = engine.catalog.register({ id, name: id, path, domains: ['fixture'], capabilities: ['code-agent:claude'], constraints: [], currentPlans: [], references: ['fixture'] });
+    let p = engine.catalog.register({ id, name: id, path, domains: ['fixture'], capabilities: [capability], constraints: [], currentPlans: [], references: ['fixture'] });
     p = new Knowledge(store).collect(id, { schemaVersion: 1, sources: [{ path: 'source.mjs', kind: 'code' }, { path: 'policy.txt', kind: 'policy' }] }, p.revision).project;
     projects.push(p);
     sims[id] = { n: 0, work: null, request: null, approval: null, consents: [], questions: [], verification: null, lease: { state: 'none' }, runs: {}, commands: {} };
     events[id] = { logId: `log-${id}`, list: [] };
     tasks.push({ id: `edit-${id}`, projectId: id, domain: 'fixture', kind: 'implementation', goal: 'value를 2로 변경', rationale: '합성 위임 시나리오',
-      references: p.references, dependsOn: [], criteria: ['value'], allowedChanges: ['source.mjs'], exclusions: ['policy.txt'], outputs: ['result'], requiredCapabilities: ['code-agent:claude'], verification: '실제 Node assertion' });
+      references: p.references, dependsOn: [], criteria: ['value'], allowedChanges: ['source.mjs'], exclusions: ['policy.txt'], outputs: ['result'], requiredCapabilities: [capability], verification: '실제 Node assertion' });
   }
   tasks.push({ ...tasks[0], id: 'integrate', kind: 'integration', dependsOn: ['edit-one', 'edit-two'], allowedChanges: [], goal: '두 프로젝트 실제 값 검증' });
   let mission = engine.create({ mode: 'live', goal: '두 프로젝트를 위임 판단과 실제 검증으로 완료', requestKey: 'control', scope: { projectIds: ['one', 'two'], groupIds: [] }, criteria: [{ id: 'value', description: '두 값이 2다.' }] });

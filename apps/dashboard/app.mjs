@@ -61,7 +61,7 @@ function render() {
     <p class="muted">${escape(m.id)} · 마지막 진행 ${escape(date(m.lastProgressAt))}</p>
     ${m.error ? `<p class="error">${escape(m.error)}</p>` : ''}
     ${['blocked', 'setup-required'].includes(m.status) ? `<p class="error">${escape(m.reason)}</p>` : ''}
-    <div class="table-wrap"><table><thead><tr><th>작업 / 프로젝트</th><th>상태</th><th>단계</th><th>사유 / 다음 행동</th><th>마지막 진행</th></tr></thead><tbody>${m.tasks.map(t => `<tr><td>${escape(t.taskId)}<small>${escape(t.projectId)}</small></td><td>${badge(t.status)}</td><td>${escape(t.phase ?? '—')}</td><td>${escape(t.reason)}<small>${escape(t.nextAction)}</small></td><td>${escape(date(t.lastProgressAt))}</td></tr>`).join('')}</tbody></table></div>
+    <div class="table-wrap"><table><thead><tr><th>작업 / 프로젝트</th><th>상태</th><th>단계 / 실행 호스트</th><th>사유 / 다음 행동</th><th>마지막 진행</th></tr></thead><tbody>${m.tasks.map(t => `<tr><td>${escape(t.taskId)}<small>${escape(t.projectId)}</small></td><td>${badge(t.status)}</td><td>${escape(t.phase ?? '—')}<small>${escape(t.executionHost ?? '호스트 확인 전')}</small></td><td>${escape(t.reason)}<small>${escape(t.nextAction)}</small></td><td>${escape(date(t.lastProgressAt))}</td></tr>`).join('')}</tbody></table></div>
     <h3>최근 이벤트</h3><ol class="events">${m.events.map(e => `<li><time>${escape(date(e.at))}</time> ${escape(e.type)} ${escape(e.taskId)}</li>`).join('') || '<li>기록 없음</li>'}</ol>
   </details>`).join('') || '<div class="empty">등록된 목표가 없습니다.</div>';
   renderManagement();
