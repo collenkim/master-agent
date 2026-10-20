@@ -4,6 +4,7 @@ import { Engine } from '../orchestrator/engine.mjs';
 import { continueRequest, requestStatus } from '../orchestrator/requests.mjs';
 import { callOnce, ControlClient, PROTOCOL, PROTOCOL_VERSION } from '../code-agent-adapter/control.mjs';
 import { findHumanKey, interactionApiSupported, interactionClient, signInteraction } from '../code-agent-adapter/interactions.mjs';
+import { controlProbe } from '../code-agent-adapter/pairing.mjs';
 import { recordInteraction } from './history.mjs';
 import { preparationIssues } from '../orchestrator/preparation.mjs';
 
@@ -18,8 +19,9 @@ async function readRemoteInteractions(store, project, cliPath, resolveKey = find
   const hello = await callOnce(cliPath, project.path, { protocol: PROTOCOL, version: PROTOCOL_VERSION, type: 'hello' }, { timeoutMs: 5000 });
   requireThat(hello.ok, 'interaction-unavailable', 'code-agent 기능 조회에 실패했습니다.');
   const binding = store.get('control-binding', project.id), result = hello.result;
+  // The unauthenticated hello also tells the project card why a connection is missing; it never pairs.
   const capability = { version: result.codeAgent?.version ?? null, commands: result.commands ?? {},
-    responseSupported: false, reason: remoteUnavailable, checkedAt: now() };
+    responseSupported: false, reason: remoteUnavailable, checkedAt: now(), control: controlProbe(result) };
   if (!binding) return { capability, questions: null, consents: null };
   const client = new ControlClient({ cliPath, projectPath: project.path, ...binding, timeoutMs: 5000, retries: 0 });
   if (interactionApiSupported(result)) {
@@ -110,14 +112,18 @@ export function createInteractions(store, { cliPath, readRemote, resolveHumanKey
       const request = store.get('target-request', m.id), issues = request ? preparationIssues(request) : [];
       if (issues.length && ['waiting', 'failed'].includes(request.state)) {
         const id = key('master', m.id, `preparation:${request.revision}`);
+        // Pairing is an explicit choice only: nothing is preselected and the confirmation dialog performs it.
+        const pairable = [...new Set(issues.filter(i => i.canPair).map(i => i.projectId))];
         active.add(id);
         save({ ...common, id, requestId: `preparation:${request.revision}`, handler: 'preparation', taskId: null, stage: 'setup',
           context: { ...common.context, requestRevision: request.revision }, title: `${m.taskNumber ?? '요청'} · 프로젝트 실행 준비 필요`,
-          body: issues.map(i => `${store.get('project', i.projectId)?.name ?? i.projectId}: ${i.message}\n${i.guidance}`).join('\n\n') +
+          body: issues.map(i => `${store.get('project', i.projectId)?.name ?? i.projectId}: ${i.message}\n${i.guidance}${i.command ? `\n${i.command}` : ''}`).join('\n\n') +
             (launchOptions.dbPath ? `\n\n현재 대시보드 DB: ${launchOptions.dbPath}` : ''),
           reason: '실행에 필요한 준비가 부족해 요청이 대기 중입니다. 다시 확인하면 근거·설치·연결을 재점검하고 같은 요청·TASK에서 이어갑니다.',
-          references: issues.map(i => `${i.projectId}:${i.code}`), options: [{ id: 'recheck', label: '준비 상태 다시 확인하고 기존 요청 이어 실행' }],
-          recommendedOptionIds: ['recheck'], recommendation: '준비 상태 다시 확인하고 기존 요청 이어 실행', allowCustom: false,
+          references: issues.map(i => `${i.projectId}:${i.code}`),
+          options: [...(pairable.length ? [{ id: 'pair-recheck', label: '제어 연결 후 기존 요청 이어 실행' }] : []), { id: 'recheck', label: '준비 상태 다시 확인하고 기존 요청 이어 실행' }],
+          pairing: pairable.length ? { projectIds: pairable } : null,
+          recommendedOptionIds: pairable.length ? [] : ['recheck'], recommendation: pairable.length ? '' : '준비 상태 다시 확인하고 기존 요청 이어 실행', allowCustom: false,
           respondSupported: m.state !== 'paused', unavailableReason: m.state === 'paused' ? '일시 정지된 목표입니다. 먼저 재개하세요.' : null,
           producerState: 'open', originAt: request.updatedAt });
       }
@@ -287,6 +293,8 @@ export function createInteractions(store, { cliPath, readRemote, resolveHumanKey
           const m = new Engine(store).checked(item.missionId, item.context.missionRevision), request = store.need('target-request', m.id);
           requireThat(!['paused', 'succeeded', 'cancelled'].includes(m.state) && request.revision === item.context.requestRevision, 'stale-question', '요청 상태가 변경되었습니다. 다시 확인하세요.');
           requireThat(input.resume === true, 'invalid-input', '준비 재점검은 기존 요청 재개로 제출하세요.');
+          if ((input.optionIds ?? []).includes('pair-recheck')) requireThat(item.pairing?.projectIds.every(id => store.get('control-binding', id)), 'stale-question',
+            '제어 연결이 아직 등록되지 않았습니다. 확인 화면에서 연결한 뒤 다시 제출하세요.');
         }
         else if (item.handler === 'analysis') new Planner(store).clarify(item.missionId, { analysisId: item.runId, answers: [{ issueId: item.requestId, answer }] }, item.context.missionRevision, { inTransaction: true });
         else {

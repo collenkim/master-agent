@@ -25,7 +25,7 @@ export function checkManagedSupport(hello) {
  * 사람이 `code-agent master enable` 로 켠 프로젝트에 제어자를 연결한다. 토큰 파일 경로만 저장한다(토큰 값은 저장하지 않는다).
  * 연결은 권한이 아니다 — 위임 승인은 사람이 code-agent 에서 따로 준 grant 범위에서만 받는다.
  */
-export async function bindControl(store, projectId, { cliPath, controller, tokenFile }) {
+export async function bindControl(store, projectId, { cliPath, controller, tokenFile, pairing }) {
   const project = store.need('project', projectId);
   const client = new ControlClient({ cliPath, projectPath: project.path, controller, tokenFile });
   const hello = await client.result('hello');
@@ -39,7 +39,7 @@ export async function bindControl(store, projectId, { cliPath, controller, token
     const binding = { id: projectId, controller, tokenFile, generation: owner ? hello.ownership.generation : null, owner,
       codeAgentProjectId: hello.project.projectId, codeAgentVersion: hello.codeAgent?.version, stateSchema: hello.codeAgent?.stateSchema, protocolVersion: 1,
       delegation: { available: hello.approvals?.delegationAvailable === true, actions: hello.approvals?.delegated?.actions ?? [] }, policy: hello.policy, boundAt: now(),
-      events: heartbeat.events };
+      events: heartbeat.events, ...(pairing ? { pairing } : {}) };
     const saved = store.put('control-binding', binding, previous?.revision ?? 0);
     store.event(projectId, 'control-bound', { controller, generation: binding.generation, owner });
     return saved;

@@ -21,6 +21,19 @@ const date = value => value ? new Date(value).toLocaleString('ko-KR') : '기록 
 const attention = p => p.attention;
 const unavailable = p => p.observation.status !== 'observed' || p.observation.stale;
 const badge = status => `<span class="badge ${['blocked', 'human-input', 'process-error', 'timeout'].includes(status) ? 'danger' : ['completed', 'observed'].includes(status) ? 'success' : ''}">${escape(labels[status] ?? status)}</span>`;
+const connectionLabels = { connected: '제어 연결됨', 'pairing-available': '제어 연결 가능', 'trust-missing': 'PC 신뢰 필요', 'enabled-unbound': '연동 켜짐 · 이 DB 미등록',
+  'owned-by-other': '다른 제어자 소유', legacy: '터미널 연결 필요', unknown: '연결 확인 전', 'not-installed': 'code-agent 없음', stale: '연결 갱신 필요', observer: '관찰 연결' };
+function connectionView(p) {
+  const c = p.connection, last = p.pairing, unsettled = last && ['sending', 'unknown', 'bind-failed'].includes(last.state);
+  const tone = c.state === 'connected' && !c.renewal ? 'success' : ['owned-by-other', 'stale'].includes(c.state) || c.expired ? 'danger' : 'warning';
+  return `<div class="connection"><span class="badge ${tone}">${escape(connectionLabels[c.state] ?? c.state)}</span>
+    ${c.state === 'connected' ? `<span class="muted">${escape(p.control?.controller)}${p.control?.expiresAt ? ` · 사람 응답 채널 만료 ${escape(date(p.control.expiresAt))}` : ''}</span>` : ''}
+    ${c.state !== 'connected' || c.renewal ? `<small>${escape(c.message)}</small>` : ''}
+    ${c.command ? `<small>터미널(PC당 1회): <code>${escape(c.command)}</code></small>` : ''}
+    ${last?.state === 'failed' ? `<small class="error">마지막 연결 실패: ${escape(last.error?.message ?? last.error?.code)}</small>` : ''}
+    ${unsettled ? `<small class="error">연결 결과 ${last.state === 'bind-failed' ? 'DB 등록 실패' : '미확인'}${last.error ? `: ${escape(last.error.message)}` : ''}</small><button type="button" class="retry-pairing" data-id="${escape(last.id)}">같은 접수 번호로 연결 결과 확인</button>`
+      : c.canPair ? `<button type="button" class="pair-project" data-id="${escape(p.id)}">${['connected', 'stale'].includes(c.state) ? '다시 연결' : '제어 연결'}</button>` : ''}</div>`;
+}
 let latest, inFlight = false, timer;
 
 function render() {
@@ -37,6 +50,7 @@ function render() {
     <div class="card-head"><h3>${escape(p.name || p.id)}</h3>${badge(p.observation.status)}</div>
     <div class="card-actions"><button type="button" class="project-request" data-id="${escape(p.id)}">이 프로젝트에 요청</button><button type="button" class="delete-project danger-button" data-id="${escape(p.id)}">프로젝트 삭제</button></div>
     <p class="path">${escape(p.path)}</p>
+    ${connectionView(p)}
     <div class="work"><span class="muted">${p.observation.historical || p.observation.stale ? '마지막 관측 작업' : '현재 관측 작업'}</span><strong>${escape(p.work?.id ?? (p.observation.status === 'observed' ? '작업 없음' : '확인되지 않음'))}</strong><span>${escape([p.work?.phase, p.work?.stage, p.work?.task].filter(Boolean).join(' / ') || '—')}</span></div>
     <div class="chips">${p.resume ? badge(p.resume.code) : ''}${p.observation.stale ? '<span class="badge warning">오래됨·미조회</span>' : ''}${p.observation.historical && p.work ? '<span class="badge warning">이전 관측</span>' : ''}</div>
     <p class="muted">관측 ${escape(date(p.observation.observedAt))}<br>조회 시도 ${escape(date(p.observation.checkedAt))}</p>
@@ -45,6 +59,8 @@ function render() {
     <div class="waiting"><span>승인 대기 <b>${p.consents.length}</b></span><span>답변 대기 <b>${p.questions.length}</b></span><span>임대 <b>${escape(p.lease || '미확인')}</b></span></div>
     <details data-id="${escape(p.id)}" ${openProjects.has(p.id) ? 'open' : ''}><summary>작업·판단 상세</summary>
       <p>프로젝트 ID: ${escape(p.id)}</p><p>제어 연결: ${p.control ? `${escape(p.control.controller)} (등록 당시 ${p.control.owner ? '소유자' : '관찰자'})` : '없음'}</p>
+      ${p.connection.guidance ? `<p class="muted">${escape(p.connection.guidance)}</p>` : ''}
+      ${p.connection.managedHost ? `<p>선택될 개발 호스트: ${escape(p.connection.managedHost.selected ?? '미확인')} · ${p.connection.managedHost.ready === false ? `준비 안 됨 ${escape(p.connection.managedHost.problems.map(x => x.message || x.code).join(' / '))}` : p.connection.managedHost.ready ? '준비됨' : '준비 상태 미확인'}</p>` : ''}
       ${renderStageDetails(p.stages)}
       ${p.resume?.reasons.map(r => `<p>${escape(r)}</p>`).join('') ?? ''}
       ${p.consents.map(c => `<p>승인: ${escape(c.action)} · ${escape(c.id)}</p>`).join('')}
@@ -66,7 +82,7 @@ function render() {
   </details>`).join('') || '<div class="empty">등록된 목표가 없습니다.</div>';
   renderManagement();
   renderUpdates();
-  renderInteractions(latest, post, refresh);
+  renderInteractions(latest, post, refresh, { pair: openPairing });
   renderHistory(latest);
 }
 
@@ -116,9 +132,59 @@ async function loadCandidates() {
 async function post(path, body) {
   const response = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Master-Token': latest.token }, body: JSON.stringify(body) });
   const result = await response.json();
-  if (!response.ok) throw new Error(result.message ?? result.error);
+  if (!response.ok) throw Object.assign(new Error(result.message ?? result.error), { code: result.error });
   return result;
 }
+// Pairing happens only here: an explicit confirmation with a required checkbox and no default choice.
+let pairing = null;
+function openPairing(projectId) {
+  if (pairing && !pairing.busy) pairing.resolve(false);
+  return new Promise(resolve => {
+    pairing = { projectId, preview: null, commandId: crypto.randomUUID(), resolve, done: false, busy: false };
+    $('pair-project').textContent = latest.projects.find(p => p.id === projectId)?.name ?? projectId;
+    $('pair-confirm').checked = false; $('pair-error').textContent = ''; $('pair-guidance').textContent = '';
+    $('pair-lines').textContent = '연결 내용을 확인하고 있습니다…'; updatePairSubmit();
+    if (!$('pair-dialog').open) $('pair-dialog').showModal();
+    void loadPairing();
+  });
+}
+async function loadPairing() {
+  const current = pairing;
+  try {
+    const preview = await post('/api/projects/pair/preview', { projectId: current.projectId });
+    if (pairing !== current) return;
+    current.preview = preview; $('pair-lines').textContent = preview.lines.join('\n');
+    $('pair-guidance').textContent = preview.canPair ? '' : `${preview.message} ${preview.guidance}${preview.command ? `\n${preview.command}` : ''}`;
+  } catch (error) { if (pairing === current) $('pair-error').textContent = error.message; }
+  updatePairSubmit();
+}
+function updatePairSubmit() { $('pair-submit').disabled = !pairing?.preview?.canPair || !$('pair-confirm').checked || pairing.busy; }
+$('pair-confirm').addEventListener('change', updatePairSubmit);
+$('pair-dialog').addEventListener('close', () => { if (pairing && !pairing.busy) { pairing.resolve(pairing.done); pairing = null; } });
+$('pair-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  const current = pairing; if (!current?.preview || current.busy) return;
+  current.busy = true; updatePairSubmit(); $('pair-error').textContent = '연결 중…';
+  try {
+    const receipt = await post('/api/projects/pair', { projectId: current.projectId, projectRevision: current.preview.projectRevision, commandId: current.commandId,
+      confirmed: $('pair-confirm').checked, shownHash: current.preview.shownHash });
+    if (receipt.state === 'paired') {
+      current.done = true; current.busy = false; $('pair-dialog').close();
+      $('action-status').textContent = `제어 연결을 등록했습니다(${receipt.outcome === 'rotated' ? '토큰 갱신' : '연동 켬'}${receipt.expiresAt ? ` · 사람 응답 채널 만료 ${date(receipt.expiresAt)}` : ''}).`;
+      await refresh(); return;
+    }
+    $('pair-error').textContent = ['unknown', 'sending'].includes(receipt.state) ? '연결 결과를 확인하지 못했습니다. 다시 누르면 같은 접수 번호로 결과를 확인합니다.'
+      : receipt.state === 'bind-failed' ? `code-agent는 연결했지만 DB 등록에 실패했습니다: ${receipt.error?.message ?? ''} 다시 누르면 등록만 다시 시도합니다.` : receipt.error?.message ?? receipt.state;
+  } catch (error) {
+    if (error.code === 'stale-state' && pairing === current) {
+      current.commandId = crypto.randomUUID(); current.preview = null; $('pair-confirm').checked = false;
+      $('pair-error').textContent = `${error.message} 최신 내용을 다시 불러왔습니다.`; void loadPairing();
+    } else $('pair-error').textContent = error.message;
+  } finally {
+    current.busy = false; updatePairSubmit();
+    if (pairing === current && !$('pair-dialog').open) { current.resolve(current.done); pairing = null; }
+  }
+});
 function renderManagement() {
   $('groups').innerHTML = latest.groups.map(g => `<article class="project group-card"><div class="card-head"><h3>${escape(g.name)}</h3><span class="badge">${g.projectIds.length}개 프로젝트</span></div>
     <p>${escape(g.description || '서비스 범위 설명 없음')}</p><p class="muted">${escape(g.projectIds.map(id => latest.projects.find(p => p.id === id)?.name ?? id).join(' · ') || '소속 프로젝트 없음')}</p>
@@ -220,6 +286,12 @@ document.addEventListener('click', async event => {
     }
   }
   if (button.classList.contains('remove-draft')) { groupDrafts = groupDrafts.filter(p => p.id !== button.dataset.id); renderDrafts(); }
+  if (button.classList.contains('pair-project')) void openPairing(button.dataset.id);
+  if (button.classList.contains('retry-pairing')) {
+    button.disabled = true;
+    try { const receipt = await post('/api/projects/pair/retry', { commandId: button.dataset.id }); $('action-status').textContent = receipt.state === 'paired' ? '제어 연결을 등록했습니다.' : `연결 결과: ${receipt.state} ${receipt.error?.message ?? ''}`; await refresh(); }
+    catch (error) { $('action-status').textContent = error.message; } finally { button.disabled = false; }
+  }
   if (button.classList.contains('continue-request')) {
     button.disabled = true;
     try { const r = latest.requests.find(r => r.id === button.dataset.id); await post('/api/requests/continue', { id: r.id, revision: r.revision }); $('action-status').textContent = '기존 대상과 목표에서 이어 실행합니다.'; await refresh(); }

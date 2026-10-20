@@ -20,9 +20,11 @@
 
 ## 사람 채널
 
-사용자가 프로젝트 폴더에서 `code-agent master enable`과 `code-agent master human enable`을 직접 TTY로 수행한다. 기존 제어자가 있으면 동일 ID로 사람 채널을 추가한다. master의 `project control`에는 기존 제어 토큰 파일을 연결한다. 연결 명령 전체는 [README](../README.md)에 있다.
+페어링을 지원하는 code-agent에서는 대시보드의 제어 연결(사람이 확인한 페어링)이 연동 켜기·DB 등록·사람 채널 생성을 한 번에 한다. 채널 만료일은 프로젝트 카드에 표시하고, 만료 7일 전부터 `다시 연결`로 갱신한다. 지원하지 않는 code-agent에서는 사용자가 프로젝트 폴더에서 `code-agent master enable`과 `code-agent master human enable`을 직접 TTY로 수행한다. 기존 제어자가 있으면 동일 ID로 사람 채널을 추가한다. master의 `project control`에는 기존 제어 토큰 파일을 연결한다. 연결 명령 전체는 [README](../README.md)에 있다.
 
-서버는 같은 OS 계정의 `~/.code-agent/dashboard-channels`에서 해당 channelId의 키 파일 하나를 찾는다. 개인 키·토큰 값은 DB·브라우저·로그·모델 프롬프트에 저장하지 않는다. 키 경로는 브라우저 입력으로 받지 않는다. 사람 채널 만료·회수·소유권 세대 변경은 code-agent의 기존 검사를 따른다. 재연결 없이 AI grant로 대신 승인하지 않는다.
+준비 점검이 `제어 연결 가능`을 찾으면 준비 요청 항목에 `제어 연결 후 기존 요청 이어 실행`을 추가한다. 이 항목은 추천·기본 선택이 없다. 화면은 제출 전에 프로젝트별 연결 확인 화면을 띄우고, 서버는 대상 프로젝트의 연결이 모두 등록됐을 때만 재점검·재개를 접수한다. 연결이 없으면 `stale-question`으로 거부하고 접수 기록을 남기지 않는다.
+
+서버는 같은 OS 계정의 code-agent 키 저장소(`CODE_AGENT_HOME` 또는 `~/.code-agent`)의 `dashboard-channels`에서 해당 channelId의 키 파일 하나를 찾는다. 개인 키·토큰 값은 DB·브라우저·로그·모델 프롬프트에 저장하지 않는다. 키 경로는 브라우저 입력으로 받지 않는다. 사람 채널 만료·회수·소유권 세대 변경은 code-agent의 기존 검사를 따른다. 재연결 없이 AI grant로 대신 승인하지 않는다.
 
 화면은 loopback 서버의 정확한 Host/Origin·CSRF 토큰·JSON 요청 경계를 사용한다. 일반 모델 실행 경로에는 서명 함수를 연결하지 않는다. 서버와 같은 OS 계정을 침해한 프로세스까지 격리하는 인증 체계는 아니다.
 

@@ -1,12 +1,14 @@
 # 검증 기록
 
-기능 검증 기준은 **2026-10-20, code-agent 호스트 설정 주입·Codex 관리 실행 연동 반영 후**다. Windows·Node.js 24.19.0에서 회귀·실제 CLI·브라우저를 확인했다. 실제 모델 전체 흐름의 최근 검증일은 2026-10-17이며, 관제·질문 계약·화면 시험은 해당 모델 시험의 재수행을 뜻하지 않는다.
+기능 검증 기준은 **2026-10-20, 대시보드 code-agent 제어 연결(페어링) 반영 후**다. Windows·Node.js 24.19.0에서 회귀·실제 CLI·브라우저를 확인했다. 실제 모델 전체 흐름의 최근 검증일은 2026-10-17이며, 관제·질문 계약·화면 시험은 해당 모델 시험의 재수행을 뜻하지 않는다.
 
 | 검증 | 결과 | 근거 |
 | --- | --- | --- |
-| 자동 회귀 | 전체 253개, 최종 관제 보완 후 관련 17개 통과. 실패·건너뜀 0 | `npm.cmd test`, `.master-agent/managed-host-full-tests.log`, `.master-agent/managed-host-final-tests.log`. 전체 회귀는 최신 code-agent 고정 사본 사용 |
+| 자동 회귀 | 전체 266개 통과. 실패·건너뜀 0 | `npm.cmd test`, `.master-agent/pairing-full-tests.log`. 최신 code-agent 고정 사본 사용 |
+| 제어 연결(페어링) | 원인별 연결 상태·다음 조치, 신뢰 키 파일 위치·컨트롤러 이름 검증, 확인 1회 연결과 토큰 경로·채널 만료만 저장, 만료 전 갱신, 내용 변경·다른 소유자·사용 중 거부(서명 전), 응답 유실 시 미확인 유지·중복 연결 차단·같은 commandId 확인, 저장소 안 토큰 거부, HTTP의 화면 토큰·확인 체크·표시 내용 해시. CLI는 TTY 없이 거부 | `tests/pairing.test.mjs` 8개, `tests/cli.test.mjs`. code-agent 응답은 `tests/pairing-fake-cli.mjs`의 계약 fixture |
+| 실제 code-agent 페어링 | 임시 code-agent 저장소에서 PC 신뢰 1회 뒤 확인한 연결로 연동 켜기·DB 등록·사람 채널 생성, 인증 heartbeat, DB에는 토큰 경로만 저장 | `tests/code-agent-control.test.mjs`. 미커밋 페어링 구현을 포함한 고정 사본, 격리 `CODE_AGENT_HOME`·`CODEX_HOME`. 실제 사용자 신뢰·프로젝트는 변경하지 않음 |
 | 호스트 설정 주입 | 호스트 공통 지시문·기능 등록·배정, Claude 파일 없는 준비 점검, Codex thread 확정·같은 thread 재개·재부착, 호스트 변경 재개 거부·미확정 세션 차단·실제 호스트 관제 | `tests/managed-host.test.mjs` 5개. 실제 code-agent 감독과 모의 Codex 모델, 격리 프로젝트의 합성 TTY·신뢰 기록. 사용자 권한·설정은 변경하지 않음 |
-| 요청 준비·복구 | 표준 근거·폴더 목록·최신성, 기존 명시 근거 보존, 그룹별 설치·관리 실행 지원·소유권·인증 점검, 준비 중 모델 미호출, 기존 실패 요청의 보류·동일 TASK 재개·중복/오래된 답 거부, 검증 계약 등록 안내 | `tests/preparation.test.mjs` 7개. 실제 authorization-api의 YSIJ-254도 같은 TASK의 준비 대기·요청함 표시 확인. 개발 모델 미호출 |
+| 요청 준비·복구 | 표준 근거·폴더 목록·최신성, 기존 명시 근거 보존, 그룹별 설치·관리 실행 지원·소유권·인증 점검, 준비 중 모델 미호출, 기존 실패 요청의 보류·동일 TASK 재개·중복/오래된 답 거부, 검증 계약 등록 안내. 연결 없음의 원인 분류(페어링은 제안만), 커밋 없는 저장소 안내, 연결 후 이어 실행 항목의 기본 선택 없음·등록 확인 뒤 재개 | `tests/preparation.test.mjs` 10개. 실제 authorization-api의 YSIJ-254도 같은 TASK의 준비 대기·요청함 표시 확인. 개발 모델 미호출 |
 | 단계 이력 | 세부 단계·검증 정보와 비공개 필드 제외, 독립 관측 누적·재시작·시도/브랜치/조회 실패 구분, 커서 격리·중복 방지·원장 교체·보존 구간 복구, 그룹/TASK 연결·페이지 조회·요청함 변화·HTTP 경계 | `tests/dashboard-history.test.mjs` 7개. 상태·이벤트 발행자는 합성 fixture |
 | 단계 타임라인 브라우저 | 세부 단계·검증 표시, 실제 API의 프로젝트/그룹/TASK 필터·이전 페이지·자동 갱신 후 페이지 유지·재조회, 1440/390/320px·XSS | `scripts/smoke-dashboard-history.mjs`, `.master-agent/stage-history-browser-0F0WEp/`. 격리 카탈로그·합성 상태와 이벤트, 개발 모델 미호출 |
 | 공통 요청함 회귀 | 추천 미추정·보류·답 적용, 동일 명령/두 탭·재시작·master 재개, 오래된 내용/문맥·등록 해제·업데이트, 원장 복사/교체·그룹 범위 고정, HTTP 인증, 기존 시도·세션에서 복구 후 실제 재검증 | `tests/dashboard-interactions.test.mjs` 13개 |
@@ -26,15 +28,15 @@
 | 관제 서버 | 전체 등록 프로젝트·독립 작업 관측, 조회 실패·오래된 관측 구분, 중복 조회 제한, 삭제 시 기존 대기열·이후 조회에서 제외, HTTP 조회 경계 | `tests/dashboard.test.mjs` 7개 |
 | 대시보드 기본 기능 | 삭제·그룹·후보·TASK·원격 업데이트·설치 감지·모바일·연결 끊김 회귀 통과 | `.master-agent/dashboard-browser-NM3mYE/`; 화면의 개발 접수·업데이트 실행은 모의 처리 |
 | 진행 상태·병렬 제어 | 5개 회귀 통과, 실제 CLI 조회에서도 확인 | `tests/parallel-progress.test.mjs` |
-| 구문·문서 | JavaScript 101개·Markdown 19개 검사 통과 | `npm.cmd run check` |
+| 구문·문서 | JavaScript 105개·Markdown 19개 검사 통과 | `npm.cmd run check` |
 | 실제 code-agent 계약 등록 | 등록 성공, 원문과 다른 claim·변경된 문서 거부 | `tests/handoff-contracts.test.mjs`의 실제 빌드 연동 |
-| 실제 code-agent 통신 | 접수·중복·이벤트·재부착·협력 정지·제어권 인계, 대시보드의 실제 이벤트 수집·반복 조회 중복 방지·실행 호스트 커서 보존 통과 | `tests/code-agent-control.test.mjs`, 실제 빌드와 가짜 개발 호스트. 타임라인 연동 추가 후 별도 재통과 |
+| 실제 code-agent 통신 | 접수·중복·이벤트·재부착·협력 정지·제어권 인계, 대시보드의 실제 이벤트 수집·반복 조회 중복 방지·실행 호스트 커서 보존 통과 | `tests/code-agent-control.test.mjs`, 실제 빌드와 가짜 개발 호스트. 연동 켜기 전 code-agent의 Claude 설치(`init`)를 준비 |
 | 앞선 답의 실제 AI 판단 | 5건 통과: routine 3·ambiguous 1·critical 1 | [판단 증거](evidence/2026-10-16-answer-context.json) |
 | 실제 병렬·계약 인계·통합 | 두 프로젝트·세 작업 succeeded, 56분 30초, 계약 입력 7건 대조 | [전체 흐름 증거](evidence/2026-10-17-parallel-contract-flow.json) |
 
 code-agent 연동 시험은 외부 빌드가 없으면 건너뛴다. 위 회귀 결과에는 건너뜀이 없다. 현재 구현과 남은 작업은 [구현 현황](implementation.md)을 따른다.
 
-전체 회귀에 사용한 code-agent는 캡처 시 소스 `800918a`이며 미커밋 변경이 없었다. 고정 사본의 내용 해시는 `8480744ed3d993709afc8e95a5f5492568dfde675452eab894a2a391ec8b25fd`다. 외부 빌드·로그 갱신이 설치본 변경 대조에 영향을 주지 않도록 사본을 사용하며 변경 차단 규칙은 유지한다.
+전체 회귀에 사용한 code-agent는 캡처 시 소스 `800918a`에 페어링 구현 등 미커밋 변경 37건이 있는 빌드다. 고정 사본(1,876개 파일)의 내용 해시는 `5326f8d0577cc1716162935a5f90785ee88f21de386516f410f81effa7dcde70`이며 해당 커밋만으로 재현할 수 없다. 외부 빌드·로그 갱신이 설치본 변경 대조에 영향을 주지 않도록 사본을 사용하며 변경 차단 규칙은 유지한다.
 
 공통 요청함의 실제 CLI·브라우저 시험은 1.0.0·stateSchema 7·interaction schema 1 빌드에서 수행했다. 당시 소스 `e289829`에는 미커밋 interaction 변경이 있어 해당 커밋만으로 재현할 수 없다. 기능 지원은 `scripts/check-interaction-support.mjs`로 실제 hello·명령·빌드 출처를 확인한다.
 
@@ -99,5 +101,6 @@ node scripts/smoke-full-flow.mjs report <root>
 - 실제 모델의 실패 수정·재계획·프로세스 중단·재부착에 대한 추가 연속 시험.
 - 실제 Codex 모델의 개발 전체 흐름, 다중 사용자·원격 운영·배포, 다양한 실제 업무 규모의 판단 품질.
 - 직접 실행 ClaudeHost의 전체 사이클. 현재 권장 검증 경로는 `--control`이다.
+- 제어 연결 화면의 실제 브라우저 조작과 사용자의 실제 PC 신뢰로 실제 프로젝트를 연결하는 과정. code-agent 페어링 구현 커밋 후 확인한다.
 
 검증 상태나 완료 조건을 수동으로 바꿔 성공시키지 않는다. 미반환·미확인 실행은 자동 성공이나 중복 실행으로 바꾸지 않는다.

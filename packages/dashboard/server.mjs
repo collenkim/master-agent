@@ -13,6 +13,7 @@ import { projectCandidates } from './project-candidates.mjs';
 import { createUpdates } from './updates.mjs';
 import { createInteractions } from './interactions.mjs';
 import { createHistory, historyPage } from './history.mjs';
+import { pairControl, pairingPreview, pairingReceipt, retryPairing } from '../runner/control-pairing.mjs';
 
 export function validateDashboardOptions({ port = 4310, cliPath, intervalMs = 5000, observe = true } = {}) {
   requireThat(Number.isInteger(port) && port >= 0 && port <= 65535, 'usage', '--port는 0~65535 정수입니다.');
@@ -20,7 +21,7 @@ export function validateDashboardOptions({ port = 4310, cliPath, intervalMs = 50
   return observe ? findCodeAgent(cliPath, { required: false }) : null;
 }
 
-export async function startDashboard({ dbPath, port = 4310, cliPath, intervalMs = 5000, observe = true, launch = launchRequest, candidateOptions = {}, updateOptions = {}, interactionOptions = {}, management } = {}) {
+export async function startDashboard({ dbPath, port = 4310, cliPath, intervalMs = 5000, observe = true, launch = launchRequest, candidateOptions = {}, updateOptions = {}, interactionOptions = {}, pairingOptions = {}, management } = {}) {
   const updateCliPath = cliPath;
   cliPath = validateDashboardOptions({ port, cliPath, intervalMs, observe });
   const assets = new Map([
@@ -33,7 +34,10 @@ export async function startDashboard({ dbPath, port = 4310, cliPath, intervalMs 
   const store = new Store(dbPath);
   const interactions = createInteractions(store, { ...interactionOptions, cliPath, launch, launchOptions: { dbPath, cliPath } });
   const history = createHistory(store, { cliPath });
-  const monitor = createMonitor(store, { cliPath, intervalMs, onObserved: async project => {
+  // Pairing runs only from the explicit confirmation routes below; the sweep only reads hello.
+  const pairing = { cliPath: pairingOptions.cliPath ?? cliPath, ...(pairingOptions.resolveKey ? { resolveKey: pairingOptions.resolveKey } : {}) };
+  const pairingCli = () => { requireThat(pairing.cliPath, 'code-agent-unavailable', '설치된 code-agent를 찾아야 제어 연결을 할 수 있습니다.'); return pairing; };
+  const monitor = createMonitor(store, { cliPath, intervalMs, trustKey: pairingOptions.resolveKey, onObserved: async project => {
     await history.refreshProject(project);
     await interactions.refreshProject(project);
   } });
@@ -80,6 +84,18 @@ export async function startDashboard({ dbPath, port = 4310, cliPath, intervalMs 
         if (path === '/api/projects') return send(201, JSON.stringify(catalog.registerManual(input.project)));
         if (path === '/api/interactions/respond') return send(200, JSON.stringify(receipt(await interactions.respond(input))));
         if (path === '/api/interactions/retry') return send(200, JSON.stringify(receipt(await interactions.retry(input.commandId))));
+        if (path === '/api/projects/pair/preview') return send(200, JSON.stringify(await pairingPreview(store, input.projectId, pairingCli())));
+        if (path === '/api/projects/pair' || path === '/api/projects/pair/retry') {
+          let record;
+          if (path === '/api/projects/pair') {
+            requireThat(input.confirmed === true, 'invalid-input', '확인 내용을 읽고 확인 체크를 해야 연결합니다.');
+            requireThat(Number.isInteger(input.projectRevision) && typeof input.shownHash === 'string', 'invalid-input', '확인한 프로젝트 버전과 내용 해시가 필요합니다.');
+            record = await pairControl(store, input.projectId, { ...pairingCli(), commandId: input.commandId, projectRevision: input.projectRevision,
+              approval: { actor: 'human:dashboard', approvedAt: new Date().toISOString(), shownHash: input.shownHash } });
+          } else record = await retryPairing(store, input.commandId, pairingCli());
+          if (record.state === 'paired') await interactions.refreshProject(store.need('project', record.projectId));
+          return send(200, JSON.stringify(pairingReceipt(record)));
+        }
         if (path === '/api/projects/delete') return send(200, JSON.stringify(catalog.remove(input.id, input.revision)));
         if (path === '/api/groups/delete') return send(200, JSON.stringify(catalog.removeGroup(input.id, input.revision)));
         if (path === '/api/updates/preview') return send(200, JSON.stringify(await updates.preview(input)));

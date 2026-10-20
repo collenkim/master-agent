@@ -31,6 +31,14 @@ test('CLI 잘못된 명령과 명시되지 않은 모의 실행은 DB 생성 전
   assert.equal(existsSync(join(root, '.master-agent')), false);
 });
 
+test('project pair 는 사람의 터미널(TTY) 없이 실행되지 않고 DB도 만들지 않는다', t => {
+  const root = temporary(t);
+  const result = spawnSync(process.execPath, [cli, 'project', 'pair', 'p1'], { cwd: root, encoding: 'utf8' });
+  assert.equal(result.status, 1);
+  assert.equal(JSON.parse(result.stderr).error, 'usage');
+  assert.equal(existsSync(join(root, '.master-agent')), false);
+});
+
 test('알 수 없는 버전과 손상된 저장소를 조용히 초기화하지 않는다', t => {
   const root = temporary(t);
   const path = join(root, 'future.db');

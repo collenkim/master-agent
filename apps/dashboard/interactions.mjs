@@ -5,7 +5,7 @@ const labels = { open: '응답 대기', deferred: '보류', answered: '답변 �
   received: '접수', applied: '적용', 'not-requested': '재개 요청 없음', launching: '재개 접수·실행 확인 필요',
   requested: '재개 실행기 요청됨', resumed: '기존 처리기 재개 확인', 'waiting-answers': '다른 답변 대기', manual: 'CLI 재개 필요', failed: '실패',
   sending: '전송 중', unknown: '수신 여부 미확인', reopened: '다시 열림', 'waiting-host': '원래 세션 소비 대기', queued: '재개 대기', started: '원래 세션 재개됨', blocked: '재개 차단', cancelled: '취소' };
-let data, post, refresh, opened, pending = false, lastSubmission;
+let data, post, refresh, actions = {}, opened, pending = false, lastSubmission;
 const seen = new Set();
 function stored(id) { try { return JSON.parse(sessionStorage.getItem(`interaction-draft:${id}`) ?? 'null'); } catch { return null; } }
 function saveDraft() {
@@ -163,7 +163,8 @@ function open(id) {
   $('interaction-options').innerHTML = '<legend>대안 선택</legend>' + opened.options.map(o => `<label class="interaction-option"><input type="${opened.multiple ? 'checkbox' : 'radio'}" name="interaction-option" value="${esc(o.id)}" ${selected.includes(o.id) ? 'checked' : ''}>${esc(o.label)}${opened.recommendedOptionIds.includes(o.id) ? ' (추천)' : ''}</label>`).join('');
   $('interaction-custom-label').hidden = !opened.allowCustom;
   $('interaction-custom').value = compatible ? draft.custom : '';
-  $('interaction-limit').textContent = opened.unavailableReason ?? '답변 제출 후 기존 목표와 TASK 번호로 재분석합니다. 다른 질문이 남아 있으면 답변을 기다립니다.';
+  $('interaction-limit').textContent = opened.unavailableReason ?? (opened.pairing ? '"제어 연결 후 기존 요청 이어 실행"을 고르면 제출할 때 연결 확인 화면이 열립니다. 연결을 마친 뒤 같은 요청·TASK에서 준비를 다시 확인합니다.'
+    : '답변 제출 후 기존 목표와 TASK 번호로 재분석합니다. 다른 질문이 남아 있으면 답변을 기다립니다.');
   $('interaction-history').innerHTML = history(opened); $('interaction-error').textContent = '';
   $('interaction-stale').textContent = draft && !compatible ? `질문이 변경되어 이전 초안을 자동 제출하지 않습니다. 이전 직접 입력: ${draft.custom || '(선택 답변)'}` : '';
   $('interaction-submit').textContent = opened.handler === 'preparation' ? '준비 다시 확인 · 기존 요청 재개' : structured ? '선택 내용 명시적 제출' : '답변 제출 · 기존 요청 재개';
@@ -172,9 +173,24 @@ function open(id) {
   $('interaction-defer').disabled = !['open', 'deferred'].includes(opened.state);
   $('interaction-dialog').showModal();
 }
+/** The chosen pairing still needs its own confirmation dialog per project; the answer is sent only after every connection is registered. */
+async function pairFirst(item) {
+  for (const projectId of item.pairing?.projectIds ?? []) {
+    if (data.projects.find(p => p.id === projectId)?.control) continue;
+    $('interaction-error').textContent = '제어 연결 확인 화면에서 연결을 진행하세요.';
+    if (!await actions.pair?.(projectId)) return false;
+  }
+  return true;
+}
 async function submit(action) {
   if (!opened || pending) return;
   const item = opened;
+  if (action === 'answer' && item.handler === 'preparation' && [...document.querySelectorAll('#interaction-options input:checked')].some(i => i.value === 'pair-recheck')) {
+    pending = true;
+    let paired;
+    try { paired = await pairFirst(item); } finally { pending = false; }
+    if (!paired) { $('interaction-error').textContent = '제어 연결을 마치지 않아 답변을 제출하지 않았습니다. 선택은 유지됩니다.'; return; }
+  }
   const payload = { id: item.id, revision: item.revision, contentHash: item.contentHash, context: item.context, action,
     ...(action === 'answer' ? item.handler === 'code-agent' ? { answers: remoteAnswers() } : { optionIds: [...document.querySelectorAll('#interaction-options input:checked')].map(i => i.value), custom: $('interaction-custom').value, resume: true } : {}),
     ...(['approve', 'request-changes'].includes(action) ? { reviewed: $('approval-reviewed').checked, choices: Object.fromEntries([...document.querySelectorAll('[data-approval-choice]')].map(e => [e.dataset.approvalChoice, e.value])) } : {}) };
@@ -210,8 +226,8 @@ function checkOpen() {
     $('interaction-defer').disabled = stale;
   }
 }
-export function renderInteractions(latest, send, reload) {
-  data = latest; post = send; refresh = reload;
+export function renderInteractions(latest, send, reload, extra = {}) {
+  data = latest; post = send; refresh = reload; actions = extra;
   if (!$('interaction-items')) init();
   selectItems('interaction-project', data.projects);
   selectItems('interaction-group', data.groups);

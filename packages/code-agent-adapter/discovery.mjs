@@ -3,6 +3,12 @@ import { homedir } from 'node:os';
 import { join, dirname, delimiter, isAbsolute, extname, resolve } from 'node:path';
 import { requireThat } from '../domain/contracts.mjs';
 
+/** code-agent 의 키 저장소 자리(storeDir) — CODE_AGENT_HOME 이 있으면 그 자리, 없으면 ~/.code-agent. 신뢰 키·사람 채널 키가 여기 있다 */
+export function codeAgentStoreDir({ env = process.env, home = homedir() } = {}) {
+  const override = env.CODE_AGENT_HOME;
+  return override && override.trim() !== '' ? override : join(home, '.code-agent');
+}
+
 function executable(path, platform) {
   try {
     if (!isAbsolute(path) || !statSync(path).isFile()) return null;

@@ -1,11 +1,13 @@
 import { Knowledge } from '../knowledge/sources.mjs';
 import { checkManagedInstallation, checkManagedSupport } from '../runner/control-host.mjs';
-import { ControlClient } from '../code-agent-adapter/control.mjs';
+import { ControlClient, OpenControlClient } from '../code-agent-adapter/control.mjs';
+import { DASHBOARD_CONTROLLER, connectionState, controlProbe, findTrustKey, hostReadinessIssue } from '../code-agent-adapter/pairing.mjs';
 import { observeProject } from '../code-agent-adapter/observe.mjs';
 import { now, requireThat } from '../domain/contracts.mjs';
 
 export const preparationCodes = new Set(['missing-knowledge', 'stale-knowledge', 'control-not-bound', 'control-not-owner', 'host-not-installed',
-  'not-installed', 'invalid-cli', 'cli-not-found', 'code-agent-unavailable', 'control-token-missing', 'control-not-enabled', 'control-fenced', 'control-unauthorized']);
+  'not-installed', 'invalid-cli', 'cli-not-found', 'code-agent-unavailable', 'control-token-missing', 'control-not-enabled', 'control-fenced', 'control-unauthorized',
+  'control-pairing-available', 'control-trust-missing', 'control-owned-by-other', 'control-enabled-unbound', 'host-not-ready', 'repository-no-commit']);
 
 export function preparationIssues(request) {
   if (request.preparation?.issues?.length) return request.preparation.issues;
@@ -14,9 +16,13 @@ export function preparationIssues(request) {
   return [];
 }
 
-/** Read-only project checks plus master DB knowledge collection. No install, grants or execution here. */
+/**
+ * Read-only project checks plus master DB knowledge collection. No install, grants, pairing or execution here.
+ * Without a binding the unauthenticated hello only classifies why (trust, pairing, other owner, legacy) — pairing waits for an explicit human confirmation.
+ */
 export async function prepareRequest(store, request, { cliPath, observe = observeProject, checkHost = checkManagedInstallation,
-  clientFor = project => new ControlClient({ cliPath, projectPath: project.path, ...store.need('control-binding', project.id), timeoutMs: 5000, retries: 0 }) } = {}) {
+  clientFor = project => new ControlClient({ cliPath, projectPath: project.path, ...store.need('control-binding', project.id), timeoutMs: 5000, retries: 0 }),
+  probe = project => new OpenControlClient({ cliPath, projectPath: project.path, timeoutMs: 5000, retries: 0 }).result('hello'), trustKey = findTrustKey } = {}) {
   const issues = [], checks = [], mission = store.need('mission', request.id);
   for (const projectId of request.projectIds) {
     const project = store.need('project', projectId);
@@ -31,13 +37,22 @@ export async function prepareRequest(store, request, { cliPath, observe = observ
       const observation = await observe(store, projectId, { cliPath, timeoutMs: 5000 });
       requireThat(observation.status === 'observed', observation.status, observation.error ?? '현재 상태를 확인할 수 없습니다.');
       checks.push({ projectId, kind: 'observation', status: observation.status });
+      if (observation.state?.repo && observation.state.repo.head === null) issue('repository-no-commit', 'Git 저장소에 커밋이 없어 작업 기준을 만들 수 없습니다.',
+        '프로젝트 설정·공통 문서를 준비(ca-adopt)한 뒤 프로젝트 폴더에서 code-agent setup baseline으로 최초 커밋을 만들거나 직접 첫 커밋을 만드세요. 자동으로 커밋하지 않습니다.');
     } catch (error) { issue(error.code ?? 'observation-unavailable', error.message, 'code-agent 설치 및 status --json 결과를 확인하세요.'); }
+    let installed = true;
     try { checkHost(project); checks.push({ projectId, kind: 'host', host: 'code-agent', selection: 'project-execution-and-registered-profile' }); }
-    catch (error) { issue(error.code ?? 'host-not-installed', error.message, '프로젝트에서 code-agent init과 doctor로 설치를 확인하세요. 개발 호스트는 code-agent execution claude|codex 또는 both --main claude|codex와 master enable --host <설정 파일>을 따릅니다. Codex는 프로젝트·hook 신뢰 확인도 필요합니다. 계획 provider는 별개입니다.'); }
+    catch (error) { installed = false; issue(error.code ?? 'host-not-installed', error.message, '프로젝트에서 code-agent init과 doctor로 설치를 확인하세요. 개발 호스트는 code-agent execution claude|codex 또는 both --main claude|codex와 master enable --host <설정 파일>을 따릅니다. Codex는 프로젝트·hook 신뢰 확인도 필요합니다. 계획 provider는 별개입니다.'); }
     const binding = store.get('control-binding', projectId);
     if (!binding) {
-      issue('control-not-bound', 'master 제어 연결이 없습니다.',
-        `프로젝트 폴더에서 code-agent master enable --controller dashboard --token-out <저장소 밖 토큰 파일>을 직접 실행하세요. 기존 연결이 있으면 enable을 반복하지 마세요.\n개발 호스트는 code-agent execution claude|codex 또는 both --main claude|codex로 선택합니다. 실행 파일·모델·권한을 지정하려면 enable에 --host <호스트 설정 JSON>을 사용하세요. 미선택 상태는 등록된 기본 호스트를 따르며 설치된 파일만으로 Codex를 선택하지 않습니다.\nmaster-agent project control ${projectId} --controller <기존 제어자 ID> --token-file <토큰 파일 절대경로> --db <현재 대시보드 DB>\n질문·승인을 웹에서 처리하려면 code-agent master human enable --controller <제어자 ID>도 실행하세요. 토큰 내용은 답변에 입력하지 마세요.`);
+      // 설치 전에는 페어링을 권하지 않는다 — 설치 안내와 기존 연결 안내만 낸다
+      let probed = null;
+      if (installed) try { probed = controlProbe(await probe(project)); } catch { /* 연결 전 조회 실패 — 기존 터미널 안내로 대신한다 */ }
+      const ready = hostReadinessIssue(probed);
+      if (ready) issue(ready.code, ready.message, ready.guidance);
+      const connection = connectionState({ projectId, probe: probed, binding: null, controller: DASHBOARD_CONTROLLER, keyAvailable: Boolean(trustKey(DASHBOARD_CONTROLLER)) });
+      issues.push({ projectId, projectName: project.name, code: connection.code, message: connection.message, guidance: connection.guidance,
+        canPair: connection.canPair, connection: connection.state, ...(connection.command ? { command: connection.command } : {}) });
       continue;
     }
     try {
@@ -47,7 +62,9 @@ export async function prepareRequest(store, request, { cliPath, observe = observ
         'control-not-owner', '현재 제어권·세대가 저장된 연결과 다릅니다.');
       checkManagedSupport(hello);
       await client.result('heartbeat'); // Authenticated read: a saved token path is not proof of access.
-      checks.push({ projectId, kind: 'control', status: 'connected' });
+      const ready = hostReadinessIssue(controlProbe(hello));
+      if (ready) issue(ready.code, ready.message, ready.guidance);
+      else checks.push({ projectId, kind: 'control', status: 'connected' });
     } catch (error) { issue(error.code ?? 'control-unavailable', error.code === 'control-unavailable' ? 'code-agent 제어 연결 조회에 실패했습니다.' : error.message,
       '현재 제어자·토큰 파일 접근 권한을 확인하고 같은 DB에 project control로 다시 연결하세요. 다른 제어자가 소유 중이면 정식 인계 절차를 따르세요.'); }
   }

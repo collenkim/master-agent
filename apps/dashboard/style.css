@@ -17,3 +17,10 @@ dialog{width:min(650px,94vw);max-height:90vh;overflow:auto;background:#171f2c;co
 #interaction-stale:empty, #interaction-error:empty { display: none; }
 #interaction-dialog .dialog-actions, #interaction-approval .dialog-actions { flex-wrap: wrap; }
 #history-filter{align-items:flex-end;gap:12px}#history-filter label{display:grid;gap:6px;min-width:0;max-width:100%}#history-filter input,#history-filter select{margin:0;max-width:100%}.history-entry ul{padding-left:20px}.history-entry summary{overflow-wrap:anywhere}.history-entry p,.history-entry small{overflow-wrap:anywhere}
+/* Control connection: state badge, next action and the explicit pairing confirmation. */
+.connection { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 0; border-top: 1px solid #2c384a; }
+.connection small { flex-basis: 100%; margin-top: 0; overflow-wrap: anywhere; }
+.connection code, #pair-guidance { white-space: pre-wrap; overflow-wrap: anywhere; }
+.connection button { font-size: 12px; padding: 7px 10px; }
+#pair-dialog { overflow-wrap: anywhere; }
+#pair-guidance:empty, #pair-error:empty { display: none; }

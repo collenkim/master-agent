@@ -7,7 +7,7 @@ import { findCodeAgent } from './discovery.mjs';
 /** code-agent 의 master 통신 계약(code-agent/doc/master-control.md). 같은 PC 의 CLI 호출 한 번이 요청 한 건이다. */
 export const PROTOCOL = 'code-agent.master';
 export const PROTOCOL_VERSION = 1;
-const MUTATING = new Set(['submit', 'pause', 'cancel', 'resume', 'decide', 'answer', 'handover', 'reconcile', 'policy', 'revoke', 'interaction.respond']);
+const MUTATING = new Set(['submit', 'pause', 'cancel', 'resume', 'decide', 'answer', 'handover', 'reconcile', 'policy', 'revoke', 'interaction.respond', 'pair']);
 // 실행을 지금 시작하지 않았다고 확정할 수 있는 거부 — 통신 실패와 구분한다
 export const TERMINAL_RUN_STATES = new Set(['completed', 'blocked', 'failed', 'cancelled', 'paused', 'abandoned', 'unknown']);
 
@@ -55,6 +55,39 @@ export class ControlError extends DomainError {
   }
 }
 
+/** 상태를 바꾸는 요청은 응답을 잃으면 같은 commandId 로 다시 보낸다 — code-agent 가 기록된 응답을 돌려준다 */
+async function exchange(client, type, request) {
+  let lastError;
+  for (let attempt = 0; attempt <= (MUTATING.has(type) ? client.retries : 0); attempt++) {
+    try {
+      const response = await callOnce(client.cliPath, client.projectPath, request, { timeoutMs: client.timeoutMs });
+      client.lastResponse = response;
+      if (!response.ok) throw new ControlError(response.error ?? { code: 'internal', message: '오류 내용이 없습니다.' }, response);
+      return response;
+    } catch (error) {
+      if (error.code !== 'control-unavailable') throw error;
+      lastError = error;
+    }
+  }
+  throw lastError;
+}
+
+/**
+ * 토큰 없이 여는 요청(hello·pair.challenge)과 PC 신뢰 키 서명으로 인증하는 pair. 제어 연결 전에 쓰며 토큰 파일을 읽지 않는다.
+ */
+export class OpenControlClient {
+  constructor({ cliPath, projectPath, timeoutMs = 30000, retries = 2 }) {
+    this.cliPath = validCli(cliPath); this.projectPath = string(projectPath, 'projectPath');
+    this.timeoutMs = timeoutMs; this.retries = retries; this.lastResponse = undefined;
+  }
+  async request(type, { commandId, payload } = {}) {
+    requireThat(['hello', 'pair.challenge', 'pair'].includes(type), 'invalid-input', `토큰 없이 보낼 수 없는 요청입니다: ${type}`);
+    if (MUTATING.has(type)) string(commandId, 'commandId');
+    return exchange(this, type, { protocol: PROTOCOL, version: PROTOCOL_VERSION, type, ...(commandId ? { commandId } : {}), ...(payload ? { payload } : {}) });
+  }
+  async result(type, options) { return (await this.request(type, options)).result; }
+}
+
 /**
  * 제어자 한 명의 연결. 토큰은 파일에서 그때마다 읽고(저장소 DB 에 넣지 않는다) 세대는 바인딩 기록의 값을 쓴다.
  * 상태를 바꾸는 요청은 commandId 가 필수이고, 통신 실패면 같은 commandId 로 다시 보낸다 — code-agent 가 한 번만 실행한다.
@@ -75,19 +108,7 @@ export class ControlClient {
     const request = { protocol: PROTOCOL, version: PROTOCOL_VERSION, type, ...(type === 'hello' ? {} : { controller: this.controller, token: this.token() }),
       ...((generation ?? this.generation) !== undefined && type !== 'hello' ? { generation: generation ?? this.generation } : {}),
       ...(commandId ? { commandId } : {}), ...(expect ? { expect } : {}), ...(payload ? { payload } : {}) };
-    let lastError;
-    for (let attempt = 0; attempt <= (MUTATING.has(type) ? this.retries : 0); attempt++) {
-      try {
-        const response = await callOnce(this.cliPath, this.projectPath, request, { timeoutMs: this.timeoutMs });
-        this.lastResponse = response;
-        if (!response.ok) throw new ControlError(response.error ?? { code: 'internal', message: '오류 내용이 없습니다.' }, response);
-        return response;
-      } catch (error) {
-        if (error.code !== 'control-unavailable') throw error;
-        lastError = error; // 응답을 잃었다 — 같은 commandId 로 다시 보내면 기록된 응답이 돌아온다
-      }
-    }
-    throw lastError;
+    return exchange(this, type, request);
   }
   async result(type, options) { return (await this.request(type, options)).result; }
 }

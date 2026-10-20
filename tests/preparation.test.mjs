@@ -5,7 +5,9 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { setup } from './helpers.mjs';
 import { Knowledge } from '../packages/knowledge/sources.mjs';
-import { prepareRequest } from '../packages/orchestrator/preparation.mjs';
+import { prepareRequest, preparationCodes } from '../packages/orchestrator/preparation.mjs';
+import { snapshotTree } from '../packages/verification/tree.mjs';
+import { execFileSync } from 'node:child_process';
 import { acceptRequest, runRequest, continueRequest } from '../packages/orchestrator/requests.mjs';
 import { createInteractions } from '../packages/dashboard/interactions.mjs';
 import { dashboardSnapshot } from '../packages/dashboard/monitor.mjs';
@@ -16,6 +18,7 @@ const accepted = f => acceptRequest(f.store, { targetType: 'project', targetId: 
 const input = item => ({ id: item.id, revision: item.revision, contentHash: item.contentHash, context: item.context,
   commandId: randomUUID(), action: 'answer', optionIds: ['recheck'], custom: '', resume: true });
 const observed = async () => ({ status: 'observed' });
+const offline = async () => { throw Object.assign(new Error('offline'), { code: 'control-unavailable' }); };
 
 test('empty project planning uses real inventory, excludes hidden credentials, and detects later changes', async t => {
   const f = setup(t, { plan: false }), p = f.fixture.projects[0], request = accepted(f), k = new Knowledge(f.store);
@@ -49,7 +52,7 @@ test('standard sources are bounded and stale explicit policies are not replaced 
 
 test('preparation collects all project issues without installing, granting or invoking a development host', async t => {
   const f = setup(t), request = acceptRequest(f.store, { targetType: 'group', targetId: f.fixture.group.id, goal: '준비' }).request;
-  const report = await prepareRequest(f.store, request, { observe: observed });
+  const report = await prepareRequest(f.store, request, { observe: observed, probe: offline });
   assert.equal(report.state, 'waiting');
   for (const projectId of request.projectIds) {
     assert.ok(report.issues.some(i => i.projectId === projectId && i.code === 'host-not-installed'));
@@ -84,7 +87,7 @@ test('worker holds preparation before model calls and rechecks on the same TASK 
   const f = setup(t), request = accepted(f), cliPath = join(f.root, 'fixture.mjs');
   writeFileSync(cliPath, '');
   let ready = false, runs = 0;
-  const options = { cliPath, prepare: (store, request) => prepareRequest(store, request, { observe: observed, checkHost() {},
+  const options = { cliPath, prepare: (store, request) => prepareRequest(store, request, { observe: observed, checkHost() {}, probe: offline,
     clientFor: () => ({ async result(type) { return type === 'hello' ? { versions: [1], hosts: [{ kind: 'codex', supported: true }], project: { enabled: true }, ownership: { controller: 'master', generation: 1 } } : {}; } }) }),
     provider: { name: 'fixture' }, workflow: { async run() { runs++; assert.equal(ready, true); return { blockers: [] }; } } };
   const waiting = await runRequest(f.store, request.id, options);
@@ -116,6 +119,51 @@ test('legacy failed requests enter the inbox; defer/recheck/stale/replay preserv
   f.store.put('target-request', { ...updated, state: 'waiting', preparation: { state: 'waiting', issues: [{ projectId: request.targetId, code: 'control-not-bound', message: '연결 필요', guidance: '연결 후 재검사' }] } }, updated.revision);
   const reopened = inbox.snapshot().items.find(i => i.handler === 'preparation' && i.state === 'open');
   assert.ok(reopened); assert.notEqual(reopened.id, item.id);
+});
+
+test('an unbound project is classified by the unauthenticated hello; pairing is only offered, never performed', async t => {
+  const f = setup(t), request = accepted(f);
+  const hello = patch => ({ project: { enabled: false }, pairing: { supported: true, version: 1, trustedControllers: ['dashboard'] }, ...patch });
+  const run = (value, key = true, observe = observed) => prepareRequest(f.store, request, { observe, checkHost() {}, trustKey: () => key ? 'dashboard.pem' : null,
+    probe: async () => { if (value instanceof Error) throw value; return value; } });
+  const codes = async (...args) => (await run(...args)).issues.map(i => i.code);
+  assert.deepEqual(await codes(hello()), ['control-pairing-available']);
+  assert.deepEqual(await codes(hello(), false), ['control-trust-missing']);
+  assert.deepEqual(await codes(hello({ pairing: undefined })), ['control-not-bound']);
+  assert.deepEqual(await codes(new Error('offline')), ['control-not-bound']);
+  assert.deepEqual(await codes(hello({ project: { enabled: true }, ownership: { controller: 'other', generation: 2 } })), ['control-owned-by-other']);
+  assert.deepEqual(await codes(hello({ project: { enabled: true }, ownership: { controller: 'dashboard', generation: 2 } })), ['control-enabled-unbound']);
+  const notReady = await run(hello({ managedHost: { selected: 'claude', ready: false, problems: [{ code: 'host-not-installed', message: 'Claude hook 없음' }] } }));
+  assert.deepEqual(notReady.issues.map(i => i.code), ['host-not-ready', 'control-pairing-available']);
+  assert.match(notReady.issues[0].message, /Claude hook 없음/);
+  assert.equal((await run(hello())).issues[0].canPair, true);
+  assert.match((await run(hello(), false)).issues[0].command, /master trust --controller dashboard/);
+  const empty = await run(hello(), true, async () => ({ status: 'observed', state: { repo: { root: 'x', head: null } } }));
+  assert.ok(empty.issues.some(i => i.code === 'repository-no-commit' && /setup baseline/.test(i.guidance)));
+  assert.equal(f.store.list('control-binding').length, 0); assert.equal(f.store.list('control-pairing').length, 0);
+});
+
+test('a repository without commits is a preparation issue, not an internal error', t => {
+  const f = setup(t), root = join(f.root, 'empty');
+  mkdirSync(root); execFileSync('git', ['init', '--quiet', root]);
+  assert.throws(() => snapshotTree(root), { code: 'repository-no-commit' });
+  assert.ok(preparationCodes.has('repository-no-commit'));
+});
+
+test('a pairable preparation item has no default choice and resumes only after the connection is registered', async t => {
+  const f = setup(t), request = accepted(f);
+  f.store.put('target-request', { ...request, state: 'waiting', preparation: { state: 'waiting', issues: [{ projectId: request.targetId, code: 'control-pairing-available',
+    message: '연결 없음', guidance: '확인 화면에서 연결', canPair: true }] } }, request.revision);
+  let launches = 0;
+  const inbox = createInteractions(f.store, { launch: async (store, id) => { launches++; return store.need('target-request', id); } });
+  const item = inbox.snapshot().items.find(i => i.handler === 'preparation');
+  assert.deepEqual(item.options.map(o => o.id), ['pair-recheck', 'recheck']);
+  assert.deepEqual(item.recommendedOptionIds, []); assert.deepEqual(item.pairing.projectIds, [request.targetId]);
+  await assert.rejects(inbox.respond({ ...input(item), optionIds: ['pair-recheck'] }), { code: 'stale-question' });
+  assert.equal(f.store.list('interaction-command').length, 0); assert.equal(launches, 0);
+  f.store.put('control-binding', { id: request.targetId, controller: 'dashboard', owner: true, generation: 1 });
+  assert.equal((await inbox.respond({ ...input(item), optionIds: ['pair-recheck'] })).state, 'applied');
+  assert.equal(launches, 1);
 });
 
 test('a missing verification contract becomes an actionable setup request without inventing checks', async t => {

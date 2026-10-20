@@ -1,8 +1,8 @@
 import { createPrivateKey, sign } from 'node:crypto';
 import { readFileSync, readdirSync, lstatSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { ControlClient } from './control.mjs';
+import { codeAgentStoreDir } from './discovery.mjs';
 import { requireThat } from '../domain/contracts.mjs';
 
 export function canonicalInteraction(value) {
@@ -17,7 +17,7 @@ export function interactionApiSupported(hello) {
 }
 export const pendingHumanResponse = (store, projectId) => store.list('interaction-command').some(c => c.projectId === projectId && ['sending', 'unknown', 'received'].includes(c.state));
 /** Only the private key provisioned by code-agent's TTY human-enable may sign explicit UI submissions. */
-export function findHumanKey(channelId, directory = join(homedir(), '.code-agent', 'dashboard-channels')) {
+export function findHumanKey(channelId, directory = join(codeAgentStoreDir(), 'dashboard-channels')) {
   if (!/^[0-9a-f-]{36}$/i.test(channelId ?? '')) return null;
   try {
     if (lstatSync(directory).isSymbolicLink()) return null;

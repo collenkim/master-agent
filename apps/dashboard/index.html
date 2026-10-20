@@ -77,6 +77,17 @@
     <p id="project-error" role="alert" class="error"></p>
     <div class="dialog-actions"><button type="button" data-close="project-dialog">취소</button><button id="project-submit" type="submit">프로젝트 등록</button></div>
   </form></dialog>
+  <dialog id="pair-dialog" aria-labelledby="pair-title"><form id="pair-form">
+    <h2 id="pair-title">code-agent 제어 연결</h2>
+    <p id="pair-project"></p>
+    <pre id="pair-lines" class="interaction-body"></pre>
+    <p id="pair-guidance" class="error"></p>
+    <p class="muted">이 PC가 신뢰한 대시보드 키로 code-agent에 연결을 요청합니다. 연결 후 이 대시보드가 실행을 맡기고 관측합니다. 승인·위임 권한은 바뀌지 않습니다.</p>
+    <p class="muted">토큰과 PC 신뢰 키는 화면·DB에 저장하지 않습니다. DB에는 code-agent가 만든 토큰 파일 경로만 남습니다.</p>
+    <label class="interaction-option"><input id="pair-confirm" type="checkbox">위 연결 내용을 확인했고 이 프로젝트를 연결합니다.</label>
+    <p id="pair-error" class="error" role="alert"></p>
+    <div class="dialog-actions"><button type="button" data-close="pair-dialog">취소</button><button id="pair-submit" type="submit" disabled>제어 연결</button></div>
+  </form></dialog>
   <dialog id="delete-project-dialog" aria-labelledby="delete-project-title"><form id="delete-project-form">
     <h2 id="delete-project-title">프로젝트 삭제</h2>
     <p id="delete-project-name"></p>

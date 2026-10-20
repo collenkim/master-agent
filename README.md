@@ -130,11 +130,11 @@ TASK 번호는 요청 기록·AI 계획·각 프로젝트의 개발 지시에 �
 
 요청 경로는 README·빌드 설정 등 정해진 파일을 자동 수집합니다. 해당 문서가 없으면 실제 최상위 폴더 목록을 근거로 사용하며 기존 구현·정책이 있다고 가정하지 않습니다. 기존에 지정한 정책·코드 근거는 유지하며 읽기 실패를 빈 근거로 바꾸지 않습니다. 수집 규칙은 [AI 계획](docs/ai-planning.md)을 따릅니다.
 
-code-agent 설치·최초 제어 연결·사람 채널과 권한 설정은 별도로 필요합니다. 프로젝트에서 `code-agent execution claude|codex` 또는 `code-agent execution both --main claude|codex`로 개발 호스트를 정합니다. `master enable --host <JSON 파일>`의 실행 파일·모델·권한 설정을 code-agent가 주입하며 master-agent가 덮어쓰지 않습니다. 기본 호스트 선택과 세션 재개 조건은 [통신 계약](docs/code-agent-control.md)을 따릅니다. 준비가 부족하면 안내하며, 이미 실패한 요청도 같은 TASK로 재점검할 수 있습니다. 독립 검증 계약은 화면의 검증 계약 설정 또는 `--input <JSON>`의 `templates`로 전달합니다. 상세 입력과 준비 순서는 [사용법](docs/usage.md)을 따릅니다.
+code-agent 설치와 위임 권한 설정은 별도로 필요합니다. 제어 연결과 사람 채널은 [code-agent 제어 연결](#code-agent-제어-연결)을 따릅니다. 프로젝트에서 `code-agent execution claude|codex` 또는 `code-agent execution both --main claude|codex`로 개발 호스트를 정합니다. `master enable --host <JSON 파일>`의 실행 파일·모델·권한 설정을 code-agent가 주입하며 master-agent가 덮어쓰지 않습니다. 기본 호스트 선택과 세션 재개 조건은 [통신 계약](docs/code-agent-control.md)을 따릅니다. 준비가 부족하면 안내하며, 이미 실패한 요청도 같은 TASK로 재점검할 수 있습니다. 독립 검증 계약은 화면의 검증 계약 설정 또는 `--input <JSON>`의 `templates`로 전달합니다. 상세 입력과 준비 순서는 [사용법](docs/usage.md)을 따릅니다.
 
 ## 실제 실행과 조회
 
-먼저 [사용법](docs/usage.md)에 따라 프로젝트를 등록하고 근거를 수집합니다. 각 프로젝트에서 사용자가 code-agent 연동과 grant를 설정한 뒤 `project control`로 연결합니다. `mode: live` 목표를 접수하고 계획 및 검증 계약을 준비합니다. 명령·JSON 형식은 [AI 계획](docs/ai-planning.md), [검증 계약](docs/live-verification.md), [통신 계약](docs/code-agent-control.md)을 따릅니다.
+먼저 [사용법](docs/usage.md)에 따라 프로젝트를 등록하고 근거를 수집합니다. 각 프로젝트는 대시보드의 제어 연결(또는 `project pair`)이나 기존 터미널 절차(`master enable` 후 `project control`)로 연결하고, 위임 grant는 사용자가 따로 설정합니다. `mode: live` 목표를 접수하고 계획 및 검증 계약을 준비합니다. 명령·JSON 형식은 [AI 계획](docs/ai-planning.md), [검증 계약](docs/live-verification.md), [통신 계약](docs/code-agent-control.md)을 따릅니다.
 
 ```powershell
 # 연결·목표·검증 계약을 준비한 뒤 실제 실행
@@ -153,6 +153,24 @@ master-agent mission graph <목표ID>
 
 두 격리 프로젝트의 실제 전체 흐름은 `scripts/smoke-full-flow.mjs`, 앞선 답의 판단 회귀는 `scripts/smoke-answer-context.mjs`로 재현합니다. 실제 모델 호출과 임시 Git 커밋을 수행하므로 일반 `npm test`에 포함하지 않습니다. 로컬 CLI 경로와 실행 방법은 [검증 기록](docs/verification.md)에 정리했습니다.
 
+## code-agent 제어 연결
+
+대시보드가 프로젝트의 code-agent에 실행을 맡기려면 제어 연결이 필요합니다. 페어링을 지원하는 code-agent에서는 다음 두 단계로 연결합니다.
+
+1. **PC당 1회:** 사람이 터미널에서 대시보드 제어자를 신뢰 등록합니다. 확인 단어는 `trust`입니다.
+
+   ```powershell
+   code-agent master trust --controller dashboard
+   ```
+
+2. **프로젝트마다:** 프로젝트 카드의 **제어 연결**을 누르고 확인 화면에서 확인 체크를 한 뒤 연결합니다. 연결하면 code-agent 연동이 켜지고 이 DB에 연결이 등록되며 사람 응답 채널도 함께 만들어집니다. 대기 중인 요청은 공통 요청함에서 **제어 연결 후 기존 요청 이어 실행**을 고르면 연결 확인 → 재점검 → 재개로 이어집니다.
+
+확인 화면에는 경로·제어자·선택될 개발 호스트와 준비 상태·사람 응답 채널 만료 안내가 나오며, 기본 선택은 없습니다. **연결은 승인 권한이 아닙니다.** 위임 권한(grant)은 계속 따로 부여합니다. 페어링은 사람이 화면이나 터미널(`master-agent project pair <프로젝트ID> --db <DB>`, 확인 단어 `pair`)에서 확인할 때만 합니다. 요청 실행기·AI 계획·복구·백그라운드 경로에서는 하지 않습니다. 신뢰 개인 키와 토큰 값은 브라우저·모델·로그·DB에 넣지 않습니다. DB에는 code-agent가 만든 토큰 파일 경로만 남습니다.
+
+프로젝트 카드에는 연결 상태를 `code-agent 없음`, `PC 신뢰 필요`(실행할 명령 표시), `제어 연결 가능`, `제어 연결됨`(사람 응답 채널 만료일), `연동 켜짐 · 이 DB 미등록`, `다른 제어자 소유`, `터미널 연결 필요`로 구분해 표시합니다. 만료가 7일 안으로 다가오면 **다시 연결**로 토큰과 채널을 갱신합니다. 응답을 잃은 연결은 `연결 결과 미확인`으로 남고, 같은 접수 번호로 결과를 확인합니다.
+
+code-agent가 페어링을 지원하지 않으면(`hello.pairing` 없음) `터미널 연결 필요`로 표시하고, 아래 기존 터미널 절차로 연결합니다. 상세 계약은 [통신 계약](docs/code-agent-control.md#제어-연결페어링)에 있습니다.
+
 ## 공통 질문·승인 요청함
 
 공통 요청함에서 전체/프로젝트/그룹/작업·단계·상태로 질문을 찾고, 추천 이유·근거·대안을 검토한 뒤 답변을 명시적으로 제출합니다. 초기 설정뿐 아니라 개발·검증·리뷰·반영·복구·운영 단계의 영속 질문을 수집하며, master 목표에 연결되지 않은 독립 code-agent 질문도 포함합니다.
@@ -161,7 +179,7 @@ master-agent mission graph <목표ID>
 
 그룹·단일 요청으로 접수한 master 목표는 필요한 분석 답이 모두 모이면 기존 실행기를 재개하고, 복구 답은 같은 시도의 기존 복구 처리기로 전달합니다. `mission create`로 만든 목표는 답을 저장한 뒤 CLI로 이어갑니다. 재계획 채택 등 화면에서 처리할 수 없는 항목은 안내한 CLI를 사용합니다. code-agent 질문은 원래 발행 세션으로 전달하며, **수신·적용·재개는 별도 상태**로 표시합니다. `수신 여부 미확인`이면 응답 이력에서 같은 접수 번호로 결과 확인·재시도합니다.
 
-code-agent 질문에 답하려면 기능을 포함한 빌드와 **프로젝트별 사람 채널 연결**이 필요합니다. 각 프로젝트 폴더에서 사용자가 직접 실행합니다. 아래는 최초 연결 예시이며, 이미 제어 연결이 있다면 `master enable`을 반복하지 않고 기존 제어자 ID로 `master human enable`만 실행합니다.
+code-agent 질문에 답하려면 기능을 포함한 빌드와 **프로젝트별 사람 채널 연결**이 필요합니다. 대시보드의 제어 연결(페어링)은 사람 채널을 함께 만듭니다. 페어링을 지원하지 않는 code-agent에서는 각 프로젝트 폴더에서 사용자가 직접 실행합니다. 아래는 최초 연결 예시이며, 이미 제어 연결이 있다면 `master enable`을 반복하지 않고 기존 제어자 ID로 `master human enable`만 실행합니다.
 
 ```powershell
 code-agent master enable --controller dashboard --token-out C:\Users\<사용자>\.code-agent\<프로젝트ID>.token
@@ -177,7 +195,7 @@ master-agent dashboard restart --db <기존DB>
 
 사람 채널은 대시보드의 명시적 답변·승인용입니다. AI의 자동 위임 판단에 필요한 grant는 [통신 계약](docs/code-agent-control.md#역할과-적용-조건)에 따라 별도로 부여합니다.
 
-대시보드 서버는 같은 OS 계정의 `~/.code-agent/dashboard-channels`에서 해당 채널 키를 찾습니다. 토큰·개인 키는 화면이나 모델에 전달하지 않습니다. 버전 문자열 대신 실제 `hello`의 interaction 스키마·명령 지원 여부를 확인하며, 미지원 빌드는 조회 가능한 기존 질문만 표시하고 제출을 막습니다. 상세 계약과 제한은 [공통 요청함](docs/dashboard-interactions.md)에 있습니다.
+대시보드 서버는 같은 OS 계정의 code-agent 키 저장소(`CODE_AGENT_HOME` 또는 `~/.code-agent`)의 `dashboard-channels`에서 해당 채널 키를 찾습니다. 토큰·개인 키는 화면이나 모델에 전달하지 않습니다. 버전 문자열 대신 실제 `hello`의 interaction 스키마·명령 지원 여부를 확인하며, 미지원 빌드는 조회 가능한 기존 질문만 표시하고 제출을 막습니다. 상세 계약과 제한은 [공통 요청함](docs/dashboard-interactions.md)에 있습니다.
 
 ## 현재 경계와 문서
 

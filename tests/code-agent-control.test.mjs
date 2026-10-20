@@ -10,6 +10,8 @@ import { Engine } from '../packages/orchestrator/engine.mjs';
 import { ControlHost, bindControl, requestControlHandover, acceptControl } from '../packages/runner/control-host.mjs';
 import { ControlClient } from '../packages/code-agent-adapter/control.mjs';
 import { createHistory, historyPage } from '../packages/dashboard/history.mjs';
+import { pairControl, pairingPreview } from '../packages/runner/control-pairing.mjs';
+import { findHumanKey } from '../packages/code-agent-adapter/interactions.mjs';
 
 /**
  * 실제 code-agent CLI(빌드 산출물)와 통신 계약으로 주고받는 연동 시험. 호스트는 code-agent 의 가짜 호스트(masterFakeHost.js)다 —
@@ -25,9 +27,11 @@ function enable(root, outside, controller) {
   const script = join(outside, 'enable.cjs'), tokenFile = join(outside, `token-${controller}`);
   writeFileSync(join(outside, 'host.json'), JSON.stringify({ command: [process.execPath, FAKE] }));
   writeFileSync(join(outside, 'policy.json'), JSON.stringify(POLICY));
+  // Claude 관리 실행은 프로젝트에 Claude 설치 기록과 hook 이 있어야 접수된다 — code-agent 시험과 같이 init 으로 설치한다
   writeFileSync(script, `const [dist, root, controller, tokenOut, host, policy] = process.argv.slice(2);
 const { masterEnable } = require(dist + '/agent/master/admin.js');
 const { withInteraction } = require(dist + '/agent/tty.js');
+require(dist + '/agent/init.js').init(root, { host: 'claude' });
 console.log(withInteraction({ confirm: () => ({ channel: 'tty', verified: true, detail: '모의 TTY(시험)' }), ask: () => 'n' },
   () => masterEnable(root, { controller, tokenOut, host, policy })));\n`);
   execFileSync(process.execPath, [script, DIST, root, controller, tokenFile, join(outside, 'host.json'), join(outside, 'policy.json')], { stdio: 'pipe' });
@@ -121,4 +125,43 @@ test('실제 code-agent 통신 계약: 연결·원자적 접수·중복 거부·
   await waitFor('새 소유자 실행 종료', async () => (await newHost.client(other.need('project', 'p')).result('result', { payload: { runId: resumed.runId } })).final);
   // 토큰 값은 master 저장소에 남기지 않는다(파일 경로만)
   assert.ok(!JSON.stringify(store.get('control-binding', 'p')).includes(readFileSync(token1, 'utf8').trim()));
+});
+
+const pairingAvailable = available && existsSync(join(DIST, 'agent/master/pairing.js')) && existsSync(join(DIST, 'agent/master/trust.js'));
+test('실제 code-agent 페어링: PC 신뢰 1회 뒤 사람이 확인한 연결로 연동 켜기·DB 등록·사람 채널, 토큰은 경로만', { skip: !pairingAvailable && 'code-agent 페어링 빌드 없음', timeout: 120000 }, async t => {
+  const root = temporary(t), home = join(root, 'home'), codex = join(root, 'codex'), path = join(root, 'project');
+  for (const dir of [home, codex, path]) mkdirSync(dir);
+  const saved = { CODE_AGENT_HOME: process.env.CODE_AGENT_HOME, CODEX_HOME: process.env.CODEX_HOME };
+  // 키 저장소·Codex 설정을 시험 폴더로 — 사용자의 실제 키·설정을 읽거나 쓰지 않는다(이 파일의 code-agent 호출은 이 환경을 물려받는다)
+  Object.assign(process.env, { CODE_AGENT_HOME: home, CODEX_HOME: codex });
+  cleanup(t, () => { for (const [key, value] of Object.entries(saved)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; } });
+  const git = args => execFileSync('git', ['-C', path, ...args], { stdio: 'pipe' });
+  git(['init', '-q']); git(['config', 'user.name', 't']); git(['config', 'user.email', 't@t']);
+  writeFileSync(join(path, 'README.md'), 'x\n'); git(['add', '-A']); git(['commit', '-qm', 'init']);
+  const script = join(root, 'trust.cjs');
+  writeFileSync(script, `const [dist, root] = process.argv.slice(2);
+const { masterTrust } = require(dist + '/agent/master/trust.js');
+const { withInteraction } = require(dist + '/agent/tty.js');
+require(dist + '/agent/init.js').init(root, { host: 'claude' });
+console.log(withInteraction({ confirm: () => ({ channel: 'tty', verified: true, detail: '모의 TTY(시험)' }), ask: () => 'n' }, () => masterTrust('dashboard')));\n`);
+  execFileSync(process.execPath, [script, DIST, path], { stdio: 'pipe' });
+  const store = new Store(join(root, 'm.db'));
+  cleanup(t, () => store.close());
+  new Engine(store).catalog.register({ id: 'p', name: 'p', path, domains: ['fixture'], capabilities: ['code-agent:claude'], constraints: [], currentPlans: [], references: ['fixture'] });
+
+  const preview = await pairingPreview(store, 'p', { cliPath: CLI });
+  assert.deepEqual([preview.state, preview.canPair, preview.outcome], ['pairing-available', true, 'enabled']);
+  const record = await pairControl(store, 'p', { cliPath: CLI, commandId: 'pair-real-1', projectRevision: preview.projectRevision,
+    approval: { actor: 'human:test', approvedAt: new Date().toISOString(), shownHash: preview.shownHash } });
+  assert.equal(record.state, 'paired', JSON.stringify(record.error));
+  assert.equal(record.result.outcome, 'enabled');
+  const binding = store.need('control-binding', 'p');
+  assert.deepEqual([binding.controller, binding.owner, binding.generation], ['dashboard', true, 1]);
+  assert.ok(binding.tokenFile.startsWith(home), '토큰 파일은 저장소 밖 키 저장소에 있다');
+  assert.ok(findHumanKey(binding.pairing.humanChannel.channelId), '사람 채널 키는 CODE_AGENT_HOME 아래에서 찾는다');
+  await new ControlHost(store, { cliPath: CLI }).client(store.need('project', 'p')).result('heartbeat');
+  const stored = JSON.stringify(store.db.prepare('SELECT body FROM records').all());
+  assert.ok(!stored.includes(readFileSync(binding.tokenFile, 'utf8').trim())); assert.ok(!stored.includes('PRIVATE KEY'));
+  const after = await pairingPreview(store, 'p', { cliPath: CLI });
+  assert.deepEqual([after.state, after.canPair], ['connected', false]);
 });

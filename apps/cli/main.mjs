@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
+import { createInterface } from 'node:readline/promises';
 import { Store } from '../../packages/storage/store.mjs';
 import { Engine } from '../../packages/orchestrator/engine.mjs';
 import { SimulationRunner } from '../../packages/runner/simulation.mjs';
@@ -24,6 +25,8 @@ import { Reconciliation } from '../../packages/orchestrator/reconcile.mjs';
 import { stopAnalysis } from '../../packages/orchestrator/analysis-control.mjs';
 import { VerificationTemplates } from '../../packages/verification/templates.mjs';
 import { ControlHost, bindControl, requestControlHandover, acceptControl } from '../../packages/runner/control-host.mjs';
+import { pairControl, pairingPreview, pairingReceipt } from '../../packages/runner/control-pairing.mjs';
+import { DASHBOARD_CONTROLLER } from '../../packages/code-agent-adapter/pairing.mjs';
 import { DecisionDelegation } from '../../packages/orchestrator/decisions.mjs';
 import { findCodeAgent } from '../../packages/code-agent-adapter/discovery.mjs';
 import { acceptRequest, launchRequest, runRequest, continueRequest, requestStatus } from '../../packages/orchestrator/requests.mjs';
@@ -50,6 +53,8 @@ code-agent는 설치된 명령에서 자동 탐색합니다. --cli는 별도 빌
   project snapshot <ID> [--cli <경로>]    code-agent 실행·소유·이벤트 위치·상태 한 번에 조회
   project handover <ID> [--cli <경로>] --to <제어자> [--wait-ms <N>]  실행 정지 확인 후 제어권 이전
   project accept <ID> [--cli <경로>] --controller <이름> --token-file <절대경로>  넘어온 제어권 인수
+  project pair <ID> [--cli <경로>] [--controller dashboard]
+                                      PC 신뢰(code-agent master trust) 키로 연동을 켜고 이 DB에 연결 — 사람이 터미널에서 확인 단어 pair 입력
   group save <JSON> [--revision <N>]   그룹 생성 또는 기대 버전으로 수정
   group list                          그룹 목록
   group create <ID> <이름> [--description <서비스범위>]  빈 프로젝트 그룹 생성
@@ -148,7 +153,7 @@ async function main() {
     'mission stop-analysis': 4, 'mission reconcile-verification': 4, 'mission verification-template': 4,
     'mission verification': 4, 'mission verify': 4, 'mission handoff': 4, 'mission complete': 3,
     'mission advance': 3, 'mission drive': 3, 'mission progress': 3,
-    'project control': 3, 'project snapshot': 3, 'project handover': 3, 'project accept': 3,
+    'project control': 3, 'project pair': 3, 'project snapshot': 3, 'project handover': 3, 'project accept': 3,
     'mission reattach': 4, 'mission stop': 4, 'mission delegate': 4, 'mission escalations': 3, 'mission relay': 5,
     'mission create': 3, 'mission list': 2, 'mission show': 3, 'mission graph': 3, 'mission plan': 4, 'mission step': 3, 'mission run': 3,
     'mission pause': 3, 'mission resume': 3, 'mission retry': 4, 'mission unknown': 4,
@@ -165,10 +170,12 @@ async function main() {
   if (key === 'mission recover') requireThat(revision && values['expect-state'] && ['codex', 'claude'].includes(values.provider) && !values.simulate, 'usage', '--revision, --expect-state, --provider가 필요합니다.');
   if (['mission replan', 'mission reconcile', 'mission reconcile-verification'].includes(key)) requireThat(revision && values['expect-state'] && !values.simulate, 'usage', '--revision, --expect-state가 필요합니다.');
   if (key === 'mission stop-analysis') requireThat(revision && !values.simulate, 'usage', '--revision이 필요합니다.');
-  if (['project control', 'project snapshot', 'project handover', 'project accept', 'mission reattach', 'mission stop', 'mission delegate', 'mission relay', 'group request', 'project request'].includes(key)) requireThat(!values.simulate, 'usage', '모의 옵션은 사용할 수 없습니다.');
+  if (['project control', 'project pair', 'project snapshot', 'project handover', 'project accept', 'mission reattach', 'mission stop', 'mission delegate', 'mission relay', 'group request', 'project request'].includes(key)) requireThat(!values.simulate, 'usage', '모의 옵션은 사용할 수 없습니다.');
   if (['group add', 'group remove', 'group delete', 'request continue'].includes(key)) requireThat(revision, 'usage', '--revision이 필요합니다.');
   if (['project control', 'project accept'].includes(key)) requireThat(values.controller && values['token-file'], 'usage', '--controller와 --token-file이 필요합니다.');
   if (key === 'project handover') requireThat(values.to, 'usage', '--to가 필요합니다.');
+  // 페어링은 사람이 확인한 경우에만 한다 — 스크립트·실행기에서 부르지 못하게 터미널 입력을 요구한다
+  if (key === 'project pair') requireThat(process.stdin.isTTY && process.stderr.isTTY, 'usage', 'project pair는 사람이 터미널에서 직접 실행하고 확인 단어 pair를 입력해야 합니다.');
   if (key === 'mission stop') requireThat(['pause', 'cancel'].includes(values.mode), 'usage', '--mode pause 또는 cancel이 필요합니다.');
   if (key === 'mission delegate') requireThat(['codex', 'claude'].includes(values.provider), 'usage', '--provider codex 또는 claude가 필요합니다.');
   const ms = (name, fallback) => {
@@ -179,7 +186,7 @@ async function main() {
   };
   if (key === 'mission verification-template') requireThat(revision, 'usage', '--revision이 필요합니다.');
   if (key === 'mission step' || key === 'mission run') requireThat(values.simulate, 'usage', '모의 실행은 --simulate로 명시해야 합니다. 실제 호스트 배정은 mission dispatch를 사용하세요.');
-  if (['project observe', 'project control', 'project snapshot', 'project handover', 'project accept',
+  if (['project observe', 'project control', 'project pair', 'project snapshot', 'project handover', 'project accept',
     ...['dispatch', 'continue', 'verify', 'handoff', 'recover', 'replan', 'reconcile', 'reconcile-verification', 'advance', 'drive', 'reattach', 'stop', 'delegate', 'relay'].map(a => `mission ${a}`)].includes(key)) values.cli = findCodeAgent(values.cli);
   const dbPath = resolve(values.db ?? '.master-agent/master.db');
   const store = new Store(dbPath); const engine = new Engine(store);
@@ -205,6 +212,19 @@ async function main() {
       }
       case 'project search': result = new Knowledge(store).search(id, file); break;
       case 'project control': result = await bindControl(store, id, { cliPath: values.cli, controller: values.controller, tokenFile: resolve(values['token-file']) }); break;
+      case 'project pair': {
+        const controller = values.controller ?? DASHBOARD_CONTROLLER;
+        const preview = await pairingPreview(store, id, { cliPath: values.cli, controller });
+        console.error(preview.lines.join('\n'));
+        requireThat(preview.canPair, preview.code ?? 'control-pairing-unavailable', `${preview.message} ${preview.guidance}${preview.command ? `\n${preview.command}` : ''}`.trim());
+        const prompt = createInterface({ input: process.stdin, output: process.stderr });
+        let word;
+        try { word = await prompt.question('위 내용으로 연결하려면 pair 를 입력하세요: '); } finally { prompt.close(); }
+        requireThat(word.trim() === 'pair', 'cancelled', '확인 단어가 달라 연결하지 않았습니다.');
+        result = pairingReceipt(await pairControl(store, id, { cliPath: values.cli, controller, commandId: `pair-${randomUUID()}`, projectRevision: preview.projectRevision,
+          approval: { actor: 'human:terminal', approvedAt: new Date().toISOString(), shownHash: preview.shownHash } }));
+        break;
+      }
       case 'project snapshot': result = await controlHost().client(store.need('project', id)).result('snapshot'); break;
       case 'project handover': result = await requestControlHandover(store, id, { cliPath: values.cli, to: values.to, commandId: `ho-${randomUUID()}`, waitMs: ms('wait-ms', 0), pollMs: ms('poll-ms', 2000) }); break;
       case 'project accept': result = await acceptControl(store, id, { cliPath: values.cli, controller: values.controller, tokenFile: resolve(values['token-file']) }); break;

@@ -4,13 +4,16 @@ import { requestStatus } from '../orchestrator/requests.mjs';
 import { Catalog } from '../catalog/catalog.mjs';
 import { stageDetails } from './history.mjs';
 import { preparationIssues } from '../orchestrator/preparation.mjs';
+import { DASHBOARD_CONTROLLER, connectionState, findTrustKey } from '../code-agent-adapter/pairing.mjs';
+import { pairingReceipt } from '../runner/control-pairing.mjs';
 
 const text = value => typeof value === 'string' ? value.slice(0, 2000) : '';
 const list = value => Array.isArray(value) ? value : [];
 
 /** A projection only: never expose raw records, controller credentials or model inputs. */
-export function dashboardSnapshot(store, { live = false, refreshing = false, intervalMs = 5000, errors = new Map(), now = Date.now() } = {}) {
+export function dashboardSnapshot(store, { live = false, refreshing = false, intervalMs = 5000, errors = new Map(), now = Date.now(), trustKey = findTrustKey } = {}) {
   const engine = new Engine(store);
+  const keyAvailable = Boolean(trustKey(DASHBOARD_CONTROLLER)), pairings = store.list('control-pairing');
   const missions = store.list('mission').map(mission => {
     try {
       const detail = engine.describe(mission.id);
@@ -31,7 +34,12 @@ export function dashboardSnapshot(store, { live = false, refreshing = false, int
     const stale = !Number.isFinite(age) || age > Math.max(30000, intervalMs * 3) || age < -5000;
     const failure = errors.get(project.id);
     const observationStatus = failure ? 'process-error' : observation?.status ?? 'unobserved';
-    const binding = store.get('control-binding', project.id);
+    const binding = store.get('control-binding', project.id), source = store.get('interaction-source', project.id);
+    // A hello read before the current binding was saved cannot judge it — wait for the next sweep.
+    const probe = source?.control && !(binding && source.checkedAt < binding.boundAt) ? source.control : null;
+    const connection = connectionState({ projectId: project.id, probe, binding, keyAvailable, now,
+      installed: observation?.status !== 'not-installed' });
+    const pairing = pairings.filter(p => p.projectId === project.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
     const tasks = missions.flatMap(m => m.tasks.filter(t => t.projectId === project.id).map(t => ({ ...t, missionId: m.id, missionGoal: m.goal, mode: m.mode })));
     const pendingRequests = store.list('target-request').filter(r => r.projectIds.includes(project.id) && !['completed', 'cancelled'].includes(r.state))
       .map(r => ({ id: r.id, taskNumber: r.taskNumber ?? null, state: r.state, progress: missions.find(m => m.id === r.id)?.status,
@@ -48,7 +56,11 @@ export function dashboardSnapshot(store, { live = false, refreshing = false, int
       questions: [...list(state?.questions?.unanswered).map(q => ({ id: text(typeof q === 'string' ? q : q?.id), status: 'unanswered' })),
         ...list(state?.questions?.unverified).map(q => ({ id: text(q), status: 'unverified' }))],
       findings: state?.findings ? { open: state.findings.open, blocking: state.findings.blocking, humanDecision: state.findings.humanDecision } : null,
-      control: binding ? { controller: text(binding.controller), owner: binding.owner, boundAt: binding.boundAt } : null,
+      control: binding ? { controller: text(binding.controller), owner: binding.owner, boundAt: binding.boundAt, expiresAt: binding.pairing?.humanChannel?.expiresAt ?? null } : null,
+      connection: { state: connection.state, code: connection.code ?? null, canPair: connection.canPair, outcome: connection.outcome ?? null, renewal: connection.renewal ?? false,
+        expired: connection.expired ?? false, owner: text(connection.owner), message: text(connection.message), guidance: text(connection.guidance), command: text(connection.command),
+        checkedAt: probe ? source.checkedAt ?? null : null, error: text(source?.error), managedHost: probe?.managedHost ?? null },
+      pairing: pairing ? pairingReceipt(pairing) : null,
       lock: store.lock(project.id) ? { missionId: store.lock(project.id).mission_id, attemptId: store.lock(project.id).attempt_id } : null,
       tasks, requests: pendingRequests,
       attention: Boolean(list(state?.consents?.open).length || list(state?.questions?.unanswered).length || list(state?.questions?.unverified).length ||
@@ -69,7 +81,7 @@ export function dashboardSnapshot(store, { live = false, refreshing = false, int
 }
 
 /** One bounded sweep, shared by every browser; failures are isolated per project. */
-export function createMonitor(store, { cliPath, intervalMs = 5000, timeoutMs = 5000, observe = observeProject, onObserved } = {}) {
+export function createMonitor(store, { cliPath, intervalMs = 5000, timeoutMs = 5000, observe = observeProject, onObserved, trustKey } = {}) {
   const errors = new Map();
   let pending = null, timer = null, stopped = false;
   function refresh() {
@@ -99,7 +111,7 @@ export function createMonitor(store, { cliPath, intervalMs = 5000, timeoutMs = 5
   return {
     refresh,
     start() { if (cliPath && !timer && !pending && !stopped) void sweep(); },
-    snapshot() { return dashboardSnapshot(store, { live: Boolean(cliPath), refreshing: Boolean(pending), intervalMs, errors }); },
+    snapshot() { return dashboardSnapshot(store, { live: Boolean(cliPath), refreshing: Boolean(pending), intervalMs, errors, ...(trustKey ? { trustKey } : {}) }); },
     async stop() { stopped = true; clearTimeout(timer); await pending; },
   };
 }

@@ -16,7 +16,9 @@ const normalize = path => process.platform === 'win32' ? path.toLowerCase() : pa
 export function snapshotTree(path) {
   const root = realpathSync(path);
   requireThat(normalize(realpathSync(git(root, ['rev-parse', '--show-toplevel']).trim())) === normalize(root), 'invalid-repository', '등록 경로가 Git 저장소 루트여야 합니다.');
-  const head = git(root, ['rev-parse', '--verify', 'HEAD']).trim();
+  let head;
+  try { head = git(root, ['rev-parse', '--verify', 'HEAD']).trim(); }
+  catch { requireThat(false, 'repository-no-commit', 'Git 저장소에 커밋이 없습니다. code-agent setup baseline 또는 직접 첫 커밋을 만든 뒤 다시 확인하세요.'); }
   const paths = [...new Set(git(root, ['ls-files', '-z', '--cached', '--others', '--exclude-standard']).split('\0').filter(Boolean))].sort();
   requireThat(paths.length <= 20000, 'snapshot-limit', 'Git 파일 개수 제한을 넘었습니다.');
   const files = []; let bytes = 0;
