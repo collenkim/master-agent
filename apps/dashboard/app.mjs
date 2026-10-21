@@ -446,47 +446,86 @@ $('request-form').addEventListener('submit', async event => {
 });
 
 let updatePlan;
-const preparationLabels = { clone: '소스 사본 준비', pull: '원격 변경 받기', install: '의존성 설치', build: '빌드', reuse: '같은 커밋 빌드 재사용', verify: '실행 검사', test: '테스트', validate: '실행 버전 검증' };
+const preparationLabels = { install: 'code-agent 릴리스 설치', apply: '프로젝트 릴리스 적용', verify: '적용 버전 확인' };
 function preparationView(batch, open) {
-  if (!batch.source) return '';
-  return `<p>원격 ${escape(batch.source.remote)} · ${escape(batch.source.ref)}${batch.source.commit ? ` · 커밋 ${escape(batch.source.commit)}` : ''}</p>` +
-    (batch.preparation ? `<p>${escape(preparationLabels[batch.preparation.phase])} · ${badge(batch.state === 'interrupted' ? 'interrupted' : batch.preparation.state)}</p>` : '') +
-    (batch.preparation?.steps ?? []).map(step => `<div><small>${escape(preparationLabels[step.phase])} · ${escape(labels[step.state] ?? step.state)}</small>${step.output ? `<details data-output="${escape(`${batch.id}/prepare/${step.phase}`)}" ${open.has(`${batch.id}/prepare/${step.phase}`) ? 'open' : ''}><summary>단계 출력</summary><pre>${escape(step.output)}</pre></details>` : ''}</div>`).join('');
+  if (batch.mode !== 'remote') return '';
+  return `<p>${batch.release ? `릴리스 ${escape(batch.release.id)} · 커밋 ${escape(batch.release.commit)}` : 'code-agent 설치 확인 완료'}</p>` +
+    (batch.preparation ? `<p>${escape(preparationLabels[batch.preparation.phase])} · ${badge(batch.preparation.state)}</p>` : '') +
+    (batch.release?.log?.length ? `<details data-output="${escape(`${batch.id}/install`)}" ${open.has(`${batch.id}/install`) ? 'open' : ''}><summary>code-agent 설치 출력</summary><pre>${escape(batch.release.log.join('\n'))}</pre></details>` : '') +
+    (batch.state === 'awaiting-confirmation' ? `<p>설치 완료 · 프로젝트 적용 확인 대기</p><button type="button" class="preview-apply" data-id="${escape(batch.id)}">프로젝트 적용 내용 확인</button>` : '');
 }
+const confirmationView = view => `<pre>${escape(view.lines.join('\n'))}</pre><p class="path">${escape(view.shownHash)}</p>`;
 const updateTable = (projects, batchId = '', open = new Set()) => `<table><thead><tr><th>프로젝트</th><th>현재 버전</th><th>상태·결과</th></tr></thead><tbody>${projects.map(p => `<tr><td>${escape(p.name)}<small class="path">${escape(p.path)}</small></td><td>${escape(p.current ?? '미확인')}</td><td>${badge(p.state)}<small>${escape(p.detail)}</small>${p.output ? `<details data-output="${escape(`${batchId}/${p.id}`)}" ${open.has(`${batchId}/${p.id}`) ? 'open' : ''}><summary>명령 출력</summary><pre>${escape(p.output)}</pre></details>` : ''}</td></tr>`).join('')}</tbody></table>`;
 function renderUpdates() {
   const updates = latest.updates ?? { batches: [], maintenance: [] };
   const open = new Set([...document.querySelectorAll('#updates details[open][data-id]')].map(e => e.dataset.id));
   const outputs = new Set([...document.querySelectorAll('#updates details[open][data-output]')].map(e => e.dataset.output));
   $('updates').innerHTML = updates.maintenance.filter(r => r.recoverable).map(r => `<p class="error">${escape(r.id)}: 업데이트 중단 점검 필요 <button type="button" class="recover-update" data-id="${escape(r.id)}">종료·유휴 상태 확인 후 잠금 해제</button></p>`).join('') +
-    updates.batches.map(b => `<details class="mission" data-id="${escape(b.id)}" ${open.has(b.id) || b.state === 'running' ? 'open' : ''}><summary><span>${escape(date(b.createdAt))} · 설치본 ${escape(b.target.version)}</span>${badge(b.state)}</summary>${preparationView(b, outputs)}${b.error ? `<p class="error">${escape(b.error)}</p>` : ''}<div class="table-wrap">${updateTable(b.projects, b.id, outputs)}</div></details>`).join('');
+    updates.batches.map(b => `<details class="mission" data-id="${escape(b.id)}" ${open.has(b.id) || b.state === 'running' ? 'open' : ''}><summary><span>${escape(date(b.createdAt))} · 설치본 ${escape(b.target.version)}</span>${badge(b.state === 'awaiting-confirmation' ? '적용 확인 대기' : b.state)}</summary>${preparationView(b, outputs)}${b.error ? `<p class="error">${escape(b.error)}</p>` : ''}<div class="table-wrap">${updateTable(b.projects, b.id, outputs)}</div></details>`).join('');
 }
+function showApplyPlan(plan) {
+  updatePlan = plan;
+  $('update-title').textContent = 'code-agent 프로젝트 적용 확인';
+  $('update-target').textContent = plan.mode === 'remote' ? `적용할 릴리스: ${plan.release.id}`
+    : `적용할 설치본: ${plan.target.version}${plan.target.resetsPin ? ' · 기존 릴리스 고정을 해제하고 현재 번들을 적용합니다.' : ' · 현재 설치 패키지 릴리스를 적용합니다.'}`;
+  $('update-preview').innerHTML = updateTable(plan.projects) + plan.projects.filter(p => p.confirmation).map(p => `<section><h3>${escape(p.name)}</h3>${confirmationView(p.confirmation)}</section>`).join('');
+  $('update-confirm').checked = false;
+  $('apply-updates').textContent = plan.mode === 'remote' ? '확인한 릴리스 일괄 적용' : '현재 설치본 일괄 적용';
+  $('apply-updates').disabled = true;
+}
+$('update-confirm').addEventListener('change', () => {
+  $('apply-updates').disabled = !$('update-confirm').checked || !updatePlan?.projects.some(p => p.state === 'ready');
+});
+$('install-confirm').addEventListener('change', () => {
+  $('install-updates').disabled = !$('install-confirm').checked || !updatePlan?.installation?.canInstall;
+});
 $('preview-updates').addEventListener('click', async () => {
   if (!latest) return;
   const button = $('preview-updates'); button.disabled = true; updatePlan = null;
-  $('update-error').textContent = ''; $('update-preview').textContent = '버전과 작업 상태를 확인하고 있습니다…';
-  $('update-target').textContent = ''; $('apply-updates').disabled = true; $('update-dialog').showModal();
+  const remote = $('update-mode').value === 'remote', prefix = remote ? 'install' : 'update';
+  $(`${prefix}-error`).textContent = ''; $(`${prefix}-preview`).textContent = 'code-agent 확인 내용을 조회하고 있습니다…';
+  $(`${prefix}-confirm`).checked = false;
+  $(remote ? 'install-updates' : 'apply-updates').disabled = true;
+  $(`${prefix}-dialog`).showModal();
   try {
-    updatePlan = await post('/api/updates/preview', { mode: $('update-mode').value });
-    $('update-target').textContent = updatePlan.source
-      ? `현재 설치본 ${updatePlan.target.version} → ${updatePlan.source.remote}/${updatePlan.source.ref.replace('refs/heads/', '')}의 원격 버전을 받아 검증 후 적용합니다.${updatePlan.source.dirty ? ' 원본에 미커밋 변경이 있으며 그대로 보존합니다.' : ''}`
-      : `적용할 설치본: ${updatePlan.target.version} (${updatePlan.target.fingerprint.slice(0, 12)})${updatePlan.target.resetsPin ? ' · 기존 릴리스 고정을 해제하고 현재 번들을 적용합니다.' : ' · 현재 설치 패키지 릴리스를 적용합니다.'}`;
-    $('apply-updates').textContent = updatePlan.source ? '원격 받기·빌드·검증 후 일괄 적용' : '현재 설치본 일괄 적용';
-    $('update-preview').innerHTML = updateTable(updatePlan.projects);
-    $('apply-updates').disabled = !updatePlan.projects.some(p => p.state === 'ready');
-  } catch (error) { $('update-preview').textContent = ''; $('update-error').textContent = error.message; }
+    const plan = await post('/api/updates/preview', { mode: $('update-mode').value });
+    updatePlan = plan;
+    if (remote) {
+      $('install-preview').innerHTML = confirmationView(plan.installation);
+      $('install-error').textContent = plan.installation.reason ?? '';
+    } else showApplyPlan(plan);
+  } catch (error) { $(`${prefix}-preview`).textContent = ''; $(`${prefix}-error`).textContent = error.message; }
   finally { button.disabled = false; }
 });
+$('install-updates').addEventListener('click', async () => {
+  if (!updatePlan || !$('install-confirm').checked) return;
+  $('install-updates').disabled = true;
+  try {
+    await post('/api/updates/install', { id: updatePlan.id });
+    $('install-dialog').close(); $('action-status').textContent = 'code-agent 릴리스 설치를 시작했습니다. 설치 완료 후 프로젝트 적용 내용을 확인하세요.';
+    await refresh();
+  } catch (error) { $('install-error').textContent = error.message; }
+});
 $('apply-updates').addEventListener('click', async () => {
-  if (!updatePlan) return;
+  if (!updatePlan || !$('update-confirm').checked) return;
   $('apply-updates').disabled = true;
   try {
-    await post('/api/updates/apply', { id: updatePlan.id });
-    $('update-dialog').close(); $('action-status').textContent = '일괄 업데이트를 시작했습니다. 아래에서 프로젝트별 결과를 확인하세요.';
+    await post('/api/updates/apply', { id: updatePlan.id, previewId: updatePlan.previewId });
+    $('update-dialog').close(); $('action-status').textContent = '프로젝트 적용을 시작했습니다. 아래에서 프로젝트별 결과를 확인하세요.';
     await refresh();
-  } catch (error) { $('update-error').textContent = error.message; $('apply-updates').disabled = false; }
+  } catch (error) { $('update-error').textContent = error.message; }
 });
 $('updates').addEventListener('click', async event => {
+  const preview = event.target.closest('.preview-apply');
+  if (preview) {
+    preview.disabled = true; updatePlan = null;
+    $('update-error').textContent = ''; $('update-preview').textContent = '프로젝트별 적용 내용을 조회하고 있습니다…';
+    $('update-target').textContent = ''; $('update-confirm').checked = false; $('apply-updates').disabled = true; $('update-dialog').showModal();
+    try { showApplyPlan(await post('/api/updates/apply-preview', { id: preview.dataset.id })); }
+    catch (error) { $('update-preview').textContent = ''; $('update-error').textContent = error.message; }
+    finally { preview.disabled = false; }
+    return;
+  }
   const button = event.target.closest('.recover-update'); if (!button) return;
   button.disabled = true;
   try { const result = await post('/api/updates/recover', { id: button.dataset.id }); $('action-status').textContent = result.detail; await refresh(); }

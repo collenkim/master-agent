@@ -1,6 +1,5 @@
 import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
 import { once } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import { Store } from '../storage/store.mjs';
@@ -43,7 +42,7 @@ export async function startDashboard({ dbPath, port = 4310, cliPath, intervalMs 
     await interactions.refreshProject(project);
   } });
   const updates = createUpdates(store, { cliPath: updateCliPath ?? cliPath,
-    cacheRoot: join(dirname(resolve(dbPath)), 'code-agent-builds'), ...updateOptions });
+    ...updateOptions });
   const token = randomUUID(), catalog = new Catalog(store);
   let candidateScan;
   let origin;
@@ -107,7 +106,9 @@ export async function startDashboard({ dbPath, port = 4310, cliPath, intervalMs 
         if (path === '/api/projects/delete') return send(200, JSON.stringify(catalog.remove(input.id, input.revision)));
         if (path === '/api/groups/delete') return send(200, JSON.stringify(catalog.removeGroup(input.id, input.revision)));
         if (path === '/api/updates/preview') return send(200, JSON.stringify(await updates.preview(input)));
-        if (path === '/api/updates/apply') return send(202, JSON.stringify(updates.apply(input.id)));
+        if (path === '/api/updates/install') return send(202, JSON.stringify(updates.install(input.id)));
+        if (path === '/api/updates/apply-preview') return send(200, JSON.stringify(await updates.previewApply(input.id)));
+        if (path === '/api/updates/apply') return send(202, JSON.stringify(updates.apply(input.id, input.previewId)));
         if (path === '/api/updates/recover') return send(200, JSON.stringify(await updates.recover(input.id)));
         if (path === '/api/groups') return send(200, JSON.stringify(catalog.group(input.group, input.revision ?? 0, { newProjects: input.newProjects })));
         if (path === '/api/requests') {

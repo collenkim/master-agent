@@ -20,7 +20,7 @@
     <div class="toolbar"><h2>보낸 요청</h2><span class="muted">접수 시 확정한 대상에서 실행</span></div>
     <section id="requests" aria-label="보낸 요청"></section>
     <div class="toolbar"><h2>code-agent 업데이트</h2><div class="filters"><label>업데이트 방식<select id="update-mode"><option value="remote">원격 최신 버전 받아 적용</option><option value="installed">현재 설치본만 적용</option></select></label><button id="preview-updates" type="button">전체 프로젝트 업데이트 확인</button></div></div>
-    <p class="muted">원격 변경 받기 → 의존성 설치 → 빌드·실행 검사 → 등록 프로젝트 적용. 같은 커밋을 이미 빌드했으면 그 결과를 다시 씁니다. 작업·승인 진행 중인 프로젝트는 건너뜁니다.</p>
+    <p class="muted">설치 내용 확인 → code-agent 릴리스 설치 → 프로젝트별 적용 내용 확인 → 적용 및 버전 확인. 작업·승인 진행 중인 프로젝트는 건너뜁니다.</p>
     <p class="muted">건너뜀 사유는 code-agent의 업데이트 가능 여부 조회 결과입니다. 현재 브랜치의 작업 조회와 달리 다른 브랜치의 미완료 작업도 업데이트를 막을 수 있습니다. 저장된 작업 상태이며 프로세스 실행 여부를 뜻하지 않습니다.</p>
     <section id="updates" aria-label="업데이트 결과"></section>
     <div class="toolbar"><h2>프로젝트 <span id="project-count" class="muted"></span></h2><div class="filters"><button id="new-project" type="button">프로젝트 수동 등록</button><label>검색 <input id="search" type="search" placeholder="프로젝트·작업·경로"></label><label>표시 <select id="filter"><option value="all">전체</option><option value="attention">판단·점검 필요</option><option value="unavailable">조회 오류·오래된 관측</option><option value="working">현재 작업 있음</option></select></label></div></div>
@@ -35,12 +35,20 @@
     <section id="missions" aria-label="목표별 작업"></section>
     <footer>현재 DB에 등록된 로컬 프로젝트를 표시합니다. code-agent 상태 조회는 프로세스 생존 확인을 보장하지 않습니다.</footer>
   </main>
+  <dialog id="install-dialog">
+    <h2>code-agent 릴리스 설치 확인</h2>
+    <p>code-agent가 제공한 설치 내용입니다. 설치가 끝난 뒤 프로젝트 적용을 별도로 확인합니다.</p>
+    <div id="install-preview"></div>
+    <label><input id="install-confirm" type="checkbox">위 설치 내용을 확인했습니다.</label>
+    <p id="install-error" class="error" role="alert"></p>
+    <div class="dialog-actions"><button type="button" data-close="install-dialog">닫기</button><button id="install-updates" type="button" disabled>확인한 내용으로 릴리스 설치</button></div>
+  </dialog>
   <dialog id="update-dialog">
-    <h2>code-agent 일괄 업데이트</h2>
+    <h2 id="update-title">code-agent 프로젝트 적용 확인</h2>
     <p id="update-target"></p>
-    <p class="muted">원격 업데이트는 설치 소스의 추적 브랜치를 격리 사본에서 pull하고 npm 설치·빌드 뒤 터미널 업데이트와 같은 실행 검사를 합니다. 전체 테스트는 실행하지 않습니다. 검증 실패 시 프로젝트에 적용하지 않습니다. 원본 소스의 미커밋 변경은 포함하지 않습니다.</p>
     <p class="muted">code-agent가 미완료 작업을 보고하면 건너뜁니다. 현재 브랜치에 작업이 없어도 다른 브랜치에 보관된 작업이 사유에 포함될 수 있습니다. 해당 프로젝트에서 작업의 완료·중단 상태를 먼저 확인하세요.</p>
     <div id="update-preview" class="table-wrap"></div>
+    <label><input id="update-confirm" type="checkbox">위 프로젝트별 적용 내용을 확인했습니다.</label>
     <p id="update-error" class="error" role="alert"></p>
     <div class="dialog-actions"><button type="button" data-close="update-dialog">닫기</button><button id="apply-updates" type="button" disabled>적용 가능한 프로젝트 모두 업데이트</button></div>
   </dialog>
