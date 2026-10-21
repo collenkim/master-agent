@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs';
+import { join, basename } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 import { setup } from './helpers.mjs';
 import { createSourceBuilder, runSourceCommand } from '../packages/dashboard/source-update.mjs';
 import { createUpdates } from '../packages/dashboard/updates.mjs';
@@ -17,7 +18,7 @@ function fixture(t) {
 const file=path.join(process.cwd(),'.code-agent','applied');
 const id=fs.existsSync(path.join(root,'.git'))?null:'package-'+pkg.version;
 if(process.argv[2]==='version')console.log(JSON.stringify({schema:'code-agent.version v1',running:{kind:'bundle',version:pkg.version,entryPackage:id?{id}:null},project:{root:process.cwd(),busy:[],applied:fs.existsSync(file)?fs.readFileSync(file,'utf8'):null,pending:null}}));
-else if(process.argv[2]==='update'){fs.writeFileSync(file,id);console.log('applied '+id)}else process.exit(1);`;
+else if(process.argv[2]==='update'){fs.writeFileSync(file,id);console.log('applied '+id)}else if(process.argv[2]==='help'&&process.env.CODE_AGENT_RUNTIME_SELF==='1')console.log('code-agent fixture help');else process.exit(1);`;
   writeFileSync(join(seed, 'build.cjs'), `const fs=require('fs');fs.mkdirSync('dist/agent',{recursive:true});fs.writeFileSync('dist/agent/cli.js',${JSON.stringify(cli)});`);
   writeFileSync(join(seed, 'test.cjs'), "require('assert').ok(require('fs').existsSync('dist/agent/cli.js'));console.log('fixture tests passed');");
   writeFileSync(join(seed, '.gitignore'), 'node_modules/\n');
@@ -38,7 +39,7 @@ else if(process.argv[2]==='update'){fs.writeFileSync(file,id);console.log('appli
   return { ...f, remote, seed, source, oldHead, cliPath, cacheRoot, builder };
 }
 
-test('remote update pulls, installs, builds and tests once before applying the same package to every project', async t => {
+test('remote update pulls, installs, builds and runs the terminal entry check once before applying the same package to every project', async t => {
   const f = fixture(t), updates = createUpdates(f.store, { cliPath: f.cliPath, cacheRoot: f.cacheRoot });
   const plan = await updates.preview();
   assert.equal(plan.mode, 'remote'); assert.equal(plan.source.dirty, true);
@@ -46,21 +47,38 @@ test('remote update pulls, installs, builds and tests once before applying the s
   updates.apply(plan.id); await updates.idle();
   const result = updates.snapshot().batches[0];
   assert.equal(result.state, 'completed', JSON.stringify(result));
-  assert.deepEqual(result.preparation.steps.map(s => s.phase), ['clone', 'pull', 'install', 'build', 'test', 'validate']);
+  assert.deepEqual(result.preparation.steps.map(s => s.phase), ['clone', 'pull', 'install', 'build', 'verify', 'validate']);
   assert.equal(result.target.packageId, 'package-2.0.0');
   assert.equal(result.source.commit, git(f.seed, 'rev-parse', 'HEAD'));
   for (const p of f.store.list('project')) assert.equal(readFileSync(join(p.path, '.code-agent/applied'), 'utf8'), 'package-2.0.0');
   assert.equal(git(f.source, 'rev-parse', 'HEAD'), f.oldHead);
   assert.equal(readFileSync(join(f.source, 'local-note.txt'), 'utf8'), '사용자 미커밋 내용');
   assert.ok(existsSync(join(result.source.buildRoot, 'git-metadata')));
+  assert.equal(JSON.parse(readFileSync(join(result.source.buildRoot, 'build.json'), 'utf8')).commit, result.source.commit);
 });
 
-for (const phase of ['pull', 'install', 'build', 'test']) test(`${phase} failure never invokes project update`, async t => {
+test('a later update of the same commit reuses the completed build and drops its fresh clone', async t => {
+  const f = fixture(t), updates = createUpdates(f.store, { cliPath: f.cliPath, cacheRoot: f.cacheRoot });
+  // An interrupted build of the same commit has no build.json and is never reused.
+  mkdirSync(join(f.cacheRoot, 'interrupted/node_modules/code-agent/dist/agent'), { recursive: true });
+  updates.apply((await updates.preview()).id); await updates.idle();
+  const first = updates.snapshot().batches[0];
+  updates.apply((await updates.preview()).id); await updates.idle();
+  const second = updates.snapshot().batches[0];
+  assert.notEqual(second.id, first.id);
+  assert.equal(second.state, 'completed', JSON.stringify(second));
+  assert.deepEqual(second.preparation.steps.map(s => s.phase), ['clone', 'pull', 'reuse', 'verify', 'validate']);
+  assert.equal(second.source.buildRoot, first.source.buildRoot);
+  assert.equal(second.target.packageId, 'package-2.0.0');
+  assert.deepEqual(readdirSync(f.cacheRoot).sort(), [basename(first.source.buildRoot), 'interrupted'].sort());
+});
+
+for (const phase of ['pull', 'install', 'build', 'verify']) test(`${phase} failure never invokes project update`, async t => {
   const f = fixture(t);
   if (phase === 'pull') git(f.source, 'remote', 'set-url', 'origin', 'https://user:private-token@example.invalid/source.git');
-  const builder = createSourceBuilder({ cacheRoot: f.cacheRoot, run: async (file, args, cwd, timeout) => {
-    const match = phase === 'pull' ? args[0] === 'pull' : phase === 'install' ? args.includes('ci') : phase === 'build' ? args.includes('build') : args.includes('test');
-    return match ? { code: 1, stdout: 'injected failure https://user:private-token@example.invalid/source.git' } : runSourceCommand(file, args, cwd, timeout);
+  const builder = createSourceBuilder({ cacheRoot: f.cacheRoot, run: async (file, args, cwd, timeout, env) => {
+    const match = phase === 'pull' ? args[0] === 'pull' : phase === 'install' ? args.includes('ci') : phase === 'build' ? args.includes('build') : args.includes('help');
+    return match ? { code: 1, stdout: 'injected failure https://user:private-token@example.invalid/source.git' } : runSourceCommand(file, args, cwd, timeout, env);
   } });
   const updates = createUpdates(f.store, { cliPath: f.cliPath, sourceBuilder: builder });
   const plan = await updates.preview(); updates.apply(plan.id); await updates.idle();
@@ -72,6 +90,18 @@ for (const phase of ['pull', 'install', 'build', 'test']) test(`${phase} failure
   assert.ok(result.projects.every(p => p.state === 'cancelled'));
   assert.ok(f.store.list('project').every(p => !existsSync(join(p.path, '.code-agent/applied'))));
   assert.equal(git(f.source, 'rev-parse', 'HEAD'), f.oldHead);
+});
+
+test('a step that outlives its limit fails instead of passing and its process tree stops', async t => {
+  const f = setup(t), pidFile = join(f.root, 'grandchild.pid');
+  const script = `const c=require('child_process').spawn(process.execPath,['-e','setTimeout(()=>{},60000)'],{stdio:'ignore'});require('fs').writeFileSync(${JSON.stringify(pidFile)},String(c.pid));setTimeout(()=>{},60000);`;
+  const result = await runSourceCommand(process.execPath, ['-e', script], f.root, 2000);
+  assert.equal(result.code, 'timeout');
+  if (process.platform !== 'win32') return;
+  const pid = Number(readFileSync(pidFile, 'utf8'));
+  let alive = true;
+  for (let n = 0; n < 30 && alive; n++) { try { process.kill(pid, 0); await delay(100); } catch { alive = false; } }
+  assert.equal(alive, false);
 });
 
 test('changed upstream and divergent local history are rejected before applying projects', async t => {

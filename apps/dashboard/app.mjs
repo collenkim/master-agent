@@ -446,7 +446,7 @@ $('request-form').addEventListener('submit', async event => {
 });
 
 let updatePlan;
-const preparationLabels = { clone: '소스 사본 준비', pull: '원격 변경 받기', install: '의존성 설치', build: '빌드', test: '테스트', validate: '실행 버전 검증' };
+const preparationLabels = { clone: '소스 사본 준비', pull: '원격 변경 받기', install: '의존성 설치', build: '빌드', reuse: '같은 커밋 빌드 재사용', verify: '실행 검사', test: '테스트', validate: '실행 버전 검증' };
 function preparationView(batch, open) {
   if (!batch.source) return '';
   return `<p>원격 ${escape(batch.source.remote)} · ${escape(batch.source.ref)}${batch.source.commit ? ` · 커밋 ${escape(batch.source.commit)}` : ''}</p>` +

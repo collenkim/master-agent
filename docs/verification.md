@@ -1,10 +1,10 @@
 # 검증 기록
 
-기능 검증 기준은 **2026-10-21, 화면 PC 신뢰 반영 후**다. Windows·Node.js 24.19.0에서 회귀·실제 CLI·브라우저를 확인했다. 실제 모델 전체 흐름의 최근 검증일은 2026-10-17이며, 관제·질문 계약·화면 시험은 해당 모델 시험의 재수행을 뜻하지 않는다.
+기능 검증 기준은 **2026-10-21, 질문 창 표시 정리와 원격 업데이트 검증 조정 반영 후**다. Windows·Node.js 24.19.0에서 회귀·실제 CLI·브라우저를 확인했다. 실제 모델 전체 흐름의 최근 검증일은 2026-10-17이며, 관제·질문 계약·화면 시험은 해당 모델 시험의 재수행을 뜻하지 않는다.
 
 | 검증 | 결과 | 근거 |
 | --- | --- | --- |
-| 자동 회귀 | 전체 279개 통과. 실패·건너뜀 0 | `npm.cmd test`(약 235초), `.master-agent/screen-trust-full-tests.log`. 화면 PC 신뢰를 포함한 code-agent 빌드 사용 |
+| 자동 회귀 | 전체 281개 통과. 실패·건너뜀 0 | `npm.cmd test`(약 412초), `.master-agent/inbox-layout-update-full-tests.log`. 사용한 code-agent 빌드는 아래 참고 |
 | 요청 host 선택 | host 형식 검증과 계획·판단 AI 결정(단독 CLI·교차 검증·host 없는 요청의 provider), 교차 검토의 승인만 통과·반려·검토 형식 오류·검토 host 실행 실패, 요청 기록·provider 동시 지정 거부·대시보드 표시, 준비 점검(요청별 선택 미지원·미설치·주 host 준비, 기본 host 문제는 막지 않음), 교차 계획 반려 지적의 다음 회차 전달·승인 계획만 활성화, 새 실행에만 execution 전달, 반려된 위임 판단의 사람 이관 | `tests/request-host.test.mjs` 7개. AI·code-agent 전송은 모의 |
 | 실제 code-agent 요청별 host | 실제 hello의 `runSelection`, 프로젝트 설정이 Claude 단독인 저장소에서 요청의 Codex로 실행·`execution.json` 보존·같은 thread 이어 실행 | `tests/managed-host.test.mjs`. 실제 code-agent 감독과 모의 Codex 모델, 격리 프로젝트·`CODEX_HOME` |
 | 요청 host 브라우저 | host 선택만 표시(계획·판단 담당 선택 없음), 프로젝트 카드의 요청별 선택 지원 표시, 그룹(설정이 다른 프로젝트) 처음 값 Claude 단독·주 host 표시 전환·안내 문구, 프로젝트별 선택 가능·미지원·준비 문제(문구는 글자로만), 프로젝트 설정의 처음 값, 제출한 host 기록·요청 카드 표시, 1440/390/320px | `scripts/smoke-dashboard-request-host.mjs`, `.master-agent/request-host-browser-a7Xo43/`. 실제 브라우저·API, 합성 hello, 요청 실행기·모델 미호출 |
@@ -20,10 +20,12 @@
 | 공통 요청함 회귀 | 추천 미추정·보류·답 적용, 동일 명령/두 탭·재시작·master 재개, 오래된 내용/문맥·등록 해제·업데이트, 원장 복사/교체·그룹 범위 고정, HTTP 인증, 기존 시도·세션에서 복구 후 실제 재검증 | `tests/dashboard-interactions.test.mjs` 13개 |
 | 실제 code-agent 질문 API | 빈/기존 격리 프로젝트 각 10단계의 질문 수신·소비·적용, 다중 선택·옵션 입력·직접 입력, 보류/재열기, 같은 명령 재전송, 브랜치 변경·키 부재 거부, docs 동의의 실제 적용 | `scripts/smoke-interactions-live.mjs`, `.master-agent/interactions-live.json`. 발행자·최초 인증은 합성 fixture, 개발 모델 미호출 |
 | 실제 API·브라우저·중단 복구 | 모바일 브라우저의 다중 답과 별도 동의가 실제 서명·CLI를 통과. 전송 전 단절 후 DB 재시작·같은 envelope 재전송, 미확인 중 삭제 거부, 실제 docs 적용 확인 | `.master-agent/interactions-live-browser.json`, `.master-agent/interactions-live-browser-2pNLLS/`. 실제 사용자 TTY·개발/반영/운영 전체 모델 완주와 구분 |
-| master 질문 브라우저 | 추천의 명시적 제출, 폴링/닫기/재열기 초안 보존, 보류, 전체 답 수집 후 한 번 재개, 오래된 화면 거부, 승인 미선택·미지원 비활성, XSS·모바일·연결 끊김. 기존 준비 실패 요청의 추천 재점검·같은 TASK 한 번 재개 | `scripts/smoke-dashboard-interactions.mjs`, `.master-agent/interactions-browser-6gUX5r/`. 발행자·실행기 모의 |
-| 원격 업데이트 준비 | 실제 로컬 Git remote·pull·npm ci/build/test 후 동일 패키지 적용, 각 준비 단계 실패 시 미적용, upstream 변경·분기·미설정 거부, 원본 변경 보존·종료 처리·HTTP 비동기 실행 | `tests/source-update.test.mjs` 9개; 합성 code-agent 패키지 사용, 외부 원격 서버·실제 관리 프로젝트는 변경하지 않음 |
+| master 질문 브라우저 | 추천의 명시적 제출, 폴링/닫기/재열기 초안 보존, 보류, 전체 답 수집 후 한 번 재개, 오래된 화면 거부, 승인 미선택·미지원 비활성, XSS·모바일·연결 끊김. 기존 준비 실패 요청의 추천 재점검·같은 TASK 한 번 재개 | `scripts/smoke-dashboard-interactions.mjs`, `.master-agent/interactions-browser-eOHOUI/`. 발행자·실행기 모의 |
+| code-agent 질문 창 표시 | 실제 관측 DB 사본의 질문 3건(줄바꿈 제목, 두 질문 묶음, 업무 질문): 같은 문장 한 번 표시, 질문 칸 제목이 테두리 안, 선택지 설명 한 번, 1440/390/320px 가로 넘침 없음 | 격리 대시보드(`observe:false`)에서 수정 전후 화면 비교, `.master-agent/inbox-layout-real/`. 제출하지 않음 |
+| 원격 업데이트 준비 | 실제 로컬 Git remote·pull·npm ci/build·실행 검사 후 동일 패키지 적용, 같은 커밋 완료 빌드 재사용·중단 사본 제외, 각 준비 단계 실패 시 미적용, 한도 초과는 하위 프로세스 종료 후 실패, upstream 변경·분기·미설정 거부, 원본 변경 보존·종료 처리·HTTP 비동기 실행 | `tests/source-update.test.mjs` 11개; 합성 code-agent 패키지 사용, 외부 원격 서버·실제 관리 프로젝트는 변경하지 않음 |
 | 일괄 업데이트 | 설치본·카탈로그 변경 거부, 삭제된 프로젝트 제외·이전 미리보기 무효화, 작업·승인·개발 잠금 제외, 부분 실패·충돌·보류 구분, 중복 적용 방지·종료 취소·중단 점검·HTTP 인증 | `tests/dashboard-updates.test.mjs` 11개 |
 | 실제 code-agent 업데이트 | 격리 프로젝트의 설치본 적용·버전 확인, 누락 템플릿 복구, 사용자 수정 보존, 접수 중 프로젝트 건너뜀 | 위 테스트의 실제 설치본 연동; 실제 관리 프로젝트는 변경하지 않음 |
+| 실제 원격 업데이트 준비 시간 | 실제 code-agent 소스(커밋 `10acfa5`)의 받기·설치·빌드·실행 검사 19.0초(설치 7.8초·빌드 1.8초·검사 1.2초), 같은 커밋 재준비 8.4초(재사용·검사만). 비교 기준: 전체 테스트를 포함한 준비의 저장된 일괄 업데이트 6건은 7분 50초~20분 26초 | 격리 빌드 보관 경로에서 준비만 실행; 프로젝트 적용·실제 빌드 보관 경로 변경 없음 |
 | 서버 재시작·종료 | 실제 CLI 프로세스 교체·DB/URL/설정 유지·종료 후 재시작·중복 서버 차단·무관한 서버 보호·화면 토큰 제어 거부 | `tests/dashboard-lifecycle.test.mjs` 2개 |
 | 설치 자동 탐색 | PATH의 실행 파일·npm shim·Windows npm 설치·명시적 override·미설치 구분, 현재 PC의 실제 설치 진입점 확인 | `tests/discovery.test.mjs` |
 | 그룹·단일 요청 | 서비스 범위 고정·중복 접수 방지, TASK 번호 입력 검증·기록·AI 계획·프로젝트별 개발 지시 전달·이어 실행 보존, HTTP 인증 | `tests/requests.test.mjs` |
@@ -34,7 +36,7 @@
 | 관제 서버 | 전체 등록 프로젝트·독립 작업 관측, 조회 실패·오래된 관측 구분, 중복 조회 제한, 삭제 시 기존 대기열·이후 조회에서 제외, HTTP 조회 경계 | `tests/dashboard.test.mjs` 7개 |
 | 대시보드 기본 기능 | 삭제·그룹·후보·TASK·원격 업데이트·설치 감지·모바일·연결 끊김 회귀 통과 | `.master-agent/dashboard-browser-NM3mYE/`; 화면의 개발 접수·업데이트 실행은 모의 처리 |
 | 진행 상태·병렬 제어 | 5개 회귀 통과, 실제 CLI 조회에서도 확인 | `tests/parallel-progress.test.mjs` |
-| 구문·문서 | JavaScript 108개·Markdown 19개 검사 통과 | `npm.cmd run check` |
+| 구문·문서 | JavaScript 111개·Markdown 19개 검사 통과 | `npm.cmd run check` |
 | 실제 code-agent 계약 등록 | 등록 성공, 원문과 다른 claim·변경된 문서 거부 | `tests/handoff-contracts.test.mjs`의 실제 빌드 연동 |
 | 실제 code-agent 통신 | 접수·중복·이벤트·재부착·협력 정지·제어권 인계, 대시보드의 실제 이벤트 수집·반복 조회 중복 방지·실행 호스트 커서 보존 통과 | `tests/code-agent-control.test.mjs`, 실제 빌드와 가짜 개발 호스트. 연동 켜기 전 code-agent의 Claude 설치(`init`)를 준비 |
 | 앞선 답의 실제 AI 판단 | 5건 통과: routine 3·ambiguous 1·critical 1 | [판단 증거](evidence/2026-10-16-answer-context.json) |
@@ -42,7 +44,7 @@
 
 code-agent 연동 시험은 외부 빌드가 없으면 건너뛴다. 위 회귀 결과에는 건너뜀이 없다. 현재 구현과 남은 작업은 [구현 현황](implementation.md)을 따른다.
 
-전체 회귀에 사용한 code-agent는 `5adbb97`(요청별 실행 방식) 소스의 빌드다. `dist`(1,832개 파일)의 내용 해시는 `e14301111b1dc6fabaf8465c90ad5c4683a5fef9cf68f796e9376dc917f4bf22`다.
+전체 회귀에 사용한 code-agent는 옆 저장소 `../code-agent`의 빌드다. HEAD는 `10acfa5`(화면 PC 신뢰)이며, 같은 시간에 진행 중인 code-agent 작업의 미커밋 변경이 빌드에 포함됐을 수 있다. 그 작업이 `dist`를 계속 다시 만들어 내용 해시는 고정하지 않았다. 원격 업데이트 준비 시간은 같은 HEAD의 커밋만으로 격리 빌드해 측정했다.
 
 공통 요청함의 실제 CLI·브라우저 시험은 stateSchema 7·interaction schema 1 빌드에서 수행했다. 기능 지원은 `scripts/check-interaction-support.mjs`로 실제 hello·명령·빌드 출처를 확인한다.
 

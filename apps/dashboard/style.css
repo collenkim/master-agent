@@ -16,6 +16,20 @@ dialog{width:min(650px,94vw);max-height:90vh;overflow:auto;background:#171f2c;co
 #interaction-dialog [hidden] { display: none; }
 #interaction-stale:empty, #interaction-error:empty { display: none; }
 #interaction-dialog .dialog-actions, #interaction-approval .dialog-actions { flex-wrap: wrap; }
+/* Question dialog: the form grid owns spacing; host line breaks stay; legends sit inside their box. */
+#interaction-form p, #interaction-form pre { margin: 0; }
+#interaction-title { white-space: pre-line; font-size: 17px; line-height: 1.5; }
+#interaction-history, #interaction-recommendation, #interaction-evidence { display: grid; gap: 8px; }
+#interaction-remote-questions { display: grid; gap: 16px; }
+#interaction-remote-questions:empty { display: none; }
+#interaction-remote-questions fieldset { display: grid; gap: 10px; min-width: 0; margin: 0; }
+#interaction-remote-questions legend { float: left; width: 100%; padding: 0; white-space: pre-line; font-size: 15px; font-weight: 600; line-height: 1.5; }
+#interaction-dialog .interaction-option, #interaction-approval .interaction-option { font-size: 14px; color: #e1e7ef; line-height: 1.5; }
+#interaction-remote-questions .interaction-option { padding: 2px 0; }
+.option-text { display: grid; gap: 2px; min-width: 0; }
+.option-text small { font-size: 12px; }
+.option-input { margin-left: calc(13px + .7rem); }
+@media (max-width: 480px) { #interaction-dialog, #interaction-approval { padding: 18px; } }
 #history-filter{align-items:flex-end;gap:12px}#history-filter label{display:grid;gap:6px;min-width:0;max-width:100%}#history-filter input,#history-filter select{margin:0;max-width:100%}.history-entry ul{padding-left:20px}.history-entry summary{overflow-wrap:anywhere}.history-entry p,.history-entry small{overflow-wrap:anywhere}
 /* Control connection: state badge, next action and the explicit pairing confirmation. */
 .connection { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 0; border-top: 1px solid #2c384a; }

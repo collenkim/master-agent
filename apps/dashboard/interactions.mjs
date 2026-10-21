@@ -1,6 +1,7 @@
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const $ = id => document.getElementById(id);
 const date = value => value ? new Date(value).toLocaleString('ko-KR') : '기록 없음';
+const same = (a, b) => String(a ?? '').replace(/\s+/g, ' ').trim() === String(b ?? '').replace(/\s+/g, ' ').trim();
 const labels = { open: '응답 대기', deferred: '보류', answered: '답변 적용', expired: '만료', closed: '대기 종료·결과 미확인',
   received: '접수', applied: '적용', 'not-requested': '재개 요청 없음', launching: '재개 접수·실행 확인 필요',
   requested: '재개 실행기 요청됨', resumed: '기존 처리기 재개 확인', 'waiting-answers': '다른 답변 대기', manual: 'CLI 재개 필요', failed: '실패',
@@ -98,10 +99,15 @@ function remoteQuestions(item, draft) {
   $('interaction-remote-questions').innerHTML = item.questions.map((q, index) => {
     const answer = draft?.answers?.find(a => a.questionId === q.questionId);
     const selected = answer?.optionIds ?? (q.mode === 'multiple' || q.defaultOptionIds.length ? q.defaultOptionIds : q.recommendedOptionIds);
-    return `<fieldset data-question-index="${index}"><legend>${esc(q.title)}${q.required ? ' (필수)' : ''}</legend><p>${esc(q.background)}</p>
-      <p>추천 이유: ${esc(q.recommendationReason)}</p>${q.evidence.map(e => `<p class="muted">${esc(e.path)} ${esc(e.summary)}</p>`).join('')}
-      ${[...q.options].sort((a, b) => Number(q.recommendedOptionIds.includes(b.optionId)) - Number(q.recommendedOptionIds.includes(a.optionId))).map(o => `<label class="interaction-option"><input data-option type="${q.mode === 'multiple' ? 'checkbox' : 'radio'}" name="remote-question-${index}" value="${esc(o.optionId)}" ${selected.includes(o.optionId) ? 'checked' : ''}>${esc(o.label)}${q.recommendedOptionIds.includes(o.optionId) ? ' (추천)' : ''}</label>
-        <p class="muted">${esc(o.description)} ${esc(o.consequence)}</p>${o.input ? `<label>${esc(o.input.description)}<input data-option-input="${esc(o.optionId)}" value="${esc(answer?.optionInputs?.[o.optionId] ?? '')}" ${o.input.required ? 'required' : ''} minlength="${o.input.minLength}" maxlength="${o.input.maxLength}"></label>` : ''}`).join('')}
+    const note = o => [o.description, o.consequence].filter(Boolean).join(' ');
+    // Host questions repeat one note for every choice; show it once below the choices instead.
+    const shared = q.options.length > 1 && q.options.every(o => note(o) === note(q.options[0])) ? note(q.options[0]) : null;
+    // The dialog heading already shows a question that repeats it, so the fieldset keeps only its id.
+    return `<fieldset data-question-index="${index}"><legend>${esc(same(q.title, item.title) ? q.questionId : q.title)}${q.required ? ' (필수)' : ''}</legend><p>${esc(q.background)}</p>
+      <p class="muted">추천 이유: ${esc(q.recommendationReason)}</p>${q.evidence.map(e => `<p class="muted">${esc(e.path)} ${esc(e.summary)}</p>`).join('')}
+      ${[...q.options].sort((a, b) => Number(q.recommendedOptionIds.includes(b.optionId)) - Number(q.recommendedOptionIds.includes(a.optionId))).map(o => `<label class="interaction-option"><input data-option type="${q.mode === 'multiple' ? 'checkbox' : 'radio'}" name="remote-question-${index}" value="${esc(o.optionId)}" ${selected.includes(o.optionId) ? 'checked' : ''}><span class="option-text"><span>${esc(o.label)}${q.recommendedOptionIds.includes(o.optionId) ? ' (추천)' : ''}</span>${shared === null && note(o) ? `<small>${esc(note(o))}</small>` : ''}</span></label>
+        ${o.input ? `<label class="option-input">${esc(o.input.description)}<input data-option-input="${esc(o.optionId)}" value="${esc(answer?.optionInputs?.[o.optionId] ?? '')}" ${o.input.required ? 'required' : ''} minlength="${o.input.minLength}" maxlength="${o.input.maxLength}"></label>` : ''}`).join('')}
+      ${shared ? `<p class="muted">${esc(shared)}</p>` : ''}
       ${q.input ? `<label>${esc(q.input.description)}<textarea data-question-text rows="3" minlength="${q.input.minLength}" maxlength="${q.input.maxLength}" ${q.mode === 'text' && q.required ? 'required' : ''}>${esc(answer?.text ?? '')}</textarea></label>` : ''}
       ${q.mode === 'multiple' ? `<p class="muted">${q.minSelections}~${q.maxSelections}개 선택</p>` : ''}</fieldset>`;
   }).join(''); enableOptionInputs();
@@ -115,7 +121,7 @@ function history(item) {
   return `<h3>응답 이력</h3>${item.history.map(h => `<p>${esc(date(h.createdAt))} · ${esc(labels[h.state] ?? h.state)}${h.answer ? ` · ${esc(h.answer)}` : ''}
     <small>${esc(labels[h.resume?.state] ?? '')} ${esc(h.resume?.reason ?? h.resume?.detail ?? h.resume?.error ?? h.error ?? '')}</small>
     ${['unknown', 'sending'].includes(h.state) || h.resume?.state === 'launching' ? `<button type="button" data-retry-interaction="${esc(h.id)}">같은 접수 번호로 결과 확인·재시도</button>` : ''}</p>`).join('') || '<p class="muted">아직 제출한 답변이 없습니다.</p>'}
-    ${item.remote ? `<p>원래 요청 상태: ${esc(labels[item.remote.status] ?? item.remote.status)} · ${esc(labels[item.remote.continuation?.state] ?? '')}</p><p class="error">${esc(item.remote.application?.error ?? item.remote.continuation?.detail ?? '')}</p>` : ''}`;
+    ${item.remote ? `<p>원래 요청 상태: ${esc([labels[item.remote.status] ?? item.remote.status, labels[item.remote.continuation?.state]].filter(Boolean).join(' · '))}</p>${(error => error ? `<p class="error">${esc(error)}</p>` : '')(item.remote.application?.error ?? item.remote.continuation?.detail)}` : ''}`;
 }
 function context(item) {
   return `${item.source} · ${item.projectIds.join(', ')} · ${item.taskNumber ?? item.workId ?? item.missionId ?? '작업 ID 없음'} · ${item.stage}${item.context.branch ? ` · ${item.context.branch}` : ''}${item.context.sessionId ? ` · 세션 ${item.context.sessionId}` : ''}`;
@@ -152,12 +158,14 @@ function open(id) {
   }
   $('interaction-title').textContent = opened.title; $('interaction-context').textContent = context(opened);
   $('interaction-body').textContent = opened.body;
+  $('interaction-body').hidden = [opened.title, ...(opened.questions ?? []).map(q => q.title)].some(title => same(opened.body, title));
   $('interaction-recommendation').innerHTML = `<h3>추천안과 이유</h3><p>${esc(opened.recommendation || '제공된 추천안 없음')}</p><p>${esc(opened.reason)}</p>`;
   $('interaction-evidence').innerHTML = `<h3>근거</h3>${opened.references.map(r => `<p class="path">${esc(r)}</p>`).join('') || '<p class="muted">제공된 근거 없음</p>'}`;
   const draft = stored(id), compatible = draft?.contentHash === opened.contentHash;
   const structured = opened.handler === 'code-agent';
   $('interaction-remote-questions').innerHTML = '';
   for (const id of ['interaction-recommendation', 'interaction-evidence', 'interaction-options']) $(id).hidden = structured;
+  if (!opened.options.length) $('interaction-options').hidden = true;
   if (structured) remoteQuestions(opened, compatible ? draft : null);
   const selected = compatible ? draft.optionIds : opened.recommendedOptionIds;
   $('interaction-options').innerHTML = '<legend>대안 선택</legend>' + opened.options.map(o => `<label class="interaction-option"><input type="${opened.multiple ? 'checkbox' : 'radio'}" name="interaction-option" value="${esc(o.id)}" ${selected.includes(o.id) ? 'checked' : ''}>${esc(o.label)}${opened.recommendedOptionIds.includes(o.id) ? ' (추천)' : ''}</label>`).join('');
