@@ -88,6 +88,15 @@
     <p id="pair-error" class="error" role="alert"></p>
     <div class="dialog-actions"><button type="button" data-close="pair-dialog">취소</button><button id="pair-submit" type="submit" disabled>제어 연결</button></div>
   </form></dialog>
+  <dialog id="trust-dialog" aria-labelledby="trust-title"><form id="trust-form">
+    <h2 id="trust-title">PC 신뢰</h2>
+    <pre id="trust-lines" class="interaction-body"></pre>
+    <p id="trust-guidance" class="error"></p>
+    <p class="muted">PC당 한 번 합니다. code-agent가 이 PC에 신뢰 키를 만들고, 이후 프로젝트마다 제어 연결 확인으로 연결합니다. 개인 키는 화면·DB에 남지 않습니다.</p>
+    <label><span>위 내용을 확인했으면 확인 단어 <code>trust</code>를 입력하세요.</span><input id="trust-word" autocomplete="off" spellcheck="false" autocapitalize="off"></label>
+    <p id="trust-error" class="error" role="alert"></p>
+    <div class="dialog-actions"><button type="button" data-close="trust-dialog">취소</button><button id="trust-submit" type="submit" disabled>PC 신뢰</button></div>
+  </form></dialog>
   <dialog id="delete-project-dialog" aria-labelledby="delete-project-title"><form id="delete-project-form">
     <h2 id="delete-project-title">프로젝트 삭제</h2>
     <p id="delete-project-name"></p>

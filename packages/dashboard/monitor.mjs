@@ -57,7 +57,7 @@ export function dashboardSnapshot(store, { live = false, refreshing = false, int
         ...list(state?.questions?.unverified).map(q => ({ id: text(q), status: 'unverified' }))],
       findings: state?.findings ? { open: state.findings.open, blocking: state.findings.blocking, humanDecision: state.findings.humanDecision } : null,
       control: binding ? { controller: text(binding.controller), owner: binding.owner, boundAt: binding.boundAt, expiresAt: binding.pairing?.humanChannel?.expiresAt ?? null } : null,
-      connection: { state: connection.state, code: connection.code ?? null, canPair: connection.canPair, outcome: connection.outcome ?? null, renewal: connection.renewal ?? false,
+      connection: { state: connection.state, code: connection.code ?? null, canPair: connection.canPair, canTrust: connection.canTrust ?? false, outcome: connection.outcome ?? null, renewal: connection.renewal ?? false,
         expired: connection.expired ?? false, owner: text(connection.owner), message: text(connection.message), guidance: text(connection.guidance), command: text(connection.command),
         checkedAt: probe ? source.checkedAt ?? null : null, error: text(source?.error), managedHost: probe?.managedHost ?? null },
       pairing: pairing ? pairingReceipt(pairing) : null,

@@ -14,6 +14,7 @@ import { createUpdates } from './updates.mjs';
 import { createInteractions } from './interactions.mjs';
 import { createHistory, historyPage } from './history.mjs';
 import { pairControl, pairingPreview, pairingReceipt, retryPairing } from '../runner/control-pairing.mjs';
+import { trustDashboard, trustPreview } from '../runner/control-trust.mjs';
 
 export function validateDashboardOptions({ port = 4310, cliPath, intervalMs = 5000, observe = true } = {}) {
   requireThat(Number.isInteger(port) && port >= 0 && port <= 65535, 'usage', '--port는 0~65535 정수입니다.');
@@ -84,6 +85,13 @@ export async function startDashboard({ dbPath, port = 4310, cliPath, intervalMs 
         if (path === '/api/projects') return send(201, JSON.stringify(catalog.registerManual(input.project)));
         if (path === '/api/interactions/respond') return send(200, JSON.stringify(receipt(await interactions.respond(input))));
         if (path === '/api/interactions/retry') return send(200, JSON.stringify(receipt(await interactions.retry(input.commandId))));
+        if (path === '/api/trust/preview') return send(200, JSON.stringify(await trustPreview(pairingCli())));
+        if (path === '/api/trust') {
+          const result = await trustDashboard({ ...pairingCli(), shownHash: input.shownHash, word: input.word });
+          // 카드의 연결 상태는 hello 의 신뢰 목록을 다시 읽어야 바뀐다 — 다음 순회를 기다리지 않는다
+          void monitor.refresh();
+          return send(200, JSON.stringify(result));
+        }
         if (path === '/api/projects/pair/preview') return send(200, JSON.stringify(await pairingPreview(store, input.projectId, pairingCli())));
         if (path === '/api/projects/pair' || path === '/api/projects/pair/retry') {
           let record;

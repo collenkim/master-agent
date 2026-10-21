@@ -29,7 +29,8 @@ function connectionView(p) {
   return `<div class="connection"><span class="badge ${tone}">${escape(connectionLabels[c.state] ?? c.state)}</span>
     ${c.state === 'connected' ? `<span class="muted">${escape(p.control?.controller)}${p.control?.expiresAt ? ` · 사람 응답 채널 만료 ${escape(date(p.control.expiresAt))}` : ''}</span>` : ''}
     ${c.state !== 'connected' || c.renewal ? `<small>${escape(c.message)}</small>` : ''}
-    ${c.command ? `<small>터미널(PC당 1회): <code>${escape(c.command)}</code></small>` : ''}
+    ${c.canTrust ? '<button type="button" class="trust-pc">PC 신뢰</button>' : ''}
+    ${c.command ? `<small>${c.canTrust ? '또는 ' : ''}터미널(PC당 1회): <code>${escape(c.command)}</code></small>` : ''}
     ${last?.state === 'failed' ? `<small class="error">마지막 연결 실패: ${escape(last.error?.message ?? last.error?.code)}</small>` : ''}
     ${unsettled ? `<small class="error">연결 결과 ${last.state === 'bind-failed' ? 'DB 등록 실패' : '미확인'}${last.error ? `: ${escape(last.error.message)}` : ''}</small><button type="button" class="retry-pairing" data-id="${escape(last.id)}">같은 접수 번호로 연결 결과 확인</button>`
       : c.canPair ? `<button type="button" class="pair-project" data-id="${escape(p.id)}">${['connected', 'stale'].includes(c.state) ? '다시 연결' : '제어 연결'}</button>` : ''}</div>`;
@@ -191,6 +192,47 @@ $('pair-form').addEventListener('submit', async event => {
     if (pairing === current && !$('pair-dialog').open) { current.resolve(current.done); pairing = null; }
   }
 });
+// PC trust happens only here: code-agent's own confirmation text, the typed word trust and no default.
+let trusting = null;
+function openTrust() {
+  trusting = { preview: null, busy: false };
+  $('trust-word').value = ''; $('trust-error').textContent = ''; $('trust-guidance').textContent = '';
+  $('trust-lines').textContent = '신뢰 내용을 확인하고 있습니다…'; updateTrustSubmit();
+  if (!$('trust-dialog').open) $('trust-dialog').showModal();
+  void loadTrust();
+}
+async function loadTrust() {
+  const current = trusting;
+  try {
+    const preview = await post('/api/trust/preview', {});
+    if (trusting !== current) return;
+    current.preview = preview; $('trust-lines').textContent = preview.lines.join('\n');
+    $('trust-guidance').textContent = preview.canTrust ? '' : preview.reason ?? '이 PC에서는 새로 신뢰할 수 없습니다.';
+  } catch (error) { if (trusting === current) $('trust-error').textContent = error.message; }
+  updateTrustSubmit();
+}
+function updateTrustSubmit() { $('trust-submit').disabled = !trusting?.preview?.canTrust || $('trust-word').value !== 'trust' || trusting.busy; }
+$('trust-word').addEventListener('input', updateTrustSubmit);
+$('trust-dialog').addEventListener('close', () => { if (trusting && !trusting.busy) trusting = null; });
+$('trust-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  const current = trusting; if (!current?.preview || current.busy) return;
+  current.busy = true; updateTrustSubmit(); $('trust-error').textContent = '등록 중…';
+  try {
+    const result = await post('/api/trust', { shownHash: current.preview.shownHash, word: $('trust-word').value });
+    current.busy = false; $('trust-dialog').close();
+    $('action-status').textContent = `이 PC가 대시보드 제어자를 신뢰합니다(지문 ${result.fingerprint}). 연결 상태를 다시 확인한 뒤 프로젝트 카드의 제어 연결로 연결하세요.`;
+    await refresh(); return;
+  } catch (error) {
+    if (error.code === 'stale-state' && trusting === current) {
+      current.preview = null; $('trust-word').value = '';
+      $('trust-error').textContent = `${error.message} 최신 내용을 다시 불러왔습니다.`; void loadTrust();
+    } else $('trust-error').textContent = error.message;
+  } finally {
+    current.busy = false; updateTrustSubmit();
+    if (trusting === current && !$('trust-dialog').open) trusting = null;
+  }
+});
 function renderManagement() {
   $('groups').innerHTML = latest.groups.map(g => `<article class="project group-card"><div class="card-head"><h3>${escape(g.name)}</h3><span class="badge">${g.projectIds.length}개 프로젝트</span></div>
     <p>${escape(g.description || '서비스 범위 설명 없음')}</p><p class="muted">${escape(g.projectIds.map(id => latest.projects.find(p => p.id === id)?.name ?? id).join(' · ') || '소속 프로젝트 없음')}</p>
@@ -334,6 +376,7 @@ document.addEventListener('click', async event => {
   }
   if (button.classList.contains('remove-draft')) { groupDrafts = groupDrafts.filter(p => p.id !== button.dataset.id); renderDrafts(); }
   if (button.classList.contains('pair-project')) void openPairing(button.dataset.id);
+  if (button.classList.contains('trust-pc')) openTrust();
   if (button.classList.contains('retry-pairing')) {
     button.disabled = true;
     try { const receipt = await post('/api/projects/pair/retry', { commandId: button.dataset.id }); $('action-status').textContent = receipt.state === 'paired' ? '제어 연결을 등록했습니다.' : `연결 결과: ${receipt.state} ${receipt.error?.message ?? ''}`; await refresh(); }

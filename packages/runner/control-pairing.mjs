@@ -71,7 +71,7 @@ export async function pairControl(store, projectId, { cliPath, controller = DASH
   requireIdle(store, project);
   requireThat(!store.list('control-pairing').some(p => p.projectId === projectId && UNSETTLED.includes(p.state)), 'request-busy', '결과를 확인하지 못한 연결 요청이 있습니다. 같은 접수 번호로 결과를 먼저 확인하세요.');
   const keyPath = resolveKey(controller);
-  requireThat(keyPath, 'control-trust-missing', `이 대시보드 서버 계정에서 PC 신뢰 키를 찾지 못했습니다. 터미널에서 code-agent master trust --controller ${controller}를 실행하세요.`);
+  requireThat(keyPath, 'control-trust-missing', `이 대시보드 서버 계정에서 PC 신뢰 키를 찾지 못했습니다. 대시보드의 PC 신뢰(터미널에서는 code-agent master trust --controller ${controller})로 먼저 신뢰하세요.`);
   const preview = await pairingPreview(store, projectId, { cliPath, controller, resolveKey, timeoutMs });
   requireThat(preview.shownHash === approval.shownHash, 'stale-state', '확인한 뒤 연결 내용이 바뀌었습니다. 최신 내용을 다시 확인하세요.');
   requireThat(preview.canPair, preview.code ?? 'control-pairing-unavailable', `${preview.message} ${preview.guidance}`.trim());

@@ -97,7 +97,7 @@ export function connectionState({ projectId, probe, binding, controller = DASHBO
       const other = probe.handover || (probe.owner && probe.owner !== binding.controller);
       return { ...base, state: 'stale', code: other ? 'control-owned-by-other' : 'control-not-owner', canPair: !other && trusted && binding.controller === controller, outcome: probe.enabled ? 'rotated' : 'enabled',
         message: other ? `code-agent 제어권이 ${probe.owner ?? '다른 제어자'}에게 있습니다.` : 'code-agent의 연동 상태·세대가 저장된 연결과 다릅니다.',
-        guidance: other ? handover : trusted ? '다시 연결로 새 토큰을 발급해 이 DB의 연결을 갱신하세요.' : `PC 신뢰(${trust}) 후 다시 연결하거나 project control로 다시 등록하세요.` };
+        guidance: other ? handover : trusted ? '다시 연결로 새 토큰을 발급해 이 DB의 연결을 갱신하세요.' : `PC 신뢰(대시보드의 PC 신뢰 또는 터미널의 ${trust}) 후 다시 연결하거나 project control로 다시 등록하세요.` };
     }
     const renewal = left !== null && left < RENEW_MS;
     return { ...base, state: 'connected', code: null, canPair: renewal && trusted && binding.controller === controller, outcome: 'rotated', renewal, expired: left !== null && left <= 0, verified: Boolean(probe),
@@ -112,12 +112,14 @@ export function connectionState({ projectId, probe, binding, controller = DASHBO
     return { state: 'enabled-unbound', code: 'control-enabled-unbound', canPair: trusted, outcome: 'rotated', owner: probe.owner,
       message: 'code-agent 연동은 켜져 있지만 이 대시보드 DB에 연결이 등록되지 않았습니다.',
       guidance: trusted ? '제어 연결을 누르면 토큰을 새로 발급해 이 DB에 등록합니다. 다른 DB가 같은 제어자로 쓰고 있었다면 그 연결은 더 이상 쓰지 못합니다.'
-        : `기존 토큰 파일로 master-agent project control ${projectId} --controller ${probe.owner ?? '<제어자 ID>'} --token-file <토큰 파일 절대경로> --db <현재 대시보드 DB>를 실행하세요.${probe.pairing.supported ? ` 또는 터미널에서 ${trust}로 PC를 신뢰한 뒤 대시보드에서 연결하세요.` : ''}` };
+        : `기존 토큰 파일로 master-agent project control ${projectId} --controller ${probe.owner ?? '<제어자 ID>'} --token-file <토큰 파일 절대경로> --db <현재 대시보드 DB>를 실행하세요.${probe.pairing.supported ? ` 또는 대시보드의 PC 신뢰(터미널에서는 ${trust})로 PC를 신뢰한 뒤 대시보드에서 연결하세요.` : ''}` };
   }
   if (!probe.pairing.supported) return { state: 'legacy', code: 'control-not-bound', canPair: false, message: 'master 제어 연결이 없습니다. 이 code-agent는 대시보드 연결(페어링)을 지원하지 않습니다.', guidance: legacyGuidance(projectId) };
-  if (!trusted) return { state: 'trust-missing', code: 'control-trust-missing', canPair: false, command: trust,
+  // canTrust: 아직 신뢰 기록이 없을 때만 화면에서 신뢰한다. 기록은 있는데 키가 없으면 code-agent 가 덮어쓰지 않으므로 해제 뒤 다시 신뢰한다
+  if (!trusted) return { state: 'trust-missing', code: 'control-trust-missing', canPair: false, canTrust: !listed, command: trust,
     message: listed ? 'code-agent는 대시보드를 신뢰하지만 이 대시보드 서버 계정에서 PC 신뢰 키를 찾지 못했습니다.' : '이 PC가 대시보드 제어자를 아직 신뢰하지 않습니다.',
-    guidance: `사람이 터미널에서 한 번 ${trust}를 실행하세요(확인 단어 trust). PC당 한 번이며 이후 프로젝트는 대시보드의 제어 연결로 연결합니다.${listed ? ' 대시보드 서버와 같은 계정·CODE_AGENT_HOME인지 확인하세요.' : ''}` };
+    guidance: listed ? `대시보드 서버와 같은 계정·CODE_AGENT_HOME인지 확인하세요. 키를 다시 만들려면 터미널에서 code-agent master untrust --controller ${controller}(확인 단어 untrust) 뒤 다시 신뢰합니다.`
+      : `대시보드의 PC 신뢰에서 code-agent가 보여 주는 내용을 확인하고 확인 단어 trust를 입력하세요(터미널에서는 ${trust}). PC당 한 번이며 이후 프로젝트는 대시보드의 제어 연결로 연결합니다.` };
   return { state: 'pairing-available', code: 'control-pairing-available', canPair: true, outcome: 'enabled',
     message: 'master 제어 연결이 없습니다. 이 PC는 대시보드 제어자를 신뢰하므로 화면에서 바로 연결할 수 있습니다.',
     guidance: '프로젝트 카드의 제어 연결 또는 공통 요청함의 "제어 연결 후 기존 요청 이어 실행"을 선택하고 확인 화면에서 연결하세요. 연결은 승인 권한이 아닙니다.' };
@@ -130,7 +132,7 @@ export function pairMessage({ challenge, controller, commandId, approval }) {
 
 /** 사람이 화면·터미널에서 확인한 제출에서만 부른다. 개인 키는 이 순간에만 읽고 어디에도 남기지 않는다 */
 export function signPairing({ challenge, controller, commandId, approval, keyPath }) {
-  requireThat(keyPath, 'control-trust-missing', `PC 신뢰 키가 필요합니다. 터미널에서 code-agent master trust --controller ${controller}를 실행하세요.`);
+  requireThat(keyPath, 'control-trust-missing', `PC 신뢰 키가 필요합니다. 대시보드의 PC 신뢰(터미널에서는 code-agent master trust --controller ${controller})로 먼저 신뢰하세요.`);
   const privateKey = createPrivateKey(readFileSync(keyPath));
   requireThat(privateKey.asymmetricKeyType === 'ed25519', 'control-trust-missing', 'PC 신뢰 키 형식이 다릅니다(Ed25519).');
   const signature = sign(null, Buffer.from(pairMessage({ challenge, controller, commandId, approval })), privateKey).toString('base64');

@@ -11,6 +11,8 @@ import { ControlHost, bindControl, requestControlHandover, acceptControl } from 
 import { ControlClient } from '../packages/code-agent-adapter/control.mjs';
 import { createHistory, historyPage } from '../packages/dashboard/history.mjs';
 import { pairControl, pairingPreview } from '../packages/runner/control-pairing.mjs';
+import { trustDashboard, trustPreview } from '../packages/runner/control-trust.mjs';
+import { findTrustKey } from '../packages/code-agent-adapter/pairing.mjs';
 import { findHumanKey } from '../packages/code-agent-adapter/interactions.mjs';
 
 /**
@@ -164,4 +166,45 @@ console.log(withInteraction({ confirm: () => ({ channel: 'tty', verified: true, 
   assert.ok(!stored.includes(readFileSync(binding.tokenFile, 'utf8').trim())); assert.ok(!stored.includes('PRIVATE KEY'));
   const after = await pairingPreview(store, 'p', { cliPath: CLI });
   assert.deepEqual([after.state, after.canPair], ['connected', false]);
+});
+
+const screenTrustAvailable = pairingAvailable && readFileSync(join(DIST, 'agent/master/trust.js'), 'utf8').includes('masterTrustConfirmed');
+test('실제 code-agent 화면 PC 신뢰: code-agent 문구를 확인한 해시로만 신뢰하고 바로 제어 연결한다 — 호스트 표지는 넘기지 않는다', { skip: !screenTrustAvailable && 'code-agent 화면 신뢰 빌드 없음', timeout: 120000 }, async t => {
+  const root = temporary(t), home = join(root, 'home'), codex = join(root, 'codex'), path = join(root, 'project');
+  for (const dir of [home, codex, path]) mkdirSync(dir);
+  const saved = { CODE_AGENT_HOME: process.env.CODE_AGENT_HOME, CODEX_HOME: process.env.CODEX_HOME, CLAUDECODE: process.env.CLAUDECODE };
+  // 키 저장소는 시험 폴더로 — 사용자의 실제 신뢰를 바꾸지 않는다. 호스트 세션에서 띄운 대시보드 서버처럼 표지도 둔다
+  Object.assign(process.env, { CODE_AGENT_HOME: home, CODEX_HOME: codex, CLAUDECODE: '1' });
+  cleanup(t, () => { for (const [key, value] of Object.entries(saved)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; } });
+  const git = args => execFileSync('git', ['-C', path, ...args], { stdio: 'pipe' });
+  git(['init', '-q']); git(['config', 'user.name', 't']); git(['config', 'user.email', 't@t']);
+  writeFileSync(join(path, 'README.md'), 'x\n'); git(['add', '-A']); git(['commit', '-qm', 'init']);
+  const script = join(root, 'init.cjs');
+  writeFileSync(script, `const [dist, root] = process.argv.slice(2);\nrequire(dist + '/agent/init.js').init(root, { host: 'claude' });\n`);
+  execFileSync(process.execPath, [script, DIST, path], { stdio: 'pipe' });
+  const store = new Store(join(root, 'm.db'));
+  cleanup(t, () => store.close());
+  new Engine(store).catalog.register({ id: 'p', name: 'p', path, domains: ['fixture'], capabilities: ['code-agent:claude'], constraints: [], currentPlans: [], references: ['fixture'] });
+
+  assert.deepEqual((({ state, canPair }) => [state, canPair])(await pairingPreview(store, 'p', { cliPath: CLI })), ['trust-missing', false]);
+  const preview = await trustPreview({ cliPath: CLI });
+  assert.equal(preview.canTrust, true);
+  assert.ok(preview.lines.some(line => line.includes(join(home, 'master-trust'))), 'code-agent 가 정한 문구(개인 키 자리)를 그대로 보인다');
+  assert.ok(preview.lines.some(line => /대시보드를 부를 수 있는 프로세스도/.test(line)), '화면 신뢰의 한계를 보인다');
+  assert.equal(existsSync(join(home, 'master-trust.json')), false, '미리보기는 쓰지 않는다');
+  await assert.rejects(trustDashboard({ cliPath: CLI, shownHash: `sha256:${'0'.repeat(64)}`, word: 'trust' }), { code: 'stale-state' });
+  assert.equal(existsSync(join(home, 'master-trust.json')), false, '보지 않은 내용은 신뢰하지 않는다');
+
+  const trusted = await trustDashboard({ cliPath: CLI, shownHash: preview.shownHash, word: 'trust' });
+  const entry = JSON.parse(readFileSync(join(home, 'master-trust.json'), 'utf8')).controllers.dashboard;
+  assert.deepEqual([entry.createdBy.channel, entry.createdBy.shownHash, entry.fingerprint], ['dashboard', preview.shownHash, trusted.fingerprint]);
+  assert.ok(findTrustKey('dashboard')?.startsWith(home), '대시보드 서버가 같은 키 저장소에서 키를 찾는다');
+  await assert.rejects(trustDashboard({ cliPath: CLI, shownHash: (await trustPreview({ cliPath: CLI })).shownHash, word: 'trust' }), { code: 'control-trust-exists' });
+
+  const pairing = await pairingPreview(store, 'p', { cliPath: CLI });
+  assert.deepEqual([pairing.state, pairing.canPair], ['pairing-available', true]);
+  const record = await pairControl(store, 'p', { cliPath: CLI, commandId: 'pair-screen-trust', projectRevision: pairing.projectRevision,
+    approval: { actor: 'human:test', approvedAt: new Date().toISOString(), shownHash: pairing.shownHash } });
+  assert.equal(record.state, 'paired', JSON.stringify(record.error));
+  assert.ok(!JSON.stringify(store.db.prepare('SELECT body FROM records').all()).includes('PRIVATE KEY'), '개인 키는 DB에 남기지 않는다');
 });

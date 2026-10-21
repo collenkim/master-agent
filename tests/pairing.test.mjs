@@ -7,10 +7,23 @@ import { fileURLToPath } from 'node:url';
 import { setup, temporary } from './helpers.mjs';
 import { connectionState, controlProbe, findTrustKey, trustStoreDir } from '../packages/code-agent-adapter/pairing.mjs';
 import { pairControl, pairingPreview, retryPairing } from '../packages/runner/control-pairing.mjs';
+import { trustDashboard, trustPreview } from '../packages/runner/control-trust.mjs';
 import { dashboardSnapshot } from '../packages/dashboard/monitor.mjs';
 import { startDashboard } from '../packages/dashboard/server.mjs';
 
 const fakeCli = fileURLToPath(new URL('./pairing-fake-cli.mjs', import.meta.url));
+const trustCli = fileURLToPath(new URL('./trust-fake-cli.mjs', import.meta.url));
+
+/** 화면 PC 신뢰 시험 대역의 상태 — 호스트 세션에서 띄운 대시보드 서버처럼 표지를 두어 서버의 호출이 넘기지 않는지 본다 */
+function trustSetup(t, root, state = {}) {
+  const file = join(root, 'trust-state.json');
+  writeFileSync(file, JSON.stringify({ keyPath: join(root, 'trust-home', 'master-trust', 'dashboard.pem'), ...state }));
+  const saved = { FAKE_TRUST_STATE: process.env.FAKE_TRUST_STATE, CLAUDECODE: process.env.CLAUDECODE, CODEX_THREAD_ID: process.env.CODEX_THREAD_ID };
+  Object.assign(process.env, { FAKE_TRUST_STATE: file, CLAUDECODE: '1', CODEX_THREAD_ID: 'thread' });
+  t.after(() => { for (const [key, value] of Object.entries(saved)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; } });
+  const read = () => JSON.parse(readFileSync(file, 'utf8'));
+  return { read, write: patch => writeFileSync(file, JSON.stringify({ ...read(), ...patch })) };
+}
 
 /** 신뢰 키 한 쌍과 code-agent 페어링 시험 대역 상태를 준비한다 — 실제 사용자 홈의 키는 읽지 않는다 */
 function pairingSetup(t, state = {}) {
@@ -52,6 +65,72 @@ test('connection state names the cause and next action without pairing', () => {
   assert.equal(state({ probe: current, binding: { ...binding, owner: false } }).state, 'observer');
   const probed = controlProbe({ project: { enabled: true }, ownership: { controller: '../x', generation: 1 }, pairing: { supported: true, version: 2 }, token: 'SECRET' });
   assert.equal(probed.owner, null); assert.equal(probed.pairing.supported, false); assert.equal(JSON.stringify(probed).includes('SECRET'), false);
+});
+
+test('connection state offers screen trust only while code-agent has no trust record for the dashboard', () => {
+  const probe = trusted => ({ enabled: false, owner: null, generation: null, handover: false, pairing: { supported: true, version: 1, trustedControllers: trusted }, managedHost: null });
+  const fresh = connectionState({ projectId: 'p', probe: probe([]), keyAvailable: false });
+  assert.deepEqual([fresh.state, fresh.canTrust, fresh.canPair], ['trust-missing', true, false]);
+  assert.match(fresh.guidance, /대시보드의 PC 신뢰/);
+  const keyless = connectionState({ projectId: 'p', probe: probe(['dashboard']), keyAvailable: false });
+  assert.deepEqual([keyless.state, keyless.canTrust], ['trust-missing', false], '기록은 있는데 키가 없으면 code-agent 가 덮어쓰지 않는다');
+  assert.match(keyless.guidance, /untrust --controller dashboard/);
+  assert.equal(connectionState({ projectId: 'p', probe: probe(['dashboard']), keyAvailable: true }).canTrust, undefined);
+  assert.equal(connectionState({ projectId: 'p', probe: { ...probe([]), pairing: { supported: false } }, keyAvailable: false }).canTrust, undefined, '페어링 미지원은 화면 신뢰도 없다');
+});
+
+test('the project card carries whether the dashboard can offer screen trust', t => {
+  const f = pairingSetup(t);
+  const hello = trusted => controlProbe({ project: { enabled: false }, pairing: { supported: true, version: 1, trustedControllers: trusted } });
+  const card = trustKey => dashboardSnapshot(f.store, { trustKey }).projects.find(p => p.id === f.project.id).connection;
+  f.store.put('interaction-source', { id: f.project.id, control: hello([]), error: null, checkedAt: new Date().toISOString() });
+  assert.deepEqual((({ state, canTrust }) => [state, canTrust])(card(() => null)), ['trust-missing', true]);
+  f.store.put('interaction-source', { ...f.store.need('interaction-source', f.project.id), control: hello(['dashboard']) }, f.store.need('interaction-source', f.project.id).revision);
+  assert.deepEqual((({ state, canTrust }) => [state, canTrust])(card(f.options.resolveKey)), ['pairing-available', false]);
+});
+
+test('screen trust shows code-agent text, needs the typed word and the same hash, and never passes host markers', async t => {
+  const fake = trustSetup(t, temporary(t));
+  const preview = await trustPreview({ cliPath: trustCli });
+  assert.deepEqual([preview.canTrust, preview.trusted, preview.word], [true, false, 'trust']);
+  assert.match(preview.lines[0], /대시보드 제어자 dashboard 를 신뢰합니다/);
+  await assert.rejects(trustDashboard({ cliPath: trustCli, shownHash: preview.shownHash, word: 'Trust' }), { code: 'invalid-input' });
+  await assert.rejects(trustDashboard({ cliPath: trustCli, shownHash: 'sha256:xyz', word: 'trust' }), { code: 'invalid-input' });
+  fake.write({ revision: 2 });
+  await assert.rejects(trustDashboard({ cliPath: trustCli, shownHash: preview.shownHash, word: 'trust' }), { code: 'stale-state' });
+  const fresh = await trustPreview({ cliPath: trustCli });
+  const result = await trustDashboard({ cliPath: trustCli, shownHash: fresh.shownHash, word: 'trust' });
+  assert.deepEqual([result.channel, result.fingerprint], ['dashboard', `sha256:${'c'.repeat(64)}`]);
+  assert.equal(existsSync(fake.read().keyPath), true);
+  const calls = fake.read().calls;
+  assert.equal(calls.length, 4, '꼴이 틀린 제출은 code-agent 를 부르지 않는다');
+  assert.equal(calls.some(c => c.marked), false, '호스트 표지를 넘기지 않는다');
+  const after = await trustPreview({ cliPath: trustCli });
+  assert.deepEqual([after.canTrust, after.trusted], [false, true]);
+  await assert.rejects(trustDashboard({ cliPath: trustCli, shownHash: after.shownHash, word: 'trust' }), { code: 'control-trust-exists' });
+  fake.write({ legacy: true });
+  await assert.rejects(trustPreview({ cliPath: trustCli }), { code: 'control-trust-unsupported', message: /터미널에서 code-agent master trust --controller dashboard/ });
+});
+
+test('dashboard trust routes need the page token, the typed word and the shown hash', async t => {
+  const f = pairingSetup(t); f.close();
+  const fake = trustSetup(t, f.root);
+  const dashboard = await startDashboard({ dbPath: f.db, port: 0, observe: false, pairingOptions: { cliPath: trustCli } });
+  try {
+    const overview = await (await fetch(`${dashboard.url}/api/overview`)).json();
+    const post = (path, body, headers = {}) => fetch(dashboard.url + path, { method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: dashboard.url, 'X-Master-Token': overview.token, ...headers }, body: JSON.stringify(body) });
+    assert.equal((await post('/api/trust/preview', {}, { 'X-Master-Token': 'wrong' })).status, 403);
+    const preview = await (await post('/api/trust/preview', {})).json();
+    assert.equal(preview.canTrust, true);
+    assert.equal((await post('/api/trust', { shownHash: preview.shownHash })).status, 400, '확인 단어 없음');
+    assert.equal((await post('/api/trust', { shownHash: `sha256:${'d'.repeat(64)}`, word: 'trust' })).status, 409, '보지 않은 내용');
+    assert.equal((await post('/api/trust', { shownHash: preview.shownHash, word: 'trust' }, { Origin: 'http://evil.test' })).status, 403);
+    const result = await (await post('/api/trust', { shownHash: preview.shownHash, word: 'trust' })).json();
+    assert.deepEqual([result.controller, result.channel], ['dashboard', 'dashboard']);
+    assert.equal((await post('/api/trust', { shownHash: preview.shownHash, word: 'trust' })).status, 400, '이미 신뢰');
+    assert.equal(fake.read().trusted, true);
+  } finally { await dashboard.close(); }
 });
 
 test('the trust key is a regular file in the code-agent store named by a valid controller', t => {

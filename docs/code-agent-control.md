@@ -51,11 +51,16 @@ master-agent project pair <프로젝트ID> --cli <경로> [--controller dashboar
 
 ## 제어 연결(페어링)
 
-PC당 한 번의 신뢰 등록과 프로젝트별 화면 확인 한 번으로 연동 켜기·DB 등록·사람 채널 생성을 함께 한다. 터미널 절차(`master enable`·`master human enable`·`project control`)도 그대로 쓸 수 있다. 계약은 code-agent `doc/master-control.md`(§12.1)가 기준이다. 아래는 master가 쓰는 부분의 요약이다. 페어링을 지원하지 않는 code-agent는 `hello.pairing`이 없으므로 기존 터미널 안내(`control-not-bound`)로 대신한다.
+PC당 한 번의 신뢰 등록(대시보드 확인 화면 또는 터미널)과 프로젝트별 화면 확인 한 번으로 연동 켜기·DB 등록·사람 채널 생성을 함께 한다. 터미널 절차(`master enable`·`master human enable`·`project control`)도 그대로 쓸 수 있다. 계약은 code-agent `doc/master-control.md`(§12.1)가 기준이다. 아래는 master가 쓰는 부분의 요약이다. 페어링을 지원하지 않는 code-agent는 `hello.pairing`이 없으므로 기존 터미널 안내(`control-not-bound`)로 대신한다.
 
 ```
-PC 신뢰 (code-agent, 터미널, PC당 1회)
-  code-agent master trust --controller dashboard        # 확인 단어: trust
+PC 신뢰 (code-agent, PC당 1회 — 대시보드 확인 화면 또는 터미널)
+  code-agent master trust --controller dashboard        # 터미널, 확인 단어: trust
+  code-agent master trust --controller dashboard --preview
+    결과(읽기 전용): { controller, trusted, fingerprint, canTrust, reason, keyPath, lines, shownHash, word: "trust" }
+  code-agent master trust --controller dashboard --shown-hash <shownHash>
+    결과: { controller, fingerprint, keyPath, createdAt, channel: "dashboard" }
+    거부(stderr "코드: 사유", 종료 1): stale-state(보인 문구와 다름) · conflict(이미 신뢰·키 파일 있음) · policy-forbids(호스트 셸)
   개인 키: <storeDir>/master-trust/<controller>.pem      # storeDir = CODE_AGENT_HOME 또는 ~/.code-agent
 
 hello (인증 없음) — 추가 필드
@@ -75,15 +80,16 @@ pair (인증 = PC 신뢰 키 서명, 토큰 없음)
   오류: unauthorized · stale-state · fenced · conflict · busy · invalid-request · policy-forbids
 ```
 
-master 쪽 동작(`packages/runner/control-pairing.mjs`, 어댑터 `packages/code-agent-adapter/pairing.mjs`):
+master 쪽 동작(`packages/runner/control-pairing.mjs`, 어댑터 `packages/code-agent-adapter/pairing.mjs`, PC 신뢰 `packages/runner/control-trust.mjs`):
 
+0. PC 신뢰 화면은 code-agent `--preview`의 문구와 `shownHash`를 그대로 쓴다. 제출에는 확인 단어 `trust`와 그 해시가 필요하고, code-agent가 지금 문구의 해시와 다르면 `stale-state`로 거부한다. 서버는 호스트 표지(`CLAUDECODE`·Codex 표지 등)를 지운 환경과 저장소 밖(홈) 작업 폴더에서 code-agent를 부른다. 화면 신뢰를 모르는 code-agent는 `control-trust-unsupported`로 터미널 명령을 안내한다. 이미 신뢰하면 `control-trust-exists`다. 카드의 버튼은 hello의 `trustedControllers`에 대시보드가 없을 때만 나온다. 등록 뒤에는 순회를 바로 다시 돌려 카드가 `제어 연결 가능`으로 바뀐다. 개인 키는 code-agent 키 저장소에만 있고 DB·화면에 남기지 않는다.
 1. 확인 화면 내용은 서버가 토큰 없는 hello로 만든다. 경로·제어자·기본 개발 호스트(요청에서 host를 고르지 않을 때)와 준비 상태·요청별 host 선택 지원·연결은 승인 권한이 아니라는 문장·사람 응답 채널 만료 안내를 담고, 그 내용의 해시(`shownHash`, `sha256:<hex>`)를 함께 낸다. `approvedAt`은 사람이 제출한 시각이며 code-agent는 챌린지 발급 시각과 2분 이상 어긋나면 거부한다.
 2. 제출에는 프로젝트 버전·`shownHash`·`commandId`·확인 체크가 필요하다. 서버가 내용을 다시 만들어 해시가 다르면 `stale-state`로 거부한다. 프로젝트가 실행·업데이트·사람 응답 전송 중이면 `project-busy`다.
 3. `pair.challenge`의 projectRoot·controller·만료를 대조하고 다른 소유자·인계 중이면 서명하지 않는다. 서버 계정의 신뢰 키로 서명해 연결 기록(`control-pairing`, 상태 `sending`)을 먼저 저장한 뒤 보낸다. 개인 키는 서명 순간에만 읽는다.
 4. 결과는 owner·generation·저장소 밖 절대 경로의 tokenFile을 확인한 뒤 `bindControl`로 등록하고 `control-paired` 이벤트를 남긴다. `rotated`는 같은 연결의 토큰 갱신이다. 바인딩에는 토큰 파일 경로와 사람 응답 채널 ID·만료만 더한다. 신뢰 키·사람 채널 키는 code-agent 키 저장소(`CODE_AGENT_HOME` 또는 `~/.code-agent`)에서 찾는다.
 5. 응답을 잃으면 같은 commandId로 두 번 다시 보낸다. 그래도 모르면 `unknown`으로 남기고 같은 프로젝트의 새 연결을 막는다. 화면·`/api/projects/pair/retry`는 같은 서명을 다시 보내 기록된 결과를 받는다. DB 등록만 실패하면(`bind-failed`) 받은 결과로 등록만 다시 한다.
 
-페어링은 사람이 화면(확인 체크) 또는 TTY(`project pair`, 확인 단어 `pair`)에서 확인할 때만 한다. 요청 실행기·AI 계획·복구·백그라운드 순회는 hello로 상태를 읽기만 한다. 준비 점검은 연결이 없을 때 원인을 `control-pairing-available`·`control-trust-missing`·`control-owned-by-other`·`control-enabled-unbound`로 나누고, 미지원 code-agent는 기존 `control-not-bound` 안내를 낸다. host를 고른 요청은 `managedHost.runSelection`이 없으면 `host-selection-unsupported`(프로젝트 설정으로 대신 실행하지 않는다), 고른 방식이 `modes`에 없으면 `host-not-installed`, 고른 주 host의 `hosts.<host>.ready === false`면 `host-not-ready`를 낸다. host 없이 접수된 요청은 `managedHost.ready === false`면 `host-not-ready`를 낸다. 관측한 저장소에 커밋이 없으면 `repository-no-commit`(안내: `code-agent setup baseline`)을 함께 낸다.
+PC 신뢰는 사람이 화면(확인 단어 `trust`)에서, 페어링은 사람이 화면(확인 체크) 또는 TTY(`project pair`, 확인 단어 `pair`)에서 확인할 때만 한다. 요청 실행기·AI 계획·복구·백그라운드 순회는 hello로 상태를 읽기만 한다. 준비 점검은 연결이 없을 때 원인을 `control-pairing-available`·`control-trust-missing`·`control-owned-by-other`·`control-enabled-unbound`로 나누고, 미지원 code-agent는 기존 `control-not-bound` 안내를 낸다. host를 고른 요청은 `managedHost.runSelection`이 없으면 `host-selection-unsupported`(프로젝트 설정으로 대신 실행하지 않는다), 고른 방식이 `modes`에 없으면 `host-not-installed`, 고른 주 host의 `hosts.<host>.ready === false`면 `host-not-ready`를 낸다. host 없이 접수된 요청은 `managedHost.ready === false`면 `host-not-ready`를 낸다. 관측한 저장소에 커밋이 없으면 `repository-no-commit`(안내: `code-agent setup baseline`)을 함께 낸다.
 
 ## 실행 — 원자적 접수와 관찰
 
@@ -136,5 +142,5 @@ drive는 code-agent 통신 계약 호스트에서 판단기(`--provider`)가 있
 
 - 모의 시험(`tests/control.test.mjs`): code-agent 통신 계약을 흉내 낸 전송과 가짜 판단기로 두 프로젝트의 위임 → 독립 검증 → 위임 반영 → 인계 → 통합 완료, 판단 기록 선행, critical·ambiguous·권한 없음·준비하지 않은 동의의 사람 이관, 검증 전 반영 판단 금지, 위임 영수증 결합, 재부착, commandId 충돌·이벤트 재동기화, 정지 대상 제한, 독립 프로젝트 진행과 의존 작업 대기, 반영 단계에서만 하는 독립 검증과 반영 단계를 떠난 검증된 시도의 계속 실행, 위임 수정 요청 뒤 같은 세션의 재준비, 이어 실행 접수 거부의 막힘 기록, 반영 확인 수정 요청 뒤 재준비와 재검증, 선행 증거 요약 프롬프트, 업무 질문 판단 자료의 앞선 답을 본다.
 - 페어링 시험(`tests/pairing.test.mjs`): 계약을 흉내 낸 시험 대역(`tests/pairing-fake-cli.mjs`)과 임시 Ed25519 키로 연결 상태 분류, 확인 내용 해시 대조, 서명 검증·일회성 challenge, 토큰 파일 경로만 저장, 만료 임박 갱신(rotated), 다른 소유자·사용 중 프로젝트 거부, 응답 유실 뒤 같은 commandId 정산, 저장소 안 토큰 파일 거부, HTTP 확인 체크·화면 토큰을 본다. 실제 빌드와의 호환은 아래 연동 시험의 페어링 항목이 본다(빌드에 페어링이 없으면 건너뛴다).
-- 실제 code-agent CLI 연동 시험(`tests/code-agent-control.test.mjs`): 빌드된 code-agent(`CODE_AGENT_DIST` 또는 옆 저장소)와 가짜 호스트로 연결·원자적 접수·중복 거부·이벤트 커서·결과·재부착·정지·제어권 인계와 이전 소유자 거부를 본다. 시험 프로젝트에는 `init`으로 Claude 실행 절차·hook을 설치한다(관리 실행 설치 검사). 페어링 항목은 시험 폴더의 `CODE_AGENT_HOME`에서 PC 신뢰 → 확인한 연결 → 인증된 heartbeat·사람 채널 키 탐색을 본다. code-agent 빌드가 없으면 건너뛴다.
+- 실제 code-agent CLI 연동 시험(`tests/code-agent-control.test.mjs`): 빌드된 code-agent(`CODE_AGENT_DIST` 또는 옆 저장소)와 가짜 호스트로 연결·원자적 접수·중복 거부·이벤트 커서·결과·재부착·정지·제어권 인계와 이전 소유자 거부를 본다. 시험 프로젝트에는 `init`으로 Claude 실행 절차·hook을 설치한다(관리 실행 설치 검사). 페어링 항목은 시험 폴더의 `CODE_AGENT_HOME`에서 PC 신뢰 → 확인한 연결 → 인증된 heartbeat·사람 채널 키 탐색을 보고, 화면 PC 신뢰 항목은 code-agent 문구의 해시로만 신뢰하고 바로 연결되는지와 호스트 표지를 넘기지 않는지 본다. code-agent 빌드가 없으면 건너뛴다.
 - 실제 AI 전체 사이클과 앞선 답 판단의 최신 결과·실패 이력·미검증 범위는 [검증 기록](verification.md)을 따른다.

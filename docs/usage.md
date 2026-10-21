@@ -53,7 +53,7 @@ master-agent request continue <요청ID> --revision <요청버전>
 실행 전 준비는 다음과 같다.
 
 1. 각 code-agent 프로젝트를 대시보드의 수동 등록 또는 `project add`로 등록한다. 요청 실행기는 최초 계획 전 표준 문서·빌드 설정을 수집하고, 해당 파일이 없으면 실제 최상위 폴더 목록을 관측한다. 상세 정책·코드는 `project collect`로 별도 지정할 수 있다. 수집 범위와 제한은 [AI 계획](ai-planning.md)을 따른다.
-2. 프로젝트를 code-agent에 제어 연결한다. 페어링을 지원하면 PC당 한 번 `code-agent master trust --controller dashboard`를 실행한 뒤 프로젝트 카드의 제어 연결(또는 `project pair`)로 연결한다. 지원하지 않으면 사용자가 master 연동을 켜고 `project control`로 연결한다. 위임 grant는 따로 설정한다. 자동 탐색은 설치 경로만 찾으며 제어 권한을 대신 부여하지 않는다.
+2. 프로젝트를 code-agent에 제어 연결한다. 페어링을 지원하면 PC당 한 번 프로젝트 카드의 PC 신뢰(확인 단어 `trust`) 또는 터미널의 `code-agent master trust --controller dashboard`로 신뢰한 뒤 프로젝트 카드의 제어 연결(또는 `project pair`)로 연결한다. 지원하지 않으면 사용자가 master 연동을 켜고 `project control`로 연결한다. 위임 grant는 따로 설정한다. 자동 탐색은 설치 경로만 찾으며 제어 권한을 대신 부여하지 않는다.
 3. 요청의 완료 조건·작업 범위·검사 명령에 맞는 templates를 전달하거나 계획 후 `mission verification` / `mission verification-template`으로 보완한다.
 4. 그룹·단일 요청을 보내면 별도 실행기가 근거·설치·제어 연결을 점검하고 AI 계획·검증 계약 연결·개발·검증·인계를 진행한다. 준비가 부족하면 `waiting`과 `실행 준비 필요`로 표시하며 공통 요청함에서 대상별 조치·보류·재점검을 제공한다. 초기 준비 오류로 실패했던 요청도 같은 요청함에 연결한다. 보완 후 요청함의 재점검 또는 `request continue`로 동일 목표를 이어간다. 업무 분석 질문은 공통 요청함 또는 `mission clarify`, code-agent 질문은 공통 요청함 또는 기존 relay로 답한다.
 

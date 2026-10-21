@@ -1,14 +1,17 @@
 # 검증 기록
 
-기능 검증 기준은 **2026-10-21, 요청 host 선택·교차 검증 반영 후**다. Windows·Node.js 24.19.0에서 회귀·실제 CLI·브라우저를 확인했다. 실제 모델 전체 흐름의 최근 검증일은 2026-10-17이며, 관제·질문 계약·화면 시험은 해당 모델 시험의 재수행을 뜻하지 않는다.
+기능 검증 기준은 **2026-10-21, 화면 PC 신뢰 반영 후**다. Windows·Node.js 24.19.0에서 회귀·실제 CLI·브라우저를 확인했다. 실제 모델 전체 흐름의 최근 검증일은 2026-10-17이며, 관제·질문 계약·화면 시험은 해당 모델 시험의 재수행을 뜻하지 않는다.
 
 | 검증 | 결과 | 근거 |
 | --- | --- | --- |
-| 자동 회귀 | 전체 274개 통과. 실패·건너뜀 0 | `npm.cmd test`(약 150초), `.master-agent/request-host-full-tests.log`. code-agent `5adbb97` 빌드 사용 |
+| 자동 회귀 | 전체 279개 통과. 실패·건너뜀 0 | `npm.cmd test`(약 235초), `.master-agent/screen-trust-full-tests.log`. 화면 PC 신뢰를 포함한 code-agent 빌드 사용 |
 | 요청 host 선택 | host 형식 검증과 계획·판단 AI 결정(단독 CLI·교차 검증·host 없는 요청의 provider), 교차 검토의 승인만 통과·반려·검토 형식 오류·검토 host 실행 실패, 요청 기록·provider 동시 지정 거부·대시보드 표시, 준비 점검(요청별 선택 미지원·미설치·주 host 준비, 기본 host 문제는 막지 않음), 교차 계획 반려 지적의 다음 회차 전달·승인 계획만 활성화, 새 실행에만 execution 전달, 반려된 위임 판단의 사람 이관 | `tests/request-host.test.mjs` 7개. AI·code-agent 전송은 모의 |
 | 실제 code-agent 요청별 host | 실제 hello의 `runSelection`, 프로젝트 설정이 Claude 단독인 저장소에서 요청의 Codex로 실행·`execution.json` 보존·같은 thread 이어 실행 | `tests/managed-host.test.mjs`. 실제 code-agent 감독과 모의 Codex 모델, 격리 프로젝트·`CODEX_HOME` |
 | 요청 host 브라우저 | host 선택만 표시(계획·판단 담당 선택 없음), 프로젝트 카드의 요청별 선택 지원 표시, 그룹(설정이 다른 프로젝트) 처음 값 Claude 단독·주 host 표시 전환·안내 문구, 프로젝트별 선택 가능·미지원·준비 문제(문구는 글자로만), 프로젝트 설정의 처음 값, 제출한 host 기록·요청 카드 표시, 1440/390/320px | `scripts/smoke-dashboard-request-host.mjs`, `.master-agent/request-host-browser-a7Xo43/`. 실제 브라우저·API, 합성 hello, 요청 실행기·모델 미호출 |
 | 제어 연결(페어링) | 원인별 연결 상태·다음 조치, 신뢰 키 파일 위치·컨트롤러 이름 검증, 확인 1회 연결과 토큰 경로·채널 만료만 저장, 만료 전 갱신, 내용 변경·다른 소유자·사용 중 거부(서명 전), 응답 유실 시 미확인 유지·중복 연결 차단·같은 commandId 확인, 저장소 안 토큰 거부, HTTP의 화면 토큰·확인 체크·표시 내용 해시. CLI는 TTY 없이 거부 | `tests/pairing.test.mjs` 8개, `tests/cli.test.mjs`. code-agent 응답은 `tests/pairing-fake-cli.mjs`의 계약 fixture |
+| 화면 PC 신뢰 | 신뢰 기록이 없을 때만 버튼 제공(기록만 있고 키가 없으면 해제 안내), 카드 상태에 신뢰 가능 여부 전달, code-agent 문구 그대로 표시·확인 단어 필수·해시 형식·보인 내용과 다름 거부, 이미 신뢰·화면 신뢰 미지원 code-agent 구분, 호스트 표지 미전달, HTTP의 화면 토큰·Origin | `tests/pairing.test.mjs` 4개. code-agent 응답은 `tests/trust-fake-cli.mjs`의 계약 fixture |
+| 실제 code-agent 화면 PC 신뢰 | 실제 문구(개인 키 자리·화면 신뢰의 한계)·미리보기 무기록, 보지 않은 해시 거부, 확인한 해시로 등록·기록의 대시보드 확인·같은 키 저장소의 키 탐색, 재등록 거부, 신뢰 직후 제어 연결. 서버 환경에 `CLAUDECODE`가 있어도 code-agent에 넘기지 않음 | `tests/code-agent-control.test.mjs`. 실제 code-agent 빌드(화면 신뢰 포함), 격리 `CODE_AGENT_HOME`·`CODEX_HOME` |
+| PC 신뢰 브라우저 | 카드의 PC 신뢰 버튼·터미널 대안, code-agent 문구 표시, 확인 단어(대소문자 그대로) 전 제출 불가, 1440/390/320px, 등록 뒤 카드가 `제어 연결 가능`으로 바뀌고 이어서 제어 연결·`제어 연결됨`, DB에 개인 키 없음 | `scripts/smoke-dashboard-trust.mjs`, `.master-agent/trust-browser-wujO8r/`. 실제 브라우저·API·code-agent 빌드, 격리 키 저장소·프로젝트, 요청 실행기·모델 미호출 |
 | 실제 code-agent 페어링 | 임시 code-agent 저장소에서 PC 신뢰 1회 뒤 확인한 연결로 연동 켜기·DB 등록·사람 채널 생성, 인증 heartbeat, DB에는 토큰 경로만 저장 | `tests/code-agent-control.test.mjs`. 실제 code-agent 빌드, 격리 `CODE_AGENT_HOME`·`CODEX_HOME`. 실제 사용자 신뢰·프로젝트는 변경하지 않음 |
 | 호스트 설정 주입 | 호스트 공통 지시문·기능 등록·배정, Claude 파일 없는 준비 점검, Codex thread 확정·같은 thread 재개·재부착, 호스트 변경 재개 거부·미확정 세션 차단·실제 호스트 관제 | `tests/managed-host.test.mjs` 5개. 실제 code-agent 감독과 모의 Codex 모델, 격리 프로젝트의 합성 TTY·신뢰 기록. 사용자 권한·설정은 변경하지 않음 |
 | 요청 준비·복구 | 표준 근거·폴더 목록·최신성, 기존 명시 근거 보존, 그룹별 설치·관리 실행 지원·소유권·인증 점검, 준비 중 모델 미호출, 기존 실패 요청의 보류·동일 TASK 재개·중복/오래된 답 거부, 검증 계약 등록 안내. 연결 없음의 원인 분류(페어링은 제안만), 커밋 없는 저장소 안내, 연결 후 이어 실행 항목의 기본 선택 없음·등록 확인 뒤 재개 | `tests/preparation.test.mjs` 10개. 실제 authorization-api의 YSIJ-254도 같은 TASK의 준비 대기·요청함 표시 확인. 개발 모델 미호출 |
@@ -105,6 +108,6 @@ node scripts/smoke-full-flow.mjs report <root>
 - 실제 Codex 모델의 개발 전체 흐름, 다중 사용자·원격 운영·배포, 다양한 실제 업무 규모의 판단 품질.
 - 직접 실행 ClaudeHost의 전체 사이클. 현재 권장 검증 경로는 `--control`이다.
 - 요청 host 교차 검증의 실제 Claude·Codex 판단 품질(반려 기준·재생성). 현재는 모의 AI로 처리 경로만 확인했다.
-- 제어 연결 화면의 실제 브라우저 조작과 사용자의 실제 PC 신뢰로 실제 프로젝트를 연결하는 과정.
+- 사용자의 실제 PC 키 저장소에서 화면 PC 신뢰와 실제 프로젝트 제어 연결. 브라우저 조작은 격리 키 저장소로 확인했다.
 
 검증 상태나 완료 조건을 수동으로 바꿔 성공시키지 않는다. 미반환·미확인 실행은 자동 성공이나 중복 실행으로 바꾸지 않는다.
