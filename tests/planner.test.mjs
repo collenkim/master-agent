@@ -6,6 +6,7 @@ import { SimulationRunner } from '../packages/runner/simulation.mjs';
 import { planningSetup, answerFor, blockedAnswer } from './planning-fixture.mjs';
 import { validateAnalysis } from '../packages/reasoning/planner.mjs';
 import { DomainError } from '../packages/domain/contracts.mjs';
+import { analysisSchema, analysisSchemaFor, validateShape } from '../packages/reasoning/schema.mjs';
 
 const provider = generate => ({ name: 'fixture-not-ai', model: 'fixture', generate });
 
@@ -37,6 +38,41 @@ test('허구 참조의 계획을 활성화하지 않고 피드백으로 자동 �
   }), { expectedRevision: mission.revision });
   assert.equal(count, 2); assert.equal(result.mission.state, 'planned');
   assert.equal(result.analysis.passes[0].error.code, 'unknown-reference');
+});
+
+test('계획 응답 스키마는 등록 참조 대신 수집된 소스 ID만 허용한다', t => {
+  const { planner, mission } = planningSetup(t), context = planner.context(mission);
+  const schema = analysisSchemaFor(context);
+  validateShape(answerFor(context), schema);
+  const operator = `operator:project:${context.projects[0].id}`;
+  for (const edit of [
+    a => a.assessments[0].references.push(operator),
+    a => a.decisions[0].references.push(operator),
+    a => a.issues[0].references.push(operator),
+    a => a.plan.tasks[0].references.push(operator),
+  ]) {
+    const a = answerFor(context); a.issues = blockedAnswer(context).issues; edit(a);
+    assert.throws(() => validateShape(a, schema), e => e.code === 'invalid-analysis' && e.message.includes('references'));
+  }
+  assert.deepEqual(analysisSchema.properties.assessments.items.properties.references.items, { type: 'string' });
+  const other = structuredClone(context); other.projects[0].sources[0].id = 'source:changed';
+  assert.throws(() => validateShape(answerFor(context), analysisSchemaFor(other)), { code: 'invalid-analysis' });
+});
+
+test('등록 참조를 인용한 막힌 분석은 위치·잘못된 값의 피드백으로 같은 목표에서 수정한다', async t => {
+  const { planner, mission, store } = planningSetup(t); let calls = 0;
+  const result = await planner.analyze(mission.id, provider(async ({ context, schema, prompt }) => {
+    const answer = blockedAnswer(context, true), operator = `operator:project:${context.projects[0].id}`;
+    assert.ok(schema.properties.assessments.items.properties.references.items.enum.includes(context.projects[0].sources[0].id));
+    assert.ok(!schema.properties.assessments.items.properties.references.items.enum.includes(operator));
+    if (++calls === 1) answer.assessments[0].references.push(operator);
+    else { assert.ok(prompt.includes(operator)); assert.ok(prompt.includes(`assessments[${context.projects[0].id}].references`)); }
+    return { data: answer };
+  }), { expectedRevision: mission.revision });
+  assert.equal(calls, 2); assert.equal(result.analysis.status, 'needs-human');
+  assert.equal(result.analysis.passes[0].error.code, 'unknown-reference');
+  assert.equal(result.mission.id, mission.id); assert.equal(result.mission.plans.length, 0);
+  assert.equal(store.list('mission').length, 1);
 });
 
 test('해결하지 못한 일반 정보 부족은 사람 판단 요청 대신 분석 차단으로 남긴다', async t => {

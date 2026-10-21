@@ -26,6 +26,16 @@ export const analysisSchema = obj({
   plan: planSchema,
 });
 
+/** 계획 근거는 이번에 읽은 소스 ID만 선택한다. 등록 정보의 참조는 문서 근거가 아니다. */
+export function analysisSchemaFor(context) {
+  const schema = structuredClone(analysisSchema);
+  const ids = [...new Set(context.projects.flatMap(p => p.sources.map(s => s.id)))];
+  if (!ids.length) return schema; // 빈 근거의 유효성은 분석 검증기가 판단한다.
+  for (const key of ['assessments', 'decisions', 'issues']) schema.properties[key].items.properties.references = array(choice(ids));
+  schema.properties.plan.properties.tasks.items.properties.references = array(choice(ids));
+  return schema;
+}
+
 /** 모델/CLI의 스키마 준수 주장에 의존하지 않고 수신 경계에서 다시 검증한다. */
 export function validateShape(value, schema = analysisSchema, path = 'analysis') {
   const fail = message => { const error = new Error(`${path}: ${message}`); error.code = 'invalid-analysis'; throw error; };
