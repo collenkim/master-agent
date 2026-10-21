@@ -7,7 +7,7 @@ import { now, requireThat } from '../domain/contracts.mjs';
 
 export const preparationCodes = new Set(['missing-knowledge', 'stale-knowledge', 'control-not-bound', 'control-not-owner', 'host-not-installed',
   'not-installed', 'invalid-cli', 'cli-not-found', 'code-agent-unavailable', 'control-token-missing', 'control-not-enabled', 'control-fenced', 'control-unauthorized',
-  'control-pairing-available', 'control-trust-missing', 'control-owned-by-other', 'control-enabled-unbound', 'host-not-ready', 'repository-no-commit']);
+  'control-pairing-available', 'control-trust-missing', 'control-owned-by-other', 'control-enabled-unbound', 'host-not-ready', 'host-selection-unsupported', 'repository-no-commit']);
 
 export function preparationIssues(request) {
   if (request.preparation?.issues?.length) return request.preparation.issues;
@@ -42,13 +42,13 @@ export async function prepareRequest(store, request, { cliPath, observe = observ
     } catch (error) { issue(error.code ?? 'observation-unavailable', error.message, 'code-agent 설치 및 status --json 결과를 확인하세요.'); }
     let installed = true;
     try { checkHost(project); checks.push({ projectId, kind: 'host', host: 'code-agent', selection: 'project-execution-and-registered-profile' }); }
-    catch (error) { installed = false; issue(error.code ?? 'host-not-installed', error.message, '프로젝트에서 code-agent init과 doctor로 설치를 확인하세요. 개발 호스트는 code-agent execution claude|codex 또는 both --main claude|codex와 master enable --host <설정 파일>을 따릅니다. Codex는 프로젝트·hook 신뢰 확인도 필요합니다. 계획 provider는 별개입니다.'); }
+    catch (error) { installed = false; issue(error.code ?? 'host-not-installed', error.message, '프로젝트에서 code-agent init과 doctor로 설치를 확인하세요. init은 Claude·Codex 두 host를 준비합니다. 개발 host는 요청에서 고른 host(고르지 않으면 code-agent execution 설정)를 따르고 host별 권한은 master enable --host <설정 파일>을 따릅니다. Codex는 프로젝트·hook 신뢰 확인도 필요합니다.'); }
     const binding = store.get('control-binding', projectId);
     if (!binding) {
       // 설치 전에는 페어링을 권하지 않는다 — 설치 안내와 기존 연결 안내만 낸다
       let probed = null;
       if (installed) try { probed = controlProbe(await probe(project)); } catch { /* 연결 전 조회 실패 — 기존 터미널 안내로 대신한다 */ }
-      const ready = hostReadinessIssue(probed);
+      const ready = probed ? hostReadinessIssue(probed, request.execution) : null;
       if (ready) issue(ready.code, ready.message, ready.guidance);
       const connection = connectionState({ projectId, probe: probed, binding: null, controller: DASHBOARD_CONTROLLER, keyAvailable: Boolean(trustKey(DASHBOARD_CONTROLLER)) });
       issues.push({ projectId, projectName: project.name, code: connection.code, message: connection.message, guidance: connection.guidance,
@@ -62,9 +62,9 @@ export async function prepareRequest(store, request, { cliPath, observe = observ
         'control-not-owner', '현재 제어권·세대가 저장된 연결과 다릅니다.');
       checkManagedSupport(hello);
       await client.result('heartbeat'); // Authenticated read: a saved token path is not proof of access.
-      const ready = hostReadinessIssue(controlProbe(hello));
+      const ready = hostReadinessIssue(controlProbe(hello), request.execution);
       if (ready) issue(ready.code, ready.message, ready.guidance);
-      else checks.push({ projectId, kind: 'control', status: 'connected' });
+      else checks.push({ projectId, kind: 'control', status: 'connected', ...(request.execution ? { execution: request.execution } : {}) });
     } catch (error) { issue(error.code ?? 'control-unavailable', error.code === 'control-unavailable' ? 'code-agent 제어 연결 조회에 실패했습니다.' : error.message,
       '현재 제어자·토큰 파일 접근 권한을 확인하고 같은 DB에 project control로 다시 연결하세요. 다른 제어자가 소유 중이면 정식 인계 절차를 따르세요.'); }
   }

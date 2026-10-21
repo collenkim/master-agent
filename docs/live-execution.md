@@ -1,6 +1,6 @@
 # 실제 개발 호스트 연결
 
-master-agent는 live 목표의 준비된 작업을 code-agent로 배정하고, 실행 회차와 상태를 저장한다. 대시보드 요청과 `--control`은 code-agent에 등록된 Claude·Codex 호스트 설정을 사용한다 — [code-agent 통신 계약 연동](code-agent-control.md). 호스트 시작, 작업 ID 연결, 승인 대기 관측과 같은 세션의 계속 실행을 지원한다. 이 문서의 나머지는 **Claude 직접 실행 호스트**의 계약이다. 등록한 검증 계약에 따른 실제 테스트·산출물 검증과 후행 작업 자동 진행은 [실제 검증과 자동 진행](live-verification.md)을 따른다.
+master-agent는 live 목표의 준비된 작업을 code-agent로 배정하고, 실행 회차와 상태를 저장한다. 대시보드 요청과 `--control`은 요청에서 고른 host로, code-agent에 등록된 Claude·Codex 호스트 설정을 사용한다 — [code-agent 통신 계약 연동](code-agent-control.md). 호스트 시작, 작업 ID 연결, 승인 대기 관측과 같은 세션의 계속 실행을 지원한다. 이 문서의 나머지는 **Claude 직접 실행 호스트**의 계약이다. 등록한 검증 계약에 따른 실제 테스트·산출물 검증과 후행 작업 자동 진행은 [실제 검증과 자동 진행](live-verification.md)을 따른다.
 
 ## 실행 계약
 

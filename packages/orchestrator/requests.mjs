@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { Engine } from './engine.mjs';
 import { LiveWorkflow } from './drive.mjs';
 import { ControlHost } from '../runner/control-host.mjs';
-import { CliProvider } from '../reasoning/cli-provider.mjs';
+import { hostSelection, mainHost, reasoningFor } from '../reasoning/hosts.mjs';
 import { Planner } from '../reasoning/planner.mjs';
 import { Recovery } from './recovery.mjs';
 import { VerificationTemplates } from '../verification/templates.mjs';
@@ -26,16 +26,23 @@ export function requestStatus(record) {
   return record;
 }
 
-export function acceptRequest(store, { targetType, targetId, goal, taskNumber, criteria, requestKey = randomUUID(), groupRevision, provider = 'claude', model, templates = [] }) {
+/**
+ * host 를 고르면 이번 요청의 code-agent 개발 host와 master 계획·판단 AI가 같은 선택을 따른다(both 는 주 host + 교차 검증).
+ * host 없이 접수한 요청은 개발에 프로젝트 실행 방식을, 계획·판단에 provider(기본 claude)를 쓴다.
+ */
+export function acceptRequest(store, { targetType, targetId, goal, taskNumber, criteria, requestKey = randomUUID(), groupRevision, host, provider, model, templates = [] }) {
   requireThat(['project', 'group'].includes(targetType), 'invalid-input', '프로젝트 또는 그룹을 선택하세요.');
   string(targetId, 'targetId'); string(goal, 'goal');
+  requireThat(host === undefined || provider === undefined, 'invalid-input', 'host를 고르면 계획·판단도 그 host가 맡습니다. provider를 함께 지정하지 마세요.');
+  const execution = host === undefined ? null : hostSelection(host);
+  provider = execution ? mainHost(execution) : provider ?? 'claude';
   requireThat(['claude', 'codex'].includes(provider), 'invalid-provider', '계획·판단 provider는 claude 또는 codex입니다.');
   requireThat(Array.isArray(templates), 'invalid-input', '검증 템플릿은 배열이어야 합니다.');
   requireThat(model === undefined || typeof model === 'string', 'invalid-input', '모델 이름은 문자열이어야 합니다.');
   const input = { mode: 'live', goal, requestKey, criteria: criteria ?? [{ id: 'request', description: goal }],
     ...(taskNumber === undefined ? {} : { taskNumber }),
     scope: { projectIds: targetType === 'project' ? [targetId] : [], groupIds: targetType === 'group' ? [targetId] : [] },
-    requestOptions: { provider, model: model ?? null, templates, groupRevision: groupRevision ?? null } };
+    requestOptions: { ...(execution ? { host: execution } : { provider }), model: model ?? null, templates, groupRevision: groupRevision ?? null } };
   return store.transaction(() => {
     const duplicate = store.db.prepare('SELECT mission_id FROM requests WHERE key=?').get(requestKey);
     if (!duplicate && targetType === 'group' && groupRevision !== undefined) {
@@ -44,7 +51,7 @@ export function acceptRequest(store, { targetType, targetId, goal, taskNumber, c
     const mission = new Engine(store).create(input, { inTransaction: true });
     const previous = store.get('target-request', mission.id);
     if (previous) return { request: requestStatus(previous), created: false };
-    const request = store.put('target-request', { id: mission.id, targetType, targetId, goal, provider, model: model ?? null,
+    const request = store.put('target-request', { id: mission.id, targetType, targetId, goal, execution, provider, model: model ?? null,
       ...(taskNumber === undefined ? {} : { taskNumber }),
       templates: structuredClone(templates), templatesRegistered: false, projectIds: mission.scope.projectIds,
       groupRevision: mission.scope.groups[0]?.revision ?? null, state: 'queued', createdAt: now(), updatedAt: now(), blockers: [] });
@@ -98,7 +105,7 @@ export async function runRequest(store, id, { cliPath, host, provider, workflow,
       const saved = recordPreparation(preparation);
       if (preparation.state === 'waiting') return saved;
     }
-    const reasoning = provider ?? new CliProvider({ provider: record.provider, model: record.model ?? undefined });
+    const reasoning = provider ?? reasoningFor(record);
     for (const answer of store.need('mission', id).recoveryAnswers ?? []) {
       if (answer.state !== 'queued') continue;
       const engine = new Engine(store);

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
@@ -14,6 +14,7 @@ import { acceptRequest } from '../packages/orchestrator/requests.mjs';
 import { prepareRequest } from '../packages/orchestrator/preparation.mjs';
 import { ControlHost, bindControl, checkManagedSupport } from '../packages/runner/control-host.mjs';
 import { hostPrompt } from '../packages/runner/claude-host.mjs';
+import { controlProbe, hostReadinessIssue } from '../packages/code-agent-adapter/pairing.mjs';
 
 test('managed prompts follow injected host and flow procedures; direct Claude remains explicit', () => {
   const ticket = { goal: '작업', taskNumber: 'TASK-1', codeAgentWorkId: 'MA-1' };
@@ -90,5 +91,32 @@ test('actual code-agent supervisor injects Codex profile, confirms thread, resum
     const rejected = await host.execute({ ...ticket, invocationId: randomUUID(), sessionId: first.sessionId, expectedState: (await host.inspect(p, undefined, first.sessionId)).stateVersion });
     assert.equal(rejected.status, 'blocked'); assert.equal(rejected.control.state, 'rejected');
     assert.equal(store.list('control-run').length, 2);
+  } finally { store.close(); f.close(); }
+});
+
+test('actual code-agent runs the request host for new runs only and keeps the project execution setting', { skip: !existsSync(fixture) && 'code-agent Codex build unavailable', timeout: 120000 }, async () => {
+  const f = createRequire(import.meta.url)(fixture).codexProject();
+  const store = new Store(join(f.dir, 'master.db'));
+  try {
+    unlinkSync(join(f.root, 'CLAUDE.md'));
+    // 프로젝트 설정은 Claude 단독 — 요청에서 고른 Codex 가 이번 실행에만 쓰여야 한다
+    const setting = JSON.stringify({ version: 1, mode: 'claude' });
+    writeFileSync(join(f.root, '.code-agent/execution.json'), setting);
+    const p = new Engine(store).catalog.registerManual({ id: 'codex', name: 'Codex', path: f.root, domains: ['test'] });
+    const cliPath = join(DIST, 'agent/cli.js');
+    await bindControl(store, p.id, { cliPath, controller: 'test', tokenFile: join(f.dir, 'token') });
+    const host = new ControlHost(store, { cliPath, pollMs: 100, followTimeoutMs: 30000 });
+    const probe = controlProbe(await host.client(p).result('hello'));
+    assert.deepEqual(probe.managedHost.runSelection, { supported: true, modes: ['claude', 'codex', 'both'] });
+    assert.equal(hostReadinessIssue(probe, { mode: 'codex' }), null);
+    store.put('target-request', { id: 'M-1', execution: { mode: 'codex' }, provider: 'codex', state: 'running', projectIds: [p.id] });
+    const ticket = { project: p, projectId: p.id, missionId: 'M-1', id: 'A-1', taskId: 'T-1', planVersion: 1,
+      invocationId: randomUUID(), goal: 'MODE=complete', codeAgentWorkId: 'MA-1', expectedState: (await host.inspect(p)).stateVersion };
+    const first = await host.execute(ticket);
+    assert.equal(first.status, 'returned', JSON.stringify(first.control)); assert.equal(first.control.hostKind, 'codex');
+    assert.equal(readFileSync(join(f.root, '.code-agent/execution.json'), 'utf8'), setting, '프로젝트 실행 방식은 바꾸지 않는다');
+    // 이어 실행은 execution 을 보내지 않고 code-agent 가 이전 실행의 선택(Codex)으로 같은 thread 를 잇는다
+    const resumed = await host.execute({ ...ticket, invocationId: randomUUID(), sessionId: first.sessionId, expectedState: (await host.inspect(p, undefined, first.sessionId)).stateVersion });
+    assert.equal(resumed.status, 'returned', JSON.stringify(resumed.control)); assert.equal(resumed.sessionId, first.sessionId); assert.equal(resumed.control.hostKind, 'codex');
   } finally { store.close(); f.close(); }
 });

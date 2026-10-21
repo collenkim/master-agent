@@ -128,10 +128,12 @@ export class ControlHost {
     await this.inspect(ticket.project, ticket.expectedState, ticket.sessionId);
     beforeStart();
     const client = this.client(ticket.project), commandId = `inv-${ticket.invocationId}`;
+    // 요청에서 고른 host 는 새 실행에만 보낸다 — 이어 실행은 code-agent 가 이전 실행의 선택을 그대로 쓴다
+    const execution = ticket.sessionId ? null : this.store.get('target-request', ticket.missionId)?.execution ?? null;
     let accepted;
     try {
       accepted = await client.result('submit', { commandId, expect: { stateVersion: ticket.expectedState }, payload: {
-        mode: ticket.sessionId ? 'continue' : 'start', ...(ticket.sessionId ? { sessionId: ticket.sessionId } : {}), prompt,
+        mode: ticket.sessionId ? 'continue' : 'start', ...(ticket.sessionId ? { sessionId: ticket.sessionId } : {}), ...(execution ? { execution } : {}), prompt,
         links: { missionId: ticket.missionId, taskId: ticket.taskId, attemptId: ticket.id, planVersion: String(ticket.planVersion), invocationId: ticket.invocationId } } });
     } catch (error) {
       // code-agent 가 응답으로 거부했다(ok:false) — 실행을 만들지 않았다는 확인이다. 이어 실행이면 같은 세션의 막힘으로 돌려준다(미확인이 아니다).

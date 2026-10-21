@@ -4,13 +4,15 @@ code-agent가 제공하는 master 통신 계약(`code-agent.master` v1, code-age
 
 ## 역할과 적용 조건
 
-관리 실행의 호스트는 code-agent가 정한다. 프로젝트의 `execution claude|codex` 선택, `execution both --main claude|codex`의 주 호스트, `master enable --host <JSON 파일>`에 등록한 실행 파일·모델·권한 설정을 따른다. `auto` 또는 main 없는 `both`는 등록된 기본 호스트를 사용한다. master의 `--provider`·`--model`은 계획·판단 설정이며 관리 개발 호스트를 덮어쓰지 않는다.
+관리 실행의 호스트는 요청에서 고른 host다. master는 요청의 host(`claude`·`codex`, `both`면 주 host와 교차 검증)를 새 실행 접수(`submit mode:start`)의 `execution`으로 보내고, code-agent는 그 실행에만 적용한다. 프로젝트의 `execution.json`은 바꾸지 않는다. code-agent는 실행이 연 작업에 이 선택을 고정한다. 같은 작업의 이어 실행·새 실행과 교차 검증·단독 호스트 판정은 작업이 끝날 때까지 같은 선택을 따른다. 이어 실행(`continue`)에는 `execution`을 보내지 않는다. 실행 파일·모델·권한은 사람이 `master enable --host <JSON 파일>`로 등록한 그 host의 설정(없으면 제한된 기본값)을 code-agent가 주입한다.
+
+host를 고르지 않은 요청은 프로젝트의 `execution claude|codex`·`execution both --main claude|codex`를 따르고, `auto` 또는 main 없는 `both`는 등록된 기본 호스트를 사용한다. 고른 host는 master의 계획·판단 AI도 정한다. 단독이면 그 CLI 하나, both면 주 host가 만들고 다른 host가 승인한 결과만 쓴다([AI 계획](ai-planning.md#요청-host와-교차-검증)). host를 고르지 않은 요청의 `--provider`·`--model`은 계획·판단 설정이며 관리 개발 호스트를 덮어쓰지 않는다.
 
 새 프로젝트 등록의 기본 기능은 `code-agent:managed`다. 기존 `code-agent:claude`와 명시적 `code-agent:codex` 등록·계획도 관리 경로에서 받으며 실제 호스트는 code-agent가 선택한다. 준비 점검은 설치 마커·지원 프로토콜/호스트·제어권·인증을 확인한다. 선택된 호스트의 설치·권한·Codex 프로젝트/hook 신뢰 판정은 code-agent의 접수·감독을 따른다. master는 권한 설정이나 신뢰를 자동 변경하지 않는다.
 
 관리 실행의 지시문은 `.claude` 경로를 지정하지 않고 주입된 호스트 지침과 `code-agent flow advance --json`이 반환한 `procedure`·`instruction`·`agent`·`contextFile`을 따른다. 결과 기록 후 `resume`으로 이어가고 `human`·`wait`는 대기로 남긴다. Claude 직접 실행은 별도의 기존 경로다.
 
-Codex 접수의 세션 ID는 임시 별칭일 수 있다. master는 결과의 `hostKind`·`sessionConfirmed`·`sessionAlias`와 확정된 thread ID를 기록하고 같은 thread만 재개한다. thread 미확인은 새 세션으로 대체하지 않는다. 호스트·권한 설정이 바뀐 세션의 재개는 code-agent가 거부하며, 호스트 전환은 사용자의 `execution --handoff` 절차와 별도 실행 인계가 필요하다.
+Codex 접수의 세션 ID는 임시 별칭일 수 있다. master는 결과의 `hostKind`·`sessionConfirmed`·`sessionAlias`와 확정된 thread ID를 기록하고 같은 thread만 재개한다. thread 미확인은 새 세션으로 대체하지 않는다. 호스트·권한 설정이 바뀐 세션의 재개는 code-agent가 거부하며, 호스트 전환은 사용자의 `execution --handoff` 절차와 별도 실행 인계가 필요하다. 요청에서 host를 고른 작업도 같으며, 사람이 `execution <host> --handoff`로 인계하면 그 작업에 고정된 선택도 인계한 host로 바뀐다.
 
 | 주체 | 하는 일 |
 | --- | --- |
@@ -49,7 +51,7 @@ master-agent project pair <프로젝트ID> --cli <경로> [--controller dashboar
 
 ## 제어 연결(페어링)
 
-프로젝트마다 터미널 명령 네 개(`master enable`·`master human enable`·`project control` 등)를 실행하던 연결을, PC당 한 번의 신뢰 등록과 프로젝트별 화면 확인 한 번으로 줄인다. 계약은 code-agent `doc/master-control.md`(§12.1)가 기준이다. 아래는 master가 쓰는 부분의 요약이다. 페어링을 지원하지 않는 code-agent는 `hello.pairing`이 없으므로 기존 터미널 안내(`control-not-bound`)로 대신한다.
+PC당 한 번의 신뢰 등록과 프로젝트별 화면 확인 한 번으로 연동 켜기·DB 등록·사람 채널 생성을 함께 한다. 터미널 절차(`master enable`·`master human enable`·`project control`)도 그대로 쓸 수 있다. 계약은 code-agent `doc/master-control.md`(§12.1)가 기준이다. 아래는 master가 쓰는 부분의 요약이다. 페어링을 지원하지 않는 code-agent는 `hello.pairing`이 없으므로 기존 터미널 안내(`control-not-bound`)로 대신한다.
 
 ```
 PC 신뢰 (code-agent, 터미널, PC당 1회)
@@ -58,7 +60,9 @@ PC 신뢰 (code-agent, 터미널, PC당 1회)
 
 hello (인증 없음) — 추가 필드
   pairing:     { supported: true, version: 1, signature: "Ed25519", domain: "code-agent.master-pair.v1", trustedControllers: ["dashboard"] }
-  managedHost: { selected, source, installedHosts, execution, ready, problems: [{ code, message }] }
+  managedHost: { selected, source, installedHosts, execution, ready, problems: [{ code, message }],
+                 runSelection: { supported: true, modes: ["claude", "codex", "both"] },   # submit execution 으로 고를 수 있는 방식
+                 hosts: { claude: { ready, problems }, codex: { ready, problems } } }       # 설치된 host마다의 준비
 
 pair.challenge (인증 없음)
   요청 payload: { controller }
@@ -73,18 +77,18 @@ pair (인증 = PC 신뢰 키 서명, 토큰 없음)
 
 master 쪽 동작(`packages/runner/control-pairing.mjs`, 어댑터 `packages/code-agent-adapter/pairing.mjs`):
 
-1. 확인 화면 내용은 서버가 토큰 없는 hello로 만든다. 경로·제어자·선택될 개발 호스트와 준비 상태·연결은 승인 권한이 아니라는 문장·사람 응답 채널 만료 안내를 담고, 그 내용의 해시(`shownHash`, `sha256:<hex>`)를 함께 낸다. `approvedAt`은 사람이 제출한 시각이며 code-agent는 챌린지 발급 시각과 2분 이상 어긋나면 거부한다.
+1. 확인 화면 내용은 서버가 토큰 없는 hello로 만든다. 경로·제어자·기본 개발 호스트(요청에서 host를 고르지 않을 때)와 준비 상태·요청별 host 선택 지원·연결은 승인 권한이 아니라는 문장·사람 응답 채널 만료 안내를 담고, 그 내용의 해시(`shownHash`, `sha256:<hex>`)를 함께 낸다. `approvedAt`은 사람이 제출한 시각이며 code-agent는 챌린지 발급 시각과 2분 이상 어긋나면 거부한다.
 2. 제출에는 프로젝트 버전·`shownHash`·`commandId`·확인 체크가 필요하다. 서버가 내용을 다시 만들어 해시가 다르면 `stale-state`로 거부한다. 프로젝트가 실행·업데이트·사람 응답 전송 중이면 `project-busy`다.
 3. `pair.challenge`의 projectRoot·controller·만료를 대조하고 다른 소유자·인계 중이면 서명하지 않는다. 서버 계정의 신뢰 키로 서명해 연결 기록(`control-pairing`, 상태 `sending`)을 먼저 저장한 뒤 보낸다. 개인 키는 서명 순간에만 읽는다.
 4. 결과는 owner·generation·저장소 밖 절대 경로의 tokenFile을 확인한 뒤 `bindControl`로 등록하고 `control-paired` 이벤트를 남긴다. `rotated`는 같은 연결의 토큰 갱신이다. 바인딩에는 토큰 파일 경로와 사람 응답 채널 ID·만료만 더한다. 신뢰 키·사람 채널 키는 code-agent 키 저장소(`CODE_AGENT_HOME` 또는 `~/.code-agent`)에서 찾는다.
 5. 응답을 잃으면 같은 commandId로 두 번 다시 보낸다. 그래도 모르면 `unknown`으로 남기고 같은 프로젝트의 새 연결을 막는다. 화면·`/api/projects/pair/retry`는 같은 서명을 다시 보내 기록된 결과를 받는다. DB 등록만 실패하면(`bind-failed`) 받은 결과로 등록만 다시 한다.
 
-페어링은 사람이 화면(확인 체크) 또는 TTY(`project pair`, 확인 단어 `pair`)에서 확인할 때만 한다. 요청 실행기·AI 계획·복구·백그라운드 순회는 hello로 상태를 읽기만 한다. 준비 점검은 연결이 없을 때 원인을 `control-pairing-available`·`control-trust-missing`·`control-owned-by-other`·`control-enabled-unbound`로 나누고, 미지원 code-agent는 기존 `control-not-bound` 안내를 낸다. `managedHost.ready === false`면 `host-not-ready`, 관측한 저장소에 커밋이 없으면 `repository-no-commit`(안내: `code-agent setup baseline`)을 함께 낸다.
+페어링은 사람이 화면(확인 체크) 또는 TTY(`project pair`, 확인 단어 `pair`)에서 확인할 때만 한다. 요청 실행기·AI 계획·복구·백그라운드 순회는 hello로 상태를 읽기만 한다. 준비 점검은 연결이 없을 때 원인을 `control-pairing-available`·`control-trust-missing`·`control-owned-by-other`·`control-enabled-unbound`로 나누고, 미지원 code-agent는 기존 `control-not-bound` 안내를 낸다. host를 고른 요청은 `managedHost.runSelection`이 없으면 `host-selection-unsupported`(프로젝트 설정으로 대신 실행하지 않는다), 고른 방식이 `modes`에 없으면 `host-not-installed`, 고른 주 host의 `hosts.<host>.ready === false`면 `host-not-ready`를 낸다. host 없이 접수된 요청은 `managedHost.ready === false`면 `host-not-ready`를 낸다. 관측한 저장소에 커밋이 없으면 `repository-no-commit`(안내: `code-agent setup baseline`)을 함께 낸다.
 
 ## 실행 — 원자적 접수와 관찰
 
 1. 배정·계속 실행은 기존과 같이 판단·시도·잠금을 한 트랜잭션으로 저장한 뒤 시작한다.
-2. 시작은 `submit` 한 번이다. commandId는 `inv-<invocationId>`이고 기대 상태 버전(`expect.stateVersion`)과 master 식별자(`links`: 임무·작업·시도·계획 버전·호출)를 함께 보낸다. code-agent가 상태·소유·임대·작업 연결을 한 잠금 안에서 확인하고 받는다. 응답을 잃어 같은 commandId로 다시 보내면 기록된 응답이 돌아오고 실행은 하나다. 같은 commandId에 다른 내용은 `control-conflict`로 거부된다. code-agent가 이어 실행 접수를 응답으로 거부하면(`ok: false` — 재개 판정·임대·소유 등) 실행을 만들지 않았다는 확인이므로 같은 세션의 막힘(`blocked`, 결과의 `control.state: rejected`)으로 남기고 `control-submit-rejected`를 기록한다. 자동으로 다시 보내지 않는다. 통신 실패나 세션이 없는 첫 실행의 거부는 시도를 unknown으로 남긴다. 실행이 시작되면 세션 임대·hook 기록으로 상태 버전이 바뀌므로, 실행 프롬프트는 세션에 기대 상태를 다시 대조시키지 않고 지정된 작업인지만 확인하게 한다. 실행 세션 안의 `code-agent status --json`은 그 실행의 세션으로 임대를 본다. 프롬프트는 검증 계약의 독립 검사와 변경 범위 제약을 code-agent의 수락 기준·테스트 케이스로 옮기지 말라고 알린다 — 그것은 master가 반영 뒤 확인한다. 같은 프로젝트의 선행 작업이 반영한 커밋이 있으면 `codeAgentBase`로 넣어 새 작업을 그 위에서 시작하게 한다(code-agent 접수의 `--base`). 기본 기준 브랜치에서 시작하면 선행 산출물이 빠지기 때문이다. 선행 작업 증거는 요약(작업·프로젝트·검사 결과·산출물 해시·반영 커밋)만 싣는다 — 파일 트리 스냅샷·원격 상태·검사 출력은 master 기록에 남고, 통합 작업처럼 선행이 여럿이면 code-agent 접수 한도(프롬프트 20000자)를 넘기 때문이다.
+2. 시작은 `submit` 한 번이다. 새 실행이면 요청에서 고른 host를 `payload.execution`(`{ mode, main? }`)으로 함께 보낸다. commandId는 `inv-<invocationId>`이고 기대 상태 버전(`expect.stateVersion`)과 master 식별자(`links`: 임무·작업·시도·계획 버전·호출)를 함께 보낸다. code-agent가 상태·소유·임대·작업 연결을 한 잠금 안에서 확인하고 받는다. 응답을 잃어 같은 commandId로 다시 보내면 기록된 응답이 돌아오고 실행은 하나다. 같은 commandId에 다른 내용은 `control-conflict`로 거부된다. code-agent가 이어 실행 접수를 응답으로 거부하면(`ok: false` — 재개 판정·임대·소유 등) 실행을 만들지 않았다는 확인이므로 같은 세션의 막힘(`blocked`, 결과의 `control.state: rejected`)으로 남기고 `control-submit-rejected`를 기록한다. 자동으로 다시 보내지 않는다. 통신 실패나 세션이 없는 첫 실행의 거부는 시도를 unknown으로 남긴다. 실행이 시작되면 세션 임대·hook 기록으로 상태 버전이 바뀌므로, 실행 프롬프트는 세션에 기대 상태를 다시 대조시키지 않고 지정된 작업인지만 확인하게 한다. 실행 세션 안의 `code-agent status --json`은 그 실행의 세션으로 임대를 본다. 프롬프트는 검증 계약의 독립 검사와 변경 범위 제약을 code-agent의 수락 기준·테스트 케이스로 옮기지 말라고 알린다 — 그것은 master가 반영 뒤 확인한다. 같은 프로젝트의 선행 작업이 반영한 커밋이 있으면 `codeAgentBase`로 넣어 새 작업을 그 위에서 시작하게 한다(code-agent 접수의 `--base`). 기본 기준 브랜치에서 시작하면 선행 산출물이 빠지기 때문이다. 선행 작업 증거는 요약(작업·프로젝트·검사 결과·산출물 해시·반영 커밋)만 싣는다 — 파일 트리 스냅샷·원격 상태·검사 출력은 master 기록에 남고, 통합 작업처럼 선행이 여럿이면 code-agent 접수 한도(프롬프트 20000자)를 넘기 때문이다.
 3. 접수된 실행은 `control-run` 기록으로 남기고, 끝 상태가 될 때까지(끝 상태를 본 뒤 한 번 더) 이벤트를 커서(`control-cursor`: 기록 ID·순번)로 받아 진척·질문·동의·검증·실행·연결 이벤트를 `control-event`로 남긴다. 기록 ID가 바뀌거나 구간이 비면(gap) 누락을 추측하지 않고 스냅샷으로 다시 맞춘다(`control-resynced`).
 4. 결과는 code-agent의 결과 근거(종료 코드·최종 메시지·권한 거부·실행 전후 상태·변경 파일·커밋·검증 기록)를 호스트 결과로 옮긴다. 모델의 완료 발언은 요약일 뿐이고, 회차의 처분은 기존처럼 실행 뒤 code-agent 상태와 master의 독립 검증으로 정한다. `unknown`·`abandoned` 실행은 결과로 받지 않고 시도를 unknown으로 남긴다(자동 재실행 없음).
 
@@ -100,7 +104,7 @@ master가 결과를 받기 전에 멈추면 시도가 `running`으로 남는다.
 
 ## 위임 판단
 
-drive는 code-agent 통신 계약 호스트에서 판단기(`--provider`)가 있으면, 판단을 기다리는 시도(`waiting-decision`, 반영 동의는 `verified`)의 확인 요청·업무 질문을 먼저 위임 판단으로 처리한다. 업무 질문의 판단 자료에는 그 질문과 배정·목표에 더해 같은 작업에서 이미 답한 질문(답과 출처 — 사람 답인지 위임 판단인지)이 실린다. 뒤 질문은 앞 답을 전제로 묻고(예: 사람 답을 반영하려 앞 단계로 되감을지), 판단기는 사람이 정한 답을 뒤집거나 넓히지 않는다.
+drive는 code-agent 통신 계약 호스트에서 판단기(`--provider`)가 있으면, 판단을 기다리는 시도(`waiting-decision`, 반영 동의는 `verified`)의 확인 요청·업무 질문을 먼저 위임 판단으로 처리한다. 업무 질문의 판단 자료에는 그 질문과 배정·목표에 더해 같은 작업에서 이미 답한 질문(답과 출처 — 사람 답인지 위임 판단인지)이 실린다. 뒤 질문은 앞 답을 전제로 묻고(예: 사람 답을 반영하려 앞 단계로 되감을지), 판단기는 사람이 정한 답을 뒤집거나 넓히지 않는다. 요청에서 both를 고르면 판단기는 주 host가 만든 판단을 다른 host가 검토하는 교차 판단기다. 검토가 반려하면 보내지 않고 검토 지적을 사유로 사람에게 넘긴다(`mission escalations`).
 
 | 분류 | 처리 |
 | --- | --- |

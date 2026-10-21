@@ -61,6 +61,9 @@ function validJudgment(data, kind) {
   return { ...data, reason: data.reason.trim().slice(0, 2000), evidence: [...new Set(data.evidence.map(e => e.trim().slice(0, 500)))].slice(0, 20) };
 }
 
+// 교차 검토 반려는 지적을 그대로 사람에게 보인다 — 반려된 판단은 보내지 않는다
+const judgmentFailure = error => error.code === 'cross-review-rejected' ? error.message : `AI 판단을 받지 못했습니다(${error.code ?? 'provider-error'})`;
+
 const usable = (grant, action, workId, missionId) => !grant.revoked && !grant.expired && !grant.exhausted && grant.actions.includes(action) &&
   (grant.works.includes(workId) || grant.missions.includes(missionId));
 
@@ -147,7 +150,7 @@ export class DecisionDelegation {
       const record = { id: d.id, missionId: m.id, attemptId: attempt.id, taskId: attempt.taskId, projectId: attempt.projectId, kind: details.kind, action: details.action,
         target: details.target, workId: attempt.codeAgentWorkId, grantId: details.grantId, category: details.judgment.category, verdict: details.judgment.verdict ?? 'answer',
         reason: details.judgment.reason, evidence: details.judgment.evidence, shownHash: details.shownHash ?? null, questionsHash: details.questionsHash ?? null,
-        provider: details.provider, state: 'recorded', recordedAt: now() };
+        provider: details.provider, ...(details.review ? { review: details.review } : {}), state: 'recorded', recordedAt: now() };
       this.store.put('delegation', record);
       this.engine.save(current, 'delegation-recorded', { decisionId: d.id, kind: details.kind, target: details.target });
       return record;
@@ -180,14 +183,14 @@ export class DecisionDelegation {
       recipe: attempt.recipe ? { allowedPaths: attempt.recipe.allowedPaths, exports: attempt.recipe.exports ?? [], checks: attempt.recipe.checks.map(c => ({ id: c.id, criterionIds: c.criterionIds })) } : null,
       masterVerification: verification ? { state: verification.state, checks: verification.checks.map(c => ({ id: c.id, passed: c.passed })), changedPaths: verification.changedPaths } : null,
       codeAgent: { phase: state.work?.phase ?? null, request: state.request, approval: state.approval?.status ?? null, verification: state.verification?.phases ?? null } };
-    let judgment;
-    try { judgment = validJudgment((await provider.generate({ prompt: consentPrompt(input), schema: consentJudgmentSchema })).data, 'consent'); }
-    catch (error) { return this.escalate({ m, attempt, kind: 'consent', target, reason: `AI 판단을 받지 못했습니다(${error.code ?? 'provider-error'}) — 사람에게 넘깁니다.` }); }
+    let judgment, review;
+    try { const response = await provider.generate({ prompt: consentPrompt(input), schema: consentJudgmentSchema }); judgment = validJudgment(response.data, 'consent'); review = response.review; }
+    catch (error) { return this.escalate({ m, attempt, kind: 'consent', target, reason: `${judgmentFailure(error)} — 사람에게 넘깁니다.` }); }
     if (judgment.category === 'critical') return this.escalate({ m, attempt, kind: 'consent', target, reason: judgment.reason, category: 'critical', judgment });
     if (judgment.category === 'ambiguous' && judgment.verdict !== 'request-changes') {
       return this.escalate({ m, attempt, kind: 'consent', target, reason: `추가 정보가 필요합니다: ${judgment.reason}`, category: 'ambiguous', judgment });
     }
-    const record = this.record(m, attempt, { kind: 'consent', action: consent.action, target, judgment, grantId: grant.id, shownHash: consent.shownHash, input, provider: provider.name ?? 'custom' });
+    const record = this.record(m, attempt, { kind: 'consent', action: consent.action, target, judgment, grantId: grant.id, shownHash: consent.shownHash, input, provider: provider.name ?? 'custom', review });
     return this.sendDecision(client, record, state.stateVersion, consent);
   }
   async sendDecision(client, record, stateVersion, consent) {
@@ -219,13 +222,13 @@ export class DecisionDelegation {
     const input = { question: { id: question.id, title: question.title, body: question.body, options: question.options ?? null }, answered,
       inputContracts: predecessorContracts(this.store, m, task), outputContracts: attempt.recipe?.exports ?? [],
       task: { id: task.id, goal: task.goal, allowedChanges: task.allowedChanges, exclusions: task.exclusions, criteria: task.criteria }, goal: m.goal, criteria: m.criteria };
-    let judgment;
-    try { judgment = validJudgment((await provider.generate({ prompt: answerPrompt(input), schema: answerJudgmentSchema })).data, 'answer'); }
-    catch (error) { return this.escalate({ m, attempt, kind: 'question', target, reason: `AI 판단을 받지 못했습니다(${error.code ?? 'provider-error'}).` }); }
+    let judgment, review;
+    try { const response = await provider.generate({ prompt: answerPrompt(input), schema: answerJudgmentSchema }); judgment = validJudgment(response.data, 'answer'); review = response.review; }
+    catch (error) { return this.escalate({ m, attempt, kind: 'question', target, reason: `${judgmentFailure(error)}.` }); }
     if (judgment.category !== 'routine' || !judgment.answer.trim()) {
       return this.escalate({ m, attempt, kind: 'question', target, reason: judgment.category === 'critical' ? judgment.reason : `추가 정보가 필요합니다: ${judgment.reason}`, category: judgment.category, judgment });
     }
-    const record = this.record(m, attempt, { kind: 'question', action: 'answer', target, judgment, grantId: grant.id, questionsHash: view.questionsHash, input, provider: provider.name ?? 'custom' });
+    const record = this.record(m, attempt, { kind: 'question', action: 'answer', target, judgment, grantId: grant.id, questionsHash: view.questionsHash, input, provider: provider.name ?? 'custom', review });
     try {
       await client.result('answer', { commandId: `ans-${record.id}`, payload: { actor: 'ai', decisionId: record.id, grantId: grant.id, category: 'routine', reason: record.reason,
         evidence: record.evidence, questionsHash: view.questionsHash, workId: attempt.codeAgentWorkId, answers: [{ q: question.id, answer: judgment.answer.trim() }] } });

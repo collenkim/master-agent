@@ -34,6 +34,11 @@ function connectionView(p) {
     ${unsettled ? `<small class="error">연결 결과 ${last.state === 'bind-failed' ? 'DB 등록 실패' : '미확인'}${last.error ? `: ${escape(last.error.message)}` : ''}</small><button type="button" class="retry-pairing" data-id="${escape(last.id)}">같은 접수 번호로 연결 결과 확인</button>`
       : c.canPair ? `<button type="button" class="pair-project" data-id="${escape(p.id)}">${['connected', 'stale'].includes(c.state) ? '다시 연결' : '제어 연결'}</button>` : ''}</div>`;
 }
+const hostNames = { claude: 'Claude', codex: 'Codex' };
+const otherHost = host => host === 'claude' ? 'codex' : 'claude';
+// 요청의 실행 host — 개발 host와 master 계획·판단을 함께 정한다. host 없이 접수된 요청은 계획·판단 provider만 기록돼 있다
+const hostLabel = (execution, provider) => !execution ? `개발 host 프로젝트 설정 · 계획·판단 ${hostNames[provider] ?? provider ?? 'Claude'}`
+  : execution.mode === 'both' ? `${hostNames[execution.main]} 주 · ${hostNames[otherHost(execution.main)]} 교차 검증` : `${hostNames[execution.mode]} 단독`;
 let latest, inFlight = false, timer;
 
 function render() {
@@ -60,7 +65,8 @@ function render() {
     <details data-id="${escape(p.id)}" ${openProjects.has(p.id) ? 'open' : ''}><summary>작업·판단 상세</summary>
       <p>프로젝트 ID: ${escape(p.id)}</p><p>제어 연결: ${p.control ? `${escape(p.control.controller)} (등록 당시 ${p.control.owner ? '소유자' : '관찰자'})` : '없음'}</p>
       ${p.connection.guidance ? `<p class="muted">${escape(p.connection.guidance)}</p>` : ''}
-      ${p.connection.managedHost ? `<p>선택될 개발 호스트: ${escape(p.connection.managedHost.selected ?? '미확인')} · ${p.connection.managedHost.ready === false ? `준비 안 됨 ${escape(p.connection.managedHost.problems.map(x => x.message || x.code).join(' / '))}` : p.connection.managedHost.ready ? '준비됨' : '준비 상태 미확인'}</p>` : ''}
+      ${p.connection.managedHost ? `<p>기본 개발 호스트(요청에서 host를 고르지 않을 때): ${escape(p.connection.managedHost.selected ?? '미확인')} · ${p.connection.managedHost.ready === false ? `준비 안 됨 ${escape(p.connection.managedHost.problems.map(x => x.message || x.code).join(' / '))}` : p.connection.managedHost.ready ? '준비됨' : '준비 상태 미확인'}</p>
+      <p>요청별 host 선택: ${p.connection.managedHost.runSelection?.supported ? escape(p.connection.managedHost.runSelection.modes.join(' · ') || '고를 수 있는 host 없음') : '지원하지 않음 — code-agent 업데이트 필요'}</p>` : ''}
       ${renderStageDetails(p.stages)}
       ${p.resume?.reasons.map(r => `<p>${escape(r)}</p>`).join('') ?? ''}
       ${p.consents.map(c => `<p>승인: ${escape(c.action)} · ${escape(c.id)}</p>`).join('')}
@@ -192,6 +198,7 @@ function renderManagement() {
   $('requests').innerHTML = [...latest.requests].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(r => `<article class="mission"><div class="card-head"><h3>${escape(r.goal)}</h3>${badge(r.state === 'waiting' ? r.progress ?? 'waiting' : r.state)}</div>
     <p>${r.targetType === 'group' ? '그룹' : '프로젝트'} ${escape(r.targetId)} · ${escape(r.projectIds.join(', '))}</p>
     ${r.taskNumber ? `<p>TASK: <strong>${escape(r.taskNumber)}</strong></p>` : ''}
+    <p>host: ${escape(hostLabel(r.execution, r.provider))}</p>
     <p class="muted">${escape(r.id)} · ${escape(date(r.updatedAt))}</p>
     ${r.state === 'waiting' ? `<p>${escape(r.reason)}</p>` : ''}
     ${r.error ? `<p class="error">${escape(r.error.message)}</p>` : ''}${r.blockers.length ? `<p>${escape(r.blockers.join(' · '))}</p>` : ''}
@@ -244,12 +251,50 @@ function openDeleteGroup(id) {
   $('delete-group-error').textContent = '';
   $('delete-group-dialog').showModal();
 }
+function requestProjectIds() {
+  const type = $('request-type').value, id = $('request-target').value;
+  return type === 'group' ? latest.groups.find(g => g.id === id)?.projectIds ?? [] : id ? [id] : [];
+}
+function requestHost() {
+  const mode = $('request-host').value;
+  return mode === 'both' ? { mode, main: $('request-main').value } : { mode };
+}
+/** 프로젝트가 고르지 않은 실행에 쓰는 실행 방식 — 대상이 모두 같으면 그 값을, 아니면 Claude 단독을 처음 값으로 둔다 */
+function defaultHost(ids) {
+  const own = id => {
+    const host = latest.projects.find(p => p.id === id)?.connection?.managedHost;
+    if (host?.execution?.mode === 'both') return { mode: 'both', main: host.execution.main ?? host.selected ?? 'claude' };
+    if (['claude', 'codex'].includes(host?.execution?.mode)) return { mode: host.execution.mode };
+    return ['claude', 'codex'].includes(host?.selected) ? { mode: host.selected } : null;
+  };
+  const choices = ids.map(own), first = choices[0];
+  return first && choices.every(c => c && c.mode === first.mode && c.main === first.main) ? first : { mode: 'claude' };
+}
+function hostChanged() {
+  const host = requestHost(), main = host.mode === 'both' ? host.main : host.mode;
+  $('request-main-field').hidden = host.mode !== 'both';
+  $('request-host-help').textContent = host.mode === 'both'
+    ? `${hostNames[main]}가 개발과 master 계획·판단을 맡고 ${hostNames[otherHost(main)]}가 계획·코드 리뷰와 판단을 교차 검증합니다. 검토에서 반려된 계획·판단은 실행하지 않고 다시 만들거나 사람에게 넘깁니다.`
+    : `이번 요청의 개발과 master 계획·판단을 ${hostNames[main]}가 혼자 맡습니다. 교차 검증은 하지 않습니다.`;
+  $('request-host-projects').innerHTML = requestProjectIds().map(id => {
+    const p = latest.projects.find(p => p.id === id), managed = p?.connection?.managedHost, state = managed?.hosts?.[main];
+    const status = !managed ? '제어 연결 상태 미확인 — 접수 후 준비 점검에서 확인합니다'
+      : !managed.runSelection?.supported ? '요청별 host 선택 미지원 — 프로젝트에서 code-agent 업데이트가 필요합니다'
+      : !managed.runSelection.modes.includes(host.mode) ? '이 host가 설치되어 있지 않습니다 — code-agent init으로 두 host를 준비하세요'
+      : state?.ready === false ? `${hostNames[main]} 준비 안 됨: ${state.problems.map(x => x.message || x.code).join(' / ')}` : '선택 가능';
+    const ok = status === '선택 가능';
+    return `<p class="${ok ? 'muted' : 'error'}">${escape(p?.name ?? id)} · ${escape(status)}</p>`;
+  }).join('');
+}
 function scopeChanged() {
   const type = $('request-type').value, id = $('request-target').value;
   const group = latest.groups.find(g => g.id === id);
   requestGroupRevision = type === 'group' ? group?.revision : undefined;
-  const ids = type === 'group' ? group?.projectIds ?? [] : id ? [id] : [];
+  const ids = requestProjectIds();
   $('request-scope').textContent = `대상 프로젝트: ${ids.map(id => latest.projects.find(p => p.id === id)?.name ?? id).join(' · ') || '없음'}`;
+  const host = defaultHost(ids);
+  $('request-host').value = host.mode; if (host.main) $('request-main').value = host.main;
+  hostChanged();
 }
 function requestTargets(id) {
   const entries = $('request-type').value === 'group' ? latest.groups.filter(g => g.projectIds.length) : latest.projects;
@@ -269,6 +314,8 @@ $('candidate-search').addEventListener('input', renderCandidates);
 $('new-request').addEventListener('click', () => latest && openRequest());
 $('request-type').addEventListener('change', () => requestTargets());
 $('request-target').addEventListener('change', scopeChanged);
+$('request-host').addEventListener('change', hostChanged);
+$('request-main').addEventListener('change', hostChanged);
 document.addEventListener('click', async event => {
   const button = event.target.closest('button'); if (!button) return;
   if (button.dataset.close) $(button.dataset.close).close();
@@ -349,7 +396,7 @@ $('request-form').addEventListener('submit', async event => {
     const config = $('request-config').value.trim() ? JSON.parse($('request-config').value) : {};
     const request = await post('/api/requests', { targetType: $('request-type').value, targetId: $('request-target').value,
       ...($('request-task-number').value.trim() ? { taskNumber: $('request-task-number').value.trim() } : {}),
-      groupRevision: requestGroupRevision, requestKey, goal: $('request-goal').value.trim(), provider: $('request-provider').value,
+      groupRevision: requestGroupRevision, requestKey, goal: $('request-goal').value.trim(), host: requestHost(),
       criteria: config.criteria ?? $('request-criteria').value.split('\n').map(s => s.trim()).filter(Boolean).map((description, i) => ({ id: `criterion-${i + 1}`, description })), templates: config.templates ?? [] });
     $('request-dialog').close(); $('action-status').textContent = `요청을 접수했습니다: ${request.id}`; await refresh();
   } catch (error) { $('request-error').textContent = error.message; } finally { button.disabled = false; }

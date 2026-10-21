@@ -116,7 +116,12 @@
     <label>작업 TASK 번호 (선택)<input id="request-task-number" maxlength="64" pattern="[A-Za-z0-9][A-Za-z0-9._\-]*" placeholder="예: UZRF-392"></label>
     <label>요청 내용<textarea id="request-goal" rows="4" required placeholder="무엇을 변경하고 어떤 결과가 필요한지 설명하세요."></textarea></label>
     <label>완료 조건<textarea id="request-criteria" rows="3" required placeholder="검증할 조건을 한 줄에 하나씩 입력하세요."></textarea></label>
-    <label>계획·판단 담당<select id="request-provider"><option value="claude">Claude</option><option value="codex">Codex</option></select></label>
+    <fieldset class="host-choice"><legend>실행 host</legend>
+      <label>host<select id="request-host"><option value="claude">Claude</option><option value="codex">Codex</option><option value="both">둘 다 (교차 검증)</option></select></label>
+      <label id="request-main-field" hidden>주 host<select id="request-main"><option value="claude">Claude</option><option value="codex">Codex</option></select></label>
+      <p id="request-host-help" class="muted"></p>
+      <div id="request-host-projects" class="host-projects"></div>
+    </fieldset>
     <details><summary>검증 계약 설정</summary><p class="muted">준비한 검증 템플릿을 {"templates": [...]} 형식으로 입력할 수 있습니다. 완료 조건 ID는 criterion-1부터 부여하며, 기존 ID를 사용할 때는 criteria 배열을 함께 지정합니다.</p><textarea id="request-config" rows="6" aria-label="검증 계약 JSON" placeholder='{"templates": []}'></textarea></details>
     <p class="muted">접수 후 AI 계획과 개발 실행을 시작합니다. 근거·연동·검증 계약·권한이 부족하면 필요한 보완 사항을 표시합니다.</p>
     <p id="request-error" role="alert" class="error"></p>

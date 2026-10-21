@@ -4,6 +4,7 @@ import { isAbsolute, join } from 'node:path';
 import { canonicalInteraction } from './interactions.mjs';
 import { codeAgentStoreDir } from './discovery.mjs';
 import { requireThat } from '../domain/contracts.mjs';
+import { mainHost } from '../reasoning/hosts.mjs';
 
 /** 대시보드가 code-agent 에 쓰는 제어자 이름 — PC 신뢰(code-agent master trust)도 이 이름으로 한다 */
 export const DASHBOARD_CONTROLLER = 'dashboard';
@@ -11,7 +12,7 @@ const PAIR_DOMAIN = 'code-agent.master-pair.v1';
 const RENEW_MS = 7 * 24 * 3600 * 1000;
 export const validController = value => typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(value);
 const text = (value, limit = 500) => typeof value === 'string' ? value.slice(0, limit) : null;
-const legacyGuidance = projectId => `프로젝트 폴더에서 code-agent master enable --controller dashboard --token-out <저장소 밖 토큰 파일>을 직접 실행하세요. 기존 연결이 있으면 enable을 반복하지 마세요.\n개발 호스트는 code-agent execution claude|codex 또는 both --main claude|codex로 선택합니다. 실행 파일·모델·권한을 지정하려면 enable에 --host <호스트 설정 JSON>을 사용하세요. 미선택 상태는 등록된 기본 호스트를 따르며 설치된 파일만으로 Codex를 선택하지 않습니다.\nmaster-agent project control ${projectId} --controller <기존 제어자 ID> --token-file <토큰 파일 절대경로> --db <현재 대시보드 DB>\n질문·승인을 웹에서 처리하려면 code-agent master human enable --controller <제어자 ID>도 실행하세요. 토큰 내용은 답변에 입력하지 마세요.`;
+const legacyGuidance = projectId => `프로젝트 폴더에서 code-agent master enable --controller dashboard --token-out <저장소 밖 토큰 파일>을 직접 실행하세요. 기존 연결이 있으면 enable을 반복하지 마세요.\n대시보드 요청은 요청 창에서 고른 host(claude·codex·both)로 실행합니다. host를 고르지 않은 실행은 code-agent execution claude|codex 또는 both --main claude|codex 설정을 따르고, 미선택 상태는 등록된 기본 호스트를 따릅니다. host별 실행 파일·모델·권한을 지정하려면 enable에 --host <호스트 설정 JSON>을 사용하세요.\nmaster-agent project control ${projectId} --controller <기존 제어자 ID> --token-file <토큰 파일 절대경로> --db <현재 대시보드 DB>\n질문·승인을 웹에서 처리하려면 code-agent master human enable --controller <제어자 ID>도 실행하세요. 토큰 내용은 답변에 입력하지 마세요.`;
 
 export const trustStoreDir = codeAgentStoreDir;
 
@@ -27,6 +28,8 @@ export function findTrustKey(controller, directory = join(codeAgentStoreDir(), '
 
 export const pairingSupported = hello => hello?.pairing?.supported === true && hello.pairing.version === 1 &&
   (hello.pairing.domain === undefined || hello.pairing.domain === PAIR_DOMAIN) && (hello.pairing.signature === undefined || hello.pairing.signature === 'Ed25519');
+
+const problemsOf = value => (Array.isArray(value) ? value : []).slice(0, 20).map(p => ({ code: text(p?.code, 64) ?? 'unknown', message: text(p?.message) ?? '' }));
 
 /** 토큰 없이 받은 hello 에서 연결 판단에 쓰는 값만 남긴다 */
 export function controlProbe(hello) {
@@ -45,14 +48,31 @@ export function controlProbe(hello) {
       installedHosts: (Array.isArray(managed.installedHosts) ? managed.installedHosts : []).filter(h => typeof h === 'string').slice(0, 8).map(h => h.slice(0, 32)),
       execution: execution && typeof execution === 'object' ? { mode: text(execution.mode, 16), main: text(execution.main, 16) } : text(execution, 64),
       ready: typeof managed.ready === 'boolean' ? managed.ready : null,
-      problems: (Array.isArray(managed.problems) ? managed.problems : []).slice(0, 20).map(p => ({ code: text(p?.code, 64) ?? 'unknown', message: text(p?.message) ?? '' })),
+      problems: problemsOf(managed.problems),
+      runSelection: managed.runSelection?.supported === true ? { supported: true,
+        modes: (Array.isArray(managed.runSelection.modes) ? managed.runSelection.modes : []).filter(m => ['claude', 'codex', 'both'].includes(m)) } : { supported: false },
+      hosts: Object.fromEntries(['claude', 'codex'].filter(kind => managed.hosts?.[kind] && typeof managed.hosts[kind] === 'object')
+        .map(kind => [kind, { ready: typeof managed.hosts[kind].ready === 'boolean' ? managed.hosts[kind].ready : null, problems: problemsOf(managed.hosts[kind].problems) }])),
     } : null,
   };
 }
 
-/** 선택될 개발 호스트가 준비되지 않았다고 code-agent 가 알렸을 때만 문제로 본다(알리지 않으면 판단하지 않는다) */
-export function hostReadinessIssue(probe) {
+/**
+ * 이 실행에 쓸 개발 호스트의 준비 문제. 요청에서 host 를 골랐으면 code-agent 가 요청별 선택을 지원하는지와 고른 주 host 의 준비를 본다 —
+ * 지원하지 않으면 프로젝트 실행 방식으로 대신 실행하지 않는다. 고르지 않았으면 code-agent 가 정할 호스트가 준비되지 않았다고 알렸을 때만 문제로 본다.
+ */
+export function hostReadinessIssue(probe, execution = null) {
   const host = probe?.managedHost;
+  if (execution) {
+    const main = mainHost(execution), problems = (host?.hosts?.[main]?.problems ?? []).map(p => p.message || p.code).filter(Boolean);
+    if (!host?.runSelection?.supported) return { code: 'host-selection-unsupported', message: '이 프로젝트의 code-agent가 요청별 host 선택을 지원하지 않습니다.',
+      guidance: '프로젝트에서 code-agent update로 요청별 실행 방식(submit execution)을 지원하는 버전을 적용한 뒤 다시 확인하세요. 프로젝트 실행 방식으로 대신 실행하지 않습니다.' };
+    if (!host.runSelection.modes.includes(execution.mode)) return { code: 'host-not-installed', message: `이 프로젝트에 ${execution.mode === 'both' ? 'Claude·Codex 두 host가' : `${main} host가`} 설치되어 있지 않습니다.`,
+      guidance: '프로젝트에서 code-agent init으로 두 host를 준비하세요. 자동 설치하지 않습니다.' };
+    if (host.hosts?.[main]?.ready !== false) return null;
+    return { code: 'host-not-ready', message: `요청에서 고른 주 host(${main})가 이 프로젝트에서 실행 준비되지 않았습니다.${problems.length ? ` ${problems.join(' / ')}` : ''}`,
+      guidance: '프로젝트에서 code-agent init·doctor로 그 host의 실행 절차·hook을 설치하세요. Codex는 프로젝트·hook 신뢰도 확인하세요. 다른 host로 자동 전환하지 않습니다.' };
+  }
   if (host?.ready !== false) return null;
   const problems = host.problems.map(p => p.message || p.code).filter(Boolean);
   return { code: 'host-not-ready', message: `선택될 개발 호스트(${host.selected ?? '미확인'})가 이 프로젝트에서 실행 준비되지 않았습니다.${problems.length ? ` ${problems.join(' / ')}` : ''}`,

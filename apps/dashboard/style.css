@@ -24,3 +24,7 @@ dialog{width:min(650px,94vw);max-height:90vh;overflow:auto;background:#171f2c;co
 .connection button { font-size: 12px; padding: 7px 10px; }
 #pair-dialog { overflow-wrap: anywhere; }
 #pair-guidance:empty, #pair-error:empty { display: none; }
+/* Request host: one choice for development and master planning; per-project support shown under it. */
+.host-choice { display: grid; gap: 12px; }
+.host-choice label[hidden] { display: none; }
+.host-projects p { margin: 4px 0; overflow-wrap: anywhere; }

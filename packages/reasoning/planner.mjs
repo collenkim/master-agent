@@ -172,10 +172,11 @@ export class Planner {
           this.engine.checked(id, mission.revision); this.assertContext(context);
           try {
             const response = await provider.generate({ prompt: makePrompt(context, s.frame.feedback), schema: analysisSchema, context: structuredClone(context) });
-            return { data: response.data ?? null, generationError: null };
+            return { data: response.data ?? null, review: response.review ?? null, generationError: null };
           } catch (e) {
             if (e.code?.startsWith('provider-') && e.code !== 'provider-invalid-json') throw e;
-            return { data: null, generationError: { code: e.code ?? 'invalid-analysis', message: e.message } };
+            // 교차 검토 반려는 초안과 지적을 다음 회차의 검토 피드백으로 넘긴다
+            return { data: e.draft ?? null, review: e.review ?? null, generationError: { code: e.code ?? 'invalid-analysis', message: e.message } };
           }
         },
         validate: async s => {
@@ -188,12 +189,13 @@ export class Planner {
           const data = s.response.data, error = s.error;
           this.store.transaction(() => {
             const run = this.store.need('analysis-run', runId);
-            run.passes.push({ pass: s.pass, responseHash: hash(data), data, error, at: now() });
+            run.passes.push({ pass: s.pass, responseHash: hash(data), data, error, ...(s.response.review ? { review: s.response.review } : {}), at: now() });
             this.store.put('analysis-run', run, run.revision);
             this.store.event(id, 'analysis-pass', { runId, pass: s.pass, status: error ? 'invalid' : data.status });
           });
           return { ...s.frame, ready: !error && data.status === 'ready',
-            feedback: { pass: s.pass, validationError: error, previous: data, instruction: 'Review evidence and alternatives. Do not invent resolutions.' } };
+            feedback: { pass: s.pass, validationError: error, previous: data, ...(error && s.response.review ? { crossReview: s.response.review } : {}),
+              instruction: 'Review evidence and alternatives. Do not invent resolutions.' } };
         },
         finish: async s => {
           const result = s.error ? null : s.response.data, lastError = s.error;

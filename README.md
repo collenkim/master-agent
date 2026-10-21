@@ -41,7 +41,7 @@ flowchart TD
 
 ## 설치와 빠른 확인
 
-Node.js **24.19 이상 24.x**와 Git이 필요합니다. 실제 개발에는 빌드된 code-agent와 프로젝트가 선택한 Claude 또는 Codex CLI가 필요합니다. 계획·판단 provider도 Codex·Claude CLI 어댑터를 제공하며 개발 호스트와 별도로 선택합니다. 실제 모델 전체 흐름 검증은 Claude로 수행했습니다.
+Node.js **24.19 이상 24.x**와 Git이 필요합니다. 실제 개발에는 빌드된 code-agent와 요청에서 고른 host의 CLI(Claude, Codex 또는 둘 다)가 필요합니다. 고른 host가 code-agent 개발과 master 계획·판단을 함께 맡습니다. 실제 모델 전체 흐름 검증은 Claude로 수행했습니다.
 
 소스 저장소에서 의존성을 준비한 뒤 로컬 패키지를 전역 명령으로 등록합니다. 현재 공개 npm 배포는 제공하지 않습니다.
 
@@ -117,6 +117,7 @@ master-agent group show commerce
 
 master-agent group request commerce "주문 취소 오류 수정" --task-number UZRF-392 --criterion "취소 회귀 테스트 통과"
 master-agent project request order-api "주문 조회 오류 수정" --task-number UZRF-393 --criterion "조회 테스트 통과"
+master-agent group request commerce "결제 재시도 정책 변경" --host both --main codex --criterion "재시도 회귀 테스트 통과"
 master-agent request list
 master-agent request show <요청ID>
 master-agent request continue <요청ID> --revision <요청버전>
@@ -126,11 +127,13 @@ master-agent request continue <요청ID> --revision <요청버전>
 
 TASK 번호는 요청 기록·AI 계획·각 프로젝트의 개발 지시에 공통으로 전달하며 이어 실행에서도 유지합니다. 내부 작업 ID와 code-agent 실행 ID는 별도로 유지합니다. 번호는 영문·숫자로 시작하는 64자 이하의 영문·숫자·점·밑줄·하이픈으로 입력하고 생략할 수 있습니다.
 
-요청 ID는 목표 ID와 같습니다. 요청은 별도 백그라운드 실행기에서 `AI 계획 → 검증 계약 연결 → code-agent 개발 → 독립 검증·인계`를 진행하며, 대시보드를 닫아도 계속됩니다. 재전송 중복 방지는 `--request-key`로 지정할 수 있습니다. 기본 계획·판단 provider는 Claude이며 `--provider codex`로 바꿀 수 있습니다. 개발 호스트·모델·권한은 code-agent의 프로젝트 실행 선택과 등록된 호스트 설정을 따릅니다.
+요청 ID는 목표 ID와 같습니다. 요청은 별도 백그라운드 실행기에서 `AI 계획 → 검증 계약 연결 → code-agent 개발 → 독립 검증·인계`를 진행하며, 대시보드를 닫아도 계속됩니다. 재전송 중복 방지는 `--request-key`로 지정할 수 있습니다. 요청마다 **host**를 고릅니다(`--host claude|codex|both`, 대시보드의 `실행 host`). host 하나를 고르면 그 host가 code-agent 개발과 master 계획·판단을 혼자 맡고 교차 검증은 하지 않습니다. `both`는 `--main`으로 고른 주 host가 개발·계획·판단을 맡고, 다른 host가 code-agent의 계획·코드 리뷰와 master의 계획·복구·위임 판단을 교차 검증합니다. 교차 검토에서 반려된 계획·판단은 실행하지 않습니다. 계획·복구는 지적을 반영해 다시 만들고 그래도 반려되면 막히며, 위임 판단은 사람에게 넘깁니다. 검토 host를 실행하지 못하면 검토 없이 통과시키지 않고 오류로 남깁니다.
+
+그룹 요청은 소속 프로젝트 모두에 같은 host를 적용합니다. 고른 host는 이 요청의 새 code-agent 실행에만 적용하며 프로젝트의 `code-agent execution` 설정은 바꾸지 않습니다. `--host`를 생략하면 개발 host는 프로젝트의 execution 설정을, 계획·판단은 `--provider`(기본 claude)를 따릅니다. `--host`와 `--provider`는 함께 쓰지 않습니다. host별 실행 파일·모델·권한은 code-agent에 등록된 호스트 설정을 따릅니다.
 
 요청 경로는 README·빌드 설정 등 정해진 파일을 자동 수집합니다. 해당 문서가 없으면 실제 최상위 폴더 목록을 근거로 사용하며 기존 구현·정책이 있다고 가정하지 않습니다. 기존에 지정한 정책·코드 근거는 유지하며 읽기 실패를 빈 근거로 바꾸지 않습니다. 수집 규칙은 [AI 계획](docs/ai-planning.md)을 따릅니다.
 
-code-agent 설치와 위임 권한 설정은 별도로 필요합니다. 제어 연결과 사람 채널은 [code-agent 제어 연결](#code-agent-제어-연결)을 따릅니다. 프로젝트에서 `code-agent execution claude|codex` 또는 `code-agent execution both --main claude|codex`로 개발 호스트를 정합니다. `master enable --host <JSON 파일>`의 실행 파일·모델·권한 설정을 code-agent가 주입하며 master-agent가 덮어쓰지 않습니다. 기본 호스트 선택과 세션 재개 조건은 [통신 계약](docs/code-agent-control.md)을 따릅니다. 준비가 부족하면 안내하며, 이미 실패한 요청도 같은 TASK로 재점검할 수 있습니다. 독립 검증 계약은 화면의 검증 계약 설정 또는 `--input <JSON>`의 `templates`로 전달합니다. 상세 입력과 준비 순서는 [사용법](docs/usage.md)을 따릅니다.
+code-agent 설치와 위임 권한 설정은 별도로 필요합니다. 제어 연결과 사람 채널은 [code-agent 제어 연결](#code-agent-제어-연결)을 따릅니다. `code-agent init`은 Claude·Codex 두 host를 준비합니다. 요청에서 고른 host가 설치·준비되지 않았거나 code-agent가 요청별 host 선택을 지원하지 않으면 준비 점검이 막고 안내합니다. 프로젝트 설정으로 대신 실행하지 않습니다. host를 고르지 않은 실행은 프로젝트의 `code-agent execution claude|codex` 또는 `code-agent execution both --main claude|codex` 설정을 따릅니다. `master enable --host <JSON 파일>`의 실행 파일·모델·권한 설정을 code-agent가 주입하며 master-agent가 덮어쓰지 않습니다. 기본 호스트 선택과 세션 재개 조건은 [통신 계약](docs/code-agent-control.md)을 따릅니다. 준비가 부족하면 안내하며, 이미 실패한 요청도 같은 TASK로 재점검할 수 있습니다. 독립 검증 계약은 화면의 검증 계약 설정 또는 `--input <JSON>`의 `templates`로 전달합니다. 상세 입력과 준비 순서는 [사용법](docs/usage.md)을 따릅니다.
 
 ## 실제 실행과 조회
 
@@ -165,7 +168,7 @@ master-agent mission graph <목표ID>
 
 2. **프로젝트마다:** 프로젝트 카드의 **제어 연결**을 누르고 확인 화면에서 확인 체크를 한 뒤 연결합니다. 연결하면 code-agent 연동이 켜지고 이 DB에 연결이 등록되며 사람 응답 채널도 함께 만들어집니다. 대기 중인 요청은 공통 요청함에서 **제어 연결 후 기존 요청 이어 실행**을 고르면 연결 확인 → 재점검 → 재개로 이어집니다.
 
-확인 화면에는 경로·제어자·선택될 개발 호스트와 준비 상태·사람 응답 채널 만료 안내가 나오며, 기본 선택은 없습니다. **연결은 승인 권한이 아닙니다.** 위임 권한(grant)은 계속 따로 부여합니다. 페어링은 사람이 화면이나 터미널(`master-agent project pair <프로젝트ID> --db <DB>`, 확인 단어 `pair`)에서 확인할 때만 합니다. 요청 실행기·AI 계획·복구·백그라운드 경로에서는 하지 않습니다. 신뢰 개인 키와 토큰 값은 브라우저·모델·로그·DB에 넣지 않습니다. DB에는 code-agent가 만든 토큰 파일 경로만 남습니다.
+확인 화면에는 경로·제어자·기본 개발 호스트(요청에서 host를 고르지 않을 때)와 준비 상태·요청별 host 선택 지원 여부·사람 응답 채널 만료 안내가 나오며, 기본 선택은 없습니다. **연결은 승인 권한이 아닙니다.** 위임 권한(grant)은 계속 따로 부여합니다. 페어링은 사람이 화면이나 터미널(`master-agent project pair <프로젝트ID> --db <DB>`, 확인 단어 `pair`)에서 확인할 때만 합니다. 요청 실행기·AI 계획·복구·백그라운드 경로에서는 하지 않습니다. 신뢰 개인 키와 토큰 값은 브라우저·모델·로그·DB에 넣지 않습니다. DB에는 code-agent가 만든 토큰 파일 경로만 남습니다.
 
 프로젝트 카드에는 연결 상태를 `code-agent 없음`, `PC 신뢰 필요`(실행할 명령 표시), `제어 연결 가능`, `제어 연결됨`(사람 응답 채널 만료일), `연동 켜짐 · 이 DB 미등록`, `다른 제어자 소유`, `터미널 연결 필요`로 구분해 표시합니다. 만료가 7일 안으로 다가오면 **다시 연결**로 토큰과 채널을 갱신합니다. 응답을 잃은 연결은 `연결 결과 미확인`으로 남고, 같은 접수 번호로 결과를 확인합니다.
 
@@ -203,7 +206,7 @@ master-agent dashboard restart --db <기존DB>
 
 | 문서 | 내용 |
 | --- | --- |
-| [구현 현황과 다음 작업](docs/implementation.md) | 현재 기능·보완 우선순위·code-agent 후속 확인 항목 |
+| [구현 현황과 다음 작업](docs/implementation.md) | 현재 기능·보완 우선순위 |
 | [검증 기록](docs/verification.md) | 최신 결과·재현 방법·증거·미검증 범위 |
 | [CLI 사용법](docs/usage.md) | 등록·목표·실행·조회 명령 |
 | [LangGraph 구조](docs/langgraph.md) | 그래프·SQLite·재시작 규칙 |

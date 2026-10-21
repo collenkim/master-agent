@@ -62,8 +62,10 @@ code-agent는 설치된 명령에서 자동 탐색합니다. --cli는 별도 빌
   group delete <ID> --revision <N>     그룹 삭제 (소속 프로젝트·기존 요청 보존)
   group add <ID> <프로젝트ID> --revision <N>    그룹에 프로젝트 추가
   group remove <ID> <프로젝트ID> --revision <N> 그룹에서 프로젝트 제외
-  group request <ID> <요청내용> [--task-number <TASK번호>] [--criterion <완료조건>] [--input <JSON>] 그룹 요청·실행
-  project request <ID> <요청내용> [--task-number <TASK번호>] [--criterion <완료조건>] [--input <JSON>] 단일 요청·실행
+  group request <ID> <요청내용> [--host claude|codex|both [--main claude|codex]] [--task-number <TASK번호>] [--criterion <완료조건>] [--input <JSON>] 그룹 요청·실행
+  project request <ID> <요청내용> [--host claude|codex|both [--main claude|codex]] [--task-number <TASK번호>] [--criterion <완료조건>] [--input <JSON>] 단일 요청·실행
+                                      --host: 이번 요청의 개발 host와 계획·판단 AI(both는 --main이 개발·계획하고 다른 host가 교차 검증)
+                                      생략하면 개발 host는 프로젝트 code-agent execution 설정, 계획·판단은 --provider(기본 claude)
   request list                        접수한 요청·실행 상태 조회
   request show <ID>                    요청 상태·대기·실패 사유 조회
   request continue <ID> --revision <N> 설정·응답 보완 후 기존 목표 이어 실행
@@ -130,7 +132,7 @@ async function main() {
     force: { type: 'boolean' }, 'wait-ms': { type: 'string' }, 'poll-ms': { type: 'string' }, 'follow-timeout-ms': { type: 'string' },
     port: { type: 'string' }, 'refresh-ms': { type: 'string' },
     saved: { type: 'boolean' }, description: { type: 'string' }, input: { type: 'string' },
-    criterion: { type: 'string', multiple: true }, 'request-key': { type: 'string' }, 'task-number': { type: 'string' },
+    criterion: { type: 'string', multiple: true }, 'request-key': { type: 'string' }, 'task-number': { type: 'string' }, host: { type: 'string' }, main: { type: 'string' },
   } });
   if (values.help || !args.length || args[0] === 'help') { console.log(help); return; }
   if (args[0] === 'dashboard') {
@@ -178,6 +180,8 @@ async function main() {
   if (key === 'project pair') requireThat(process.stdin.isTTY && process.stderr.isTTY, 'usage', 'project pair는 사람이 터미널에서 직접 실행하고 확인 단어 pair를 입력해야 합니다.');
   if (key === 'mission stop') requireThat(['pause', 'cancel'].includes(values.mode), 'usage', '--mode pause 또는 cancel이 필요합니다.');
   if (key === 'mission delegate') requireThat(['codex', 'claude'].includes(values.provider), 'usage', '--provider codex 또는 claude가 필요합니다.');
+  if (values.host !== undefined || values.main !== undefined) requireThat(['group request', 'project request'].includes(key) && values.host !== undefined && values.provider === undefined, 'usage',
+    '--host는 group request·project request에서만 쓰고 계획·판단도 그 host가 맡습니다. --main은 --host both와 함께, --provider와는 함께 쓰지 않습니다.');
   const ms = (name, fallback) => {
     if (values[name] === undefined) return fallback;
     const value = Number(values[name]);
@@ -239,6 +243,7 @@ async function main() {
         const accepted = acceptRequest(store, { ...input, targetType: category, targetId: id, goal: file,
           ...(values['task-number'] === undefined ? {} : { taskNumber: values['task-number'] }),
           ...(values.criterion ? { criteria: values.criterion.map((description, i) => ({ id: `criterion-${i + 1}`, description })) } : {}),
+          ...(values.host ? { host: { mode: values.host, ...(values.main ? { main: values.main } : {}) } } : {}),
           ...(values.provider ? { provider: values.provider } : {}), ...(values.model ? { model: values.model } : {}),
           ...(values['request-key'] ? { requestKey: values['request-key'] } : {}), ...(revision ? { groupRevision: revision } : {}) });
         result = accepted.created ? await launchRequest(store, accepted.request.id, { dbPath, cliPath: values.cli }) : accepted.request;
