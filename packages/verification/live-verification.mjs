@@ -52,8 +52,8 @@ export class LiveVerification {
       new Knowledge(this.store).assertFresh({ ...snapshot, sources: snapshot.sources.filter(s => s.kind !== 'code' || snapshot.projectId !== projectId && !mission.liveCheckpoints?.[snapshot.projectId] && relevantSource(this.store, mission, taskId, snapshot)) });
     }
   }
-  configure(id, recipe, expectedRevision, template) {
-    return this.store.transaction(() => {
+  configure(id, recipe, expectedRevision, template, { inTransaction = false } = {}) {
+    const apply = () => {
       const m = this.engine.checked(id, expectedRevision), plan = activePlan(m), task = plan?.proposal.tasks.find(t => t.id === recipe.taskId);
       requireThat(m.mode === 'live' && task && ['planned', 'blocked', 'executing', 'waiting-decision'].includes(m.state) && !m.planningHold && taskState(m, task.id).state === 'queued', 'invalid-state', '배정 전 대기 작업에만 검증 계약을 등록할 수 있습니다.');
       validateRecipe(recipe, task);
@@ -62,7 +62,8 @@ export class LiveVerification {
       m.verificationRecipes ??= {};
       m.verificationRecipes[task.id] = { ...structuredClone(recipe), planVersion: plan.version, decisionId: d.id, hash: hash(recipe) };
       return this.engine.save(m, 'verification-configured', { taskId: task.id, decisionId: d.id });
-    });
+    };
+    return inTransaction ? apply() : this.store.transaction(apply);
   }
   locate(id, attemptId, revision) {
     const m = this.engine.checked(id, revision), attempt = m.attempts.find(a => a.id === attemptId);

@@ -9,6 +9,29 @@ const deniedExtension = /\.(?:pem|key|p12|pfx|db|sqlite|exe|dll|zip)$/i;
 const MAX_FILE_BYTES = 64 * 1024, MAX_TOTAL_BYTES = 256 * 1024;
 const standardSources = ['README.md', 'README', 'docs/README.md', 'package.json', 'pom.xml', 'build.gradle', 'build.gradle.kts', 'settings.gradle', 'settings.gradle.kts', 'go.mod', 'Cargo.toml', 'pyproject.toml', 'requirements.txt'];
 
+/** Bounded discovery of implementation and tests; hidden/generated paths, links and configuration files are excluded. */
+function implementationSources(root, goal) {
+  const found = [], terms = [...new Set((goal.toLowerCase().match(/[a-z][a-z0-9]{2,}/g) ?? []))];
+  let visited = 0;
+  const walk = (path, depth) => {
+    if (depth > 9 || visited >= 3000 || !existsSync(resolve(root, path))) return;
+    const directory = lstatSync(resolve(root, path));
+    if (directory.isSymbolicLink() || !directory.isDirectory()) return;
+    for (const entry of readdirSync(resolve(root, path), { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+      if (++visited > 3000) break;
+      if (entry.isSymbolicLink() || entry.name.startsWith('.') || blocked.test(entry.name) || /^(build|dist|target|vendor|generated|coverage)$/i.test(entry.name)) continue;
+      const file = `${path}/${entry.name}`;
+      if (entry.isDirectory()) walk(file, depth + 1);
+      else if (entry.isFile() && /\.(java|kt|ts|tsx|js|mjs|py|go|rs|cs)$/.test(entry.name) &&
+        !/\.(d\.ts|testdata|snap)$/.test(entry.name) && !/(secret|credential|private.?key)/i.test(entry.name)) found.push(file);
+    }
+  };
+  for (const path of ['src', 'tests', 'test']) walk(path, 0);
+  const score = path => terms.reduce((n, term) => n + (path.toLowerCase().includes(term) ? 5 : 0), 0) +
+    (/security|tenant|jwt|auth|gateway|route|application/i.test(path) ? 2 : 0);
+  return found.sort((a, b) => score(b) - score(a) || a.localeCompare(b));
+}
+
 /** Directory names are observations, not invented policy or an assertion that a project is empty. */
 function inventorySource(root, projectId) {
   const actual = realpathSync(root);
@@ -57,15 +80,27 @@ function readSource(root, entry, projectId) {
 
 export class Knowledge {
   constructor(store) { this.store = store; }
-  prepare(projectId) {
+  prepare(projectId, { includeImplementation = false, goal = '' } = {}) {
     const project = this.store.need('project', projectId);
-    try { return this.current(projectId); }
+    try { const current = this.current(projectId); if (!includeImplementation) return current; }
     catch (error) { if (!['missing-knowledge', 'stale-knowledge'].includes(error.code)) throw error; }
     const old = project.knowledgeSnapshotId ? this.store.need('knowledge-snapshot', project.knowledgeSnapshotId) : null;
     // Preserve explicitly selected sources; never replace a stale policy with a weaker inventory.
-    if (old && !old.sources.every(s => s.origin === 'directory-inventory')) return this.collect(projectId,
+    if (!includeImplementation && old && !old.sources.every(s => s.origin === 'directory-inventory')) return this.collect(projectId,
       { schemaVersion: 1, sources: old.sources.map(({ path, kind }) => ({ path, kind })) }, project.revision).snapshot;
-    const sources = standardSources.filter(path => existsSync(resolve(project.path, path))).map(path => ({ path, kind: /README/.test(path) ? 'overview' : 'code' }));
+    const sources = old && !old.sources.every(s => s.origin === 'directory-inventory') ? old.sources.map(({ path, kind }) => ({ path, kind })) :
+      standardSources.filter(path => existsSync(resolve(project.path, path))).map(path => ({ path, kind: /README/.test(path) ? 'overview' : 'code' }));
+    if (includeImplementation) {
+      // Re-read all selected evidence first: a missing explicit policy is never silently replaced.
+      let bytes = sources.reduce((n, s) => n + readSource(project.path, s, projectId).bytes, 0), added = 0, addedBytes = 0;
+      for (const path of implementationSources(project.path, goal).slice(0, 12)) {
+        if (added >= 12 || sources.length >= 32) break;
+        if (sources.some(s => s.path.toLowerCase() === path.toLowerCase())) continue;
+        const size = lstatSync(sourcePath(project.path, path).actual).size;
+        if (size > MAX_FILE_BYTES || bytes + size > MAX_TOTAL_BYTES || addedBytes + size > 96 * 1024) continue;
+        sources.push({ path, kind: 'code' }); bytes += size; addedBytes += size; added++;
+      }
+    }
     if (sources.length) return this.collect(projectId, { schemaVersion: 1, sources }, project.revision).snapshot;
     return this.persist(project, [inventorySource(project.path, projectId)], project.revision).snapshot;
   }

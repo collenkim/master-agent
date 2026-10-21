@@ -1,15 +1,16 @@
 # 검증 기준과 재현 방법
 
-기준일: 2026-10-21. Windows·Node.js 24.19.0에서 검증한다. 현재 기능과 남은 범위는 [구현 현황](implementation.md)을 따른다. 변경 과정과 폐기한 검증 방식은 Git 이력에서 확인한다.
+기준일: 2026-10-22. Windows·Node.js 24.19.0에서 검증한다. 현재 기능과 남은 범위는 [구현 현황](implementation.md)을 따른다. 변경 과정과 폐기한 검증 방식은 Git 이력에서 확인한다.
 
 ## 최신 검증
 
 | 검증 | 결과·범위 | 재현 |
 | --- | --- | --- |
-| 전체 회귀 | 277건 실행: 276건 통과, PC 신뢰 1건은 샌드박스의 사용자 홈 realpath 접근 차단. 같은 테스트를 샌드박스 밖에서 재실행해 통과. 건너뜀 0 | `npm.cmd test`, `.master-agent/update-contract-tests.log` |
-| 업데이트 계약·현재 설치본 | 최종 변경 기준 18건 통과. 설치·적용 확인 분리, 문구·해시 전달, 구형 CLI·잘못된 JSON·차단 사유, 오래된 해시·다른 탭·카탈로그 변경 거부, 재시작 후 재확인, 보류·부분 실패·버전 불일치, HTTP 인증, 하위 프로세스 종료. 현재 설치본 적용 회귀 포함 | `node --test tests/source-update.test.mjs tests/dashboard-updates.test.mjs` |
-| 실제 code-agent 설치·적용·브라우저 | 통과. 격리 로컬 upstream에서 실제 npm 설치·빌드·릴리스 등록, 설치 후 프로젝트 미변경, 서버 재시작 후 적용 재확인, 프로젝트별 해시·릴리스 ID 대조, 호스트 표지 미전달, 원본 소스 보존, 1440/390/320px 확인 화면 | `node scripts/smoke-dashboard-updates.mjs`, `.master-agent/updates-browser-sZRYV4/result.json` |
-| 구문·문서 링크 | JavaScript 113개·Markdown 19개 검사 | `npm.cmd run check` |
+| 자동 회귀 | 전체 289건 통과, 실패·건너뜀 0. 이후 보완한 분석 복구·근거·검증 계약 회귀 51건과 마지막 요청함 변경 관련 24건도 통과. 모델·개발 호스트는 모의 | `npm.cmd test`; 요청함 회귀: `node --test tests/dashboard-recovery.test.mjs tests/dashboard-interactions.test.mjs tests/dashboard-verification.test.mjs` |
+| 질문·검증 계약 브라우저 | 조회·제출 경합, 성공 후 이력 갱신·다음 질문·저장한 답 재열기, 실제 변경 시 입력 보존, 명시적 승인·전체 계약 등록·같은 TASK 1회 재개 통과. 긴 설명·경로를 1440/768/390/320px에서 확인 | `node scripts/smoke-dashboard-interactions.mjs`, `node scripts/smoke-dashboard-verification.mjs` |
+| 실제 대시보드 관측 | 서버 재시작 후 저장된 답변·선택값·응답 이력, 검증 계약 화면의 두 작업과 4개 화면 폭, 제어 연결 미리보기 확인. 업무 답변·검증 계약·연결은 제출하지 않음 | 로컬 브라우저에서 기존 요청 조회. 사용자별 DB를 사용하는 수동 검증 |
+| 업데이트 계약·실제 설치 | 계약 회귀 18건과 격리 환경의 실제 npm 설치·빌드·릴리스 등록·프로젝트 적용·재시작 후 재확인 통과. 문구·해시·릴리스 ID·잠금·부분 실패·1440/390/320px 화면 검사 | `node --test tests/source-update.test.mjs tests/dashboard-updates.test.mjs`, `node scripts/smoke-dashboard-updates.mjs` |
+| 구문·문서 링크 | JavaScript 118개·Markdown 19개 검사 | `npm.cmd run check` |
 
 업데이트 계약 fixture는 [update-fake-cli.mjs](../tests/update-fake-cli.mjs)다. code-agent 실행 응답을 흉내 내며 실제 릴리스를 빌드하지 않는다. 실제 설치·적용 smoke는 [smoke-dashboard-updates.mjs](../scripts/smoke-dashboard-updates.mjs)를 별도로 사용한다. `CODE_AGENT_SOURCE`로 소스와 빌드가 있는 code-agent 폴더를 지정할 수 있으며 기본은 `../code-agent`다. 현재 소스의 격리 사본, 로컬 bare remote, 전용 `CODE_AGENT_HOME`·`CODE_AGENT_RELEASE_HOME`과 두 프로젝트를 만들어 사용자 프로젝트·키·릴리스 저장소를 변경하지 않는다. 모델은 호출하지 않는다.
 

@@ -15,7 +15,18 @@ dialog{width:min(650px,94vw);max-height:90vh;overflow:auto;background:#171f2c;co
 #interaction-custom-label[hidden] { display: none; }
 #interaction-dialog [hidden] { display: none; }
 #interaction-stale:empty, #interaction-error:empty { display: none; }
+.response-status { color: #9bedca; }
 #interaction-dialog .dialog-actions, #interaction-approval .dialog-actions { flex-wrap: wrap; }
+#interaction-inbox .card-head h3 { min-width: 0; }
+#interaction-inbox .card-head .badge { flex-shrink: 0; }
+#interaction-inbox .project p { overflow-wrap: anywhere; }
+#interaction-form, #interaction-form > * { min-width: 0; max-width: 100%; }
+#interaction-dialog.verification-dialog { width: min(1000px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); }
+#interaction-verification, #interaction-verification [data-checks] { display: grid; gap: 16px; min-width: 0; }
+#interaction-verification fieldset { display: grid; gap: 12px; min-width: 0; margin: 0; }
+#interaction-verification legend { float: left; width: 100%; padding: 0; white-space: normal; overflow-wrap: anywhere; font-weight: 600; }
+#interaction-verification label, #interaction-verification input, #interaction-verification textarea, #interaction-verification select { min-width: 0; max-width: 100%; }
+#interaction-verification button, #interaction-dialog .dialog-actions button { white-space: normal; overflow-wrap: anywhere; }
 /* Question dialog: the form grid owns spacing; host line breaks stay; legends sit inside their box. */
 #interaction-form p, #interaction-form pre { margin: 0; }
 #interaction-title { white-space: pre-line; font-size: 17px; line-height: 1.5; }

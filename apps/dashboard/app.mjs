@@ -22,7 +22,7 @@ const attention = p => p.attention;
 const unavailable = p => p.observation.status !== 'observed' || p.observation.stale;
 const badge = status => `<span class="badge ${['blocked', 'human-input', 'process-error', 'timeout'].includes(status) ? 'danger' : ['completed', 'observed'].includes(status) ? 'success' : ''}">${escape(labels[status] ?? status)}</span>`;
 const connectionLabels = { connected: '제어 연결됨', 'pairing-available': '제어 연결 가능', 'trust-missing': 'PC 신뢰 필요', 'enabled-unbound': '연동 켜짐 · 이 DB 미등록',
-  'owned-by-other': '다른 제어자 소유', legacy: '터미널 연결 필요', unknown: '연결 확인 전', 'not-installed': 'code-agent 없음', stale: '연결 갱신 필요', observer: '관찰 연결' };
+  'owned-by-other': '다른 제어자 소유', legacy: '대시보드 연결 미지원', unknown: '연결 확인 전', 'not-installed': 'code-agent 없음', stale: '연결 갱신 필요', observer: '관찰 연결' };
 function connectionView(p) {
   const c = p.connection, last = p.pairing, unsettled = last && ['sending', 'unknown', 'bind-failed'].includes(last.state);
   const tone = c.state === 'connected' && !c.renewal ? 'success' : ['owned-by-other', 'stale'].includes(c.state) || c.expired ? 'danger' : 'warning';
@@ -40,7 +40,7 @@ const otherHost = host => host === 'claude' ? 'codex' : 'claude';
 // 요청의 실행 host — 개발 host와 master 계획·판단을 함께 정한다. host 없이 접수된 요청은 계획·판단 provider만 기록돼 있다
 const hostLabel = (execution, provider) => !execution ? `개발 host 프로젝트 설정 · 계획·판단 ${hostNames[provider] ?? provider ?? 'Claude'}`
   : execution.mode === 'both' ? `${hostNames[execution.main]} 주 · ${hostNames[otherHost(execution.main)]} 교차 검증` : `${hostNames[execution.mode]} 단독`;
-let latest, inFlight = false, timer;
+let latest, inFlight, timer;
 
 function render() {
   if (!latest) return;
@@ -93,9 +93,14 @@ function render() {
   renderHistory(latest);
 }
 
-async function refresh() {
-  if (inFlight) return;
-  inFlight = true; clearTimeout(timer); $('refresh').disabled = true;
+async function refresh({ afterPending = false } = {}) {
+  if (inFlight) {
+    await inFlight;
+    if (afterPending) return refresh({ afterPending: true });
+    return;
+  }
+  clearTimeout(timer); $('refresh').disabled = true;
+  inFlight = (async () => {
   try {
     const response = await fetch('/api/overview', { signal: AbortSignal.timeout(10000) });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -108,7 +113,9 @@ async function refresh() {
   } catch (error) {
     $('connection').textContent = '연결 끊김'; $('notice').className = 'notice error';
     $('notice').textContent = `대시보드 서버에 연결할 수 없습니다 (${error.message}). 아래 내용은 마지막 수신 화면입니다.`;
-  } finally { inFlight = false; $('refresh').disabled = false; timer = setTimeout(refresh, latest?.intervalMs ?? 5000); }
+  } finally { inFlight = null; $('refresh').disabled = false; timer = setTimeout(refresh, latest?.intervalMs ?? 5000); }
+  })();
+  return inFlight;
 }
 $('search').addEventListener('input', render); $('filter').addEventListener('change', render);
 $('refresh').addEventListener('click', refresh);

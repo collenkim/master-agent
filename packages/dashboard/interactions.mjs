@@ -7,6 +7,7 @@ import { findHumanKey, interactionApiSupported, interactionClient, signInteracti
 import { controlProbe } from '../code-agent-adapter/pairing.mjs';
 import { recordInteraction } from './history.mjs';
 import { preparationIssues } from '../orchestrator/preparation.mjs';
+import { verificationSetup, configureVerification } from './verification.mjs';
 
 const remoteUnavailable = '현재 code-agent 연동에는 전체 단계 요청 및 인증된 사람 응답 계약이 없습니다. 원래 code-agent 콘솔에서 처리하세요.';
 const values = v => Array.isArray(v) ? v : [];
@@ -22,7 +23,9 @@ async function readRemoteInteractions(store, project, cliPath, resolveKey = find
   // The unauthenticated hello also tells the project card why a connection is missing; it never pairs.
   const capability = { version: result.codeAgent?.version ?? null, commands: result.commands ?? {},
     responseSupported: false, reason: remoteUnavailable, checkedAt: now(), control: controlProbe(result) };
-  if (!binding) return { capability, questions: null, consents: null };
+  if (!binding) return { capability: { ...capability, reason: capability.control.pairing.supported
+    ? '프로젝트 제어 연결이 필요합니다. 프로젝트 카드에서 연결 상태를 확인하세요.'
+    : '적용 중인 code-agent는 대시보드 연결을 지원하지 않습니다. 프로젝트의 적용 버전과 업데이트 대기 상태를 확인하세요.' }, questions: null, consents: null };
   const client = new ControlClient({ cliPath, projectPath: project.path, ...binding, timeoutMs: 5000, retries: 0 });
   if (interactionApiSupported(result)) {
     const previous = store.get('interaction-source', project.id);
@@ -109,7 +112,18 @@ export function createInteractions(store, { cliPath, readRemote, resolveHumanKey
         groupIds: m.scope.groups.map(g => g.id), taskNumber: m.taskNumber ?? null, workId: null,
         context: { missionRevision: m.revision, scope: m.scope }, kind: 'question', allowCustom: true, multiple: false,
         respondSupported: true, unavailableReason: null };
-      const request = store.get('target-request', m.id), issues = request ? preparationIssues(request) : [];
+      const request = store.get('target-request', m.id), setup = verificationSetup(store, m);
+      const issues = request ? preparationIssues(request).filter(i => !setup || i.code !== 'missing-verification-recipe') : [];
+      if (setup && request && ['waiting', 'failed'].includes(request.state)) {
+        const id = key('master', m.id, `verification:${setup.planVersion}`); active.add(id);
+        save({ ...common, id, requestId: `verification:${setup.planVersion}`, handler: 'verification', taskId: null, stage: 'setup',
+          title: `${m.taskNumber ?? '요청'} · 실행 전 검증 방법 확인`,
+          body: '작업마다 변경할 파일, 완료 조건을 검사할 명령, 산출물 확인 방법을 등록하세요. 분석 질문의 답변만으로는 실행 계약이 등록되지 않습니다. 각 작업의 검증은 후행 작업이 시작되기 전에 성공할 수 있어야 합니다.',
+          reason: '검증 계약을 등록해야 개발을 시작할 수 있습니다.', references: [], verificationSetup: setup,
+          options: [{ id: 'configure', label: '확인한 검증 계약 등록 후 기존 요청 재개' }], recommendedOptionIds: ['configure'], recommendation: '', allowCustom: false,
+          respondSupported: m.state !== 'paused', unavailableReason: m.state === 'paused' ? '목표를 먼저 재개하세요.' : null,
+          producerState: 'open', originAt: request.updatedAt });
+      }
       if (issues.length && ['waiting', 'failed'].includes(request.state)) {
         const id = key('master', m.id, `preparation:${request.revision}`);
         // Pairing is an explicit choice only: nothing is preselected and the confirmation dialog performs it.
@@ -128,6 +142,15 @@ export function createInteractions(store, { cliPath, readRemote, resolveHumanKey
           producerState: 'open', originAt: request.updatedAt });
       }
       const run = m.analysisRunId ? store.get('analysis-run', m.analysisRunId) : null;
+      if (run && m.planningHold && ['blocked', 'waiting-decision'].includes(m.state) && ['invalid', 'error', 'stale', 'interrupted'].includes(run.status)) {
+        const id = key('master', m.id, `${run.id}:analysis-error`); active.add(id);
+        save({ ...common, id, requestId: `${run.id}:analysis-error`, runId: run.id, handler: 'analysis-error', taskId: null, stage: 'planning',
+          title: `${m.taskNumber ?? '요청'} · 분석을 다시 확인해야 합니다`,
+          body: `${run.error?.message ?? m.reason}\n오류: ${run.error?.code ?? run.status}\n같은 요청에서 근거를 점검하고 분석을 복구합니다. 유효한 질문은 답변을 기다리며, 검증에 실패한 초안은 실행하지 않습니다.`,
+          reason: '분석 오류 때문에 질문을 표시하지 못했습니다.', references: [run.id],
+          options: [{ id: 'reanalyze', label: '근거 확인 후 분석 복구·재시도' }], recommendedOptionIds: [], recommendation: '', allowCustom: false,
+          respondSupported: Boolean(request), unavailableReason: request ? null : 'mission analyze로 같은 목표를 재분석하세요.', producerState: 'open', originAt: run.finishedAt ?? run.startedAt });
+      }
       if (run && m.planningHold && ['blocked', 'waiting-decision'].includes(m.state) && ['needs-context', 'needs-human'].includes(run.status)) {
         for (const issue of run.result.issues) {
           const id = key('master', m.id, `${run.id}:${issue.id}`);
@@ -202,10 +225,17 @@ export function createInteractions(store, { cliPath, readRemote, resolveHumanKey
       const common = { source: 'code-agent', sourceInstanceId: instance, projectIds: [project.id], groupIds: groups,
         missionId: owner?.id ?? null, taskId: attempt?.taskId ?? null, taskNumber: owner?.taskNumber ?? workId, workId, stage: state.work?.phase ?? 'setup',
         context: { projectPath: project.path, repo: state.repo, stateVersion: state.stateVersion, workId },
-        handler: 'legacy', respondSupported: false, unavailableReason: remoteUnavailable,
+        handler: 'legacy', respondSupported: false, unavailableReason: remote.capability?.reason ?? remoteUnavailable,
         allowCustom: false, multiple: false, recommendedOptionIds: [], recommendation: '', references: [], reason: '', producerState: 'open' };
       const seen = new Set();
       const questions = remote.questions?.questions ?? values(state.questions?.unanswered).map(q => ({ id: typeof q === 'string' ? q : q.id }));
+      // A public status can report interaction IDs even when authenticated feed access is unavailable.
+      for (const requestId of [...new Set([...values(state.interactions?.pending), ...values(state.interactions?.deferred), ...values(state.interactions?.responded)])]) {
+        const id = key('code-agent', instance, `unavailable:${requestId}`); seen.add(id);
+        save({ ...common, id, requestId, kind: 'question', title: `${project.name} · 원본 질문 연결 필요`,
+          body: `code-agent에 대기 중인 요청이 있습니다. 요청 ID: ${requestId}\n제어 연결을 마치면 원본 질문·선택지·사람 응답 가능 여부를 확인합니다. 프로젝트의 code-agent interaction list에서도 확인할 수 있습니다.`,
+          options: [], connectionRequired: true, unavailableReason: '원본 요청을 가져올 제어 연결이 필요합니다. 프로젝트 연결 상태를 확인하세요.', originAt: null });
+      }
       for (const q of questions.filter(q => !q.answered)) {
         const id = key('code-agent', instance, `question:${q.id}`); seen.add(id);
         save({ ...common, id, requestId: q.id, kind: 'question', title: q.title || `code-agent 질문 ${q.id}`,
@@ -235,11 +265,17 @@ export function createInteractions(store, { cliPath, readRemote, resolveHumanKey
         const last = history.at(-1);
         return { ...item, state: item.producerState === 'open' && last?.action === 'defer' && last.contentHash === item.contentHash ? 'deferred' : item.producerState,
           history: history.map(({ id, action, state, answer, createdAt, appliedAt, resume, error }) => {
-            const request = resume?.requestId ? store.get('target-request', resume.requestId) : null;
+            const requestId = resume?.requestId ?? item.missionId;
+            const request = requestId ? store.get('target-request', requestId) : null;
             const m = item.missionId ? store.get('mission', item.missionId) : null;
             const recoveryAnswer = m?.recoveryAnswers?.find(a => a.commandId === id);
-            const observedResume = resume?.state === 'requested' && request ? { ...resume,
-              state: request.state === 'failed' ? 'failed' : recoveryAnswer?.state === 'reviewed' || item.handler === 'analysis' && m?.analysisRunId !== item.runId ? 'resumed' : 'requested',
+            const pendingAnswers = item.handler === 'analysis' && m?.analysisRunId === item.runId &&
+              store.get('analysis-run', item.runId)?.result?.issues.some(i => !values(m.clarifications).some(a => a.analysisId === item.runId && a.issueId === i.id));
+            const observedResume = ['requested', 'waiting-answers'].includes(resume?.state) && request ? { ...resume,
+              state: ['failed', 'completed', 'cancelled'].includes(request.state) ? request.state :
+                resume.state === 'waiting-answers' && pendingAnswers ? 'waiting-answers' :
+                request.state === 'waiting' ? 'blocked' : recoveryAnswer?.state === 'reviewed' || item.handler === 'analysis' && m?.analysisRunId !== item.runId ? 'resumed' : 'requested',
+              reason: request.state === 'waiting' && !pendingAnswers ? request.preparation?.issues?.map(i => i.message).join('\n') || m?.reason : pendingAnswers ? resume.reason : null,
               workerState: requestStatus(request).state, error: request.error?.code ?? null } : resume;
             return { id, action, state, answer, createdAt, appliedAt, resume: observedResume, error };
           }) };
@@ -295,6 +331,11 @@ export function createInteractions(store, { cliPath, readRemote, resolveHumanKey
           requireThat(input.resume === true, 'invalid-input', '준비 재점검은 기존 요청 재개로 제출하세요.');
           if ((input.optionIds ?? []).includes('pair-recheck')) requireThat(item.pairing?.projectIds.every(id => store.get('control-binding', id)), 'stale-question',
             '제어 연결이 아직 등록되지 않았습니다. 확인 화면에서 연결한 뒤 다시 제출하세요.');
+        }
+        else if (item.handler === 'verification') configureVerification(store, item, input);
+        else if (item.handler === 'analysis-error') {
+          const m = new Engine(store).checked(item.missionId, item.context.missionRevision);
+          requireThat(m.analysisRunId === item.runId && m.planningHold && input.resume === true, 'stale-question', '현재 분석 오류에서 기존 요청을 재개하세요.');
         }
         else if (item.handler === 'analysis') new Planner(store).clarify(item.missionId, { analysisId: item.runId, answers: [{ issueId: item.requestId, answer }] }, item.context.missionRevision, { inTransaction: true });
         else {

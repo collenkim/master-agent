@@ -45,3 +45,29 @@ test('디렉터리 링크를 통한 외부 근거 수집을 거부한다', t => 
   symlinkSync(outside, join(p.path, 'linked'), process.platform === 'win32' ? 'junction' : 'dir');
   assert.throws(() => new Knowledge(store).collect(p.id, { schemaVersion: 1, sources: [{ path: 'linked/document.md', kind: 'code' }] }, 1), e => e.code === 'source-path-denied');
 });
+
+test('planning adds bounded relevant implementation evidence without losing policy or expanding on each retry', t => {
+  const { store, fixture, root } = setup(t, { plan: false }), p = fixture.projects[0], k = new Knowledge(store);
+  writeFileSync(join(p.path, 'POLICY.md'), 'An explicitly selected policy');
+  k.collect(p.id, { schemaVersion: 1, sources: [{ path: 'POLICY.md', kind: 'policy' }] }, 1);
+  mkdirSync(join(p.path, 'src/generated'), { recursive: true });
+  mkdirSync(join(p.path, 'tests'));
+  writeFileSync(join(p.path, 'test'), 'a test launcher, not a source directory');
+  for (let i = 0; i < 20; i++) writeFileSync(join(p.path, `src/Other${i}.java`), `class Other${i} {}`);
+  writeFileSync(join(p.path, 'src/TenantFilter.java'), 'class TenantFilter {}');
+  writeFileSync(join(p.path, 'tests/TenantFilterTest.java'), 'class TenantFilterTest {}');
+  writeFileSync(join(p.path, 'src/Secret.java'), 'excluded secret fixture');
+  writeFileSync(join(p.path, 'src/generated/TenantGenerated.java'), 'excluded generated fixture');
+  writeFileSync(join(p.path, 'src/tenant.json'), '{"private":"excluded config fixture"}');
+  mkdirSync(join(root, 'outside'));
+  writeFileSync(join(root, 'outside/TenantOutside.java'), 'excluded external fixture');
+  symlinkSync(join(root, 'outside'), join(p.path, 'src/linked'), process.platform === 'win32' ? 'junction' : 'dir');
+  const options = { includeImplementation: true, goal: 'Tenant filter' }, snapshot = k.prepare(p.id, options);
+  const paths = snapshot.sources.map(s => s.path);
+  assert.equal(paths.length, 13); assert.equal(snapshot.sources[0].kind, 'policy');
+  assert.ok(paths.includes('src/TenantFilter.java')); assert.ok(paths.includes('tests/TenantFilterTest.java'));
+  assert.ok(!snapshot.sources.some(s => s.content.includes('excluded')));
+  assert.equal(k.prepare(p.id, options).id, snapshot.id);
+  writeFileSync(join(p.path, 'src/TenantFilter.java'), 'class TenantFilter { int changed; }');
+  assert.notEqual(k.prepare(p.id, options).id, snapshot.id);
+});

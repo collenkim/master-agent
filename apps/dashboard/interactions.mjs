@@ -1,18 +1,20 @@
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+import { renderVerification, verificationRecipes, verificationReviewed } from './verification.mjs';
 const $ = id => document.getElementById(id);
 const date = value => value ? new Date(value).toLocaleString('ko-KR') : '기록 없음';
 const same = (a, b) => String(a ?? '').replace(/\s+/g, ' ').trim() === String(b ?? '').replace(/\s+/g, ' ').trim();
 const labels = { open: '응답 대기', deferred: '보류', answered: '답변 적용', expired: '만료', closed: '대기 종료·결과 미확인',
   received: '접수', applied: '적용', 'not-requested': '재개 요청 없음', launching: '재개 접수·실행 확인 필요',
   requested: '재개 실행기 요청됨', resumed: '기존 처리기 재개 확인', 'waiting-answers': '다른 답변 대기', manual: 'CLI 재개 필요', failed: '실패',
-  sending: '전송 중', unknown: '수신 여부 미확인', reopened: '다시 열림', 'waiting-host': '원래 세션 소비 대기', queued: '재개 대기', started: '원래 세션 재개됨', blocked: '재개 차단', cancelled: '취소' };
+  sending: '전송 중', unknown: '수신 여부 미확인', reopened: '다시 열림', 'waiting-host': '원래 세션 소비 대기', queued: '재개 대기', started: '원래 세션 재개됨', blocked: '재개 후 추가 조치 필요', completed: '요청 완료', cancelled: '취소' };
 let data, post, refresh, actions = {}, opened, pending = false, lastSubmission;
 const seen = new Set();
 function stored(id) { try { return JSON.parse(sessionStorage.getItem(`interaction-draft:${id}`) ?? 'null'); } catch { return null; } }
 function saveDraft() {
   if (!opened || pending) return;
   const draft = { contentHash: opened.contentHash, custom: $('interaction-custom')?.value ?? '',
-    optionIds: [...document.querySelectorAll('#interaction-options input:checked')].map(i => i.value), answers: remoteAnswers() };
+    optionIds: [...document.querySelectorAll('#interaction-options input:checked')].map(i => i.value), answers: remoteAnswers(),
+    ...(opened.handler === 'verification' ? { recipes: verificationRecipes() } : {}) };
   try { sessionStorage.setItem(`interaction-draft:${opened.id}`, JSON.stringify(draft)); } catch { /* Draft still lives in the form. */ }
   lastSubmission = null;
 }
@@ -29,15 +31,15 @@ function init() {
     <p id="interaction-capabilities" class="muted"></p><div id="interaction-items" class="projects"></div>`;
   const dialog = document.createElement('dialog'); dialog.id = 'interaction-dialog';
   dialog.setAttribute('aria-labelledby', 'interaction-title');
-  dialog.innerHTML = `<form id="interaction-form"><h2 id="interaction-title"></h2><p id="interaction-context" class="muted"></p>
+  dialog.innerHTML = `<form id="interaction-form"><h2 id="interaction-title" tabindex="-1" autofocus></h2><p id="interaction-context" class="muted"></p>
     <p id="interaction-stale" class="error" role="alert"></p><pre id="interaction-body" class="interaction-body"></pre>
-    <div id="interaction-remote-questions"></div>
+    <div id="interaction-remote-questions"></div><div id="interaction-verification" hidden></div>
     <div id="interaction-recommendation"></div><div id="interaction-evidence"></div>
     <fieldset id="interaction-options"><legend>답변 선택</legend></fieldset>
     <label id="interaction-custom-label">직접 입력<textarea id="interaction-custom" rows="4" maxlength="16000"></textarea></label>
     <p id="interaction-limit" class="muted"></p><div id="interaction-history"></div>
     <p id="interaction-error" class="error" role="alert"></p>
-    <div class="dialog-actions"><button type="button" id="interaction-close">닫기</button><button type="button" id="interaction-defer">보류</button><button type="submit" id="interaction-submit">답변 제출 · 기존 요청 재개</button></div></form>`;
+    <div class="dialog-actions"><button type="button" id="interaction-close">닫기</button><button type="button" id="interaction-next" hidden>다음 질문 열기</button><button type="button" id="interaction-defer">보류</button><button type="submit" id="interaction-submit">답변 제출 · 기존 요청 재개</button></div></form>`;
   document.body.append(dialog);
   const approval = document.createElement('dialog'); approval.id = 'interaction-approval';
   approval.setAttribute('aria-labelledby', 'approval-title');
@@ -50,9 +52,12 @@ function init() {
   document.body.append(approval);
   for (const id of ['source', 'state', 'group', 'project', 'stage', 'search']) $(`interaction-${id}`).addEventListener('input', renderList);
   $('interaction-items').addEventListener('click', event => {
+    const connection = event.target.closest('[data-connect-project]');
+    if (connection) { void actions.pair?.(connection.dataset.connectProject); return; }
     const button = event.target.closest('[data-interaction]'); if (button) open(button.dataset.interaction);
   });
   $('interaction-close').onclick = () => dialog.close(); $('approval-close').onclick = () => approval.close();
+  $('interaction-next').onclick = () => { const next = remainingQuestions()[0]; if (next) open(next.id); };
   const closed = () => { if (!dialog.open && !approval.open) opened = null; };
   dialog.addEventListener('close', closed); approval.addEventListener('close', closed);
   $('interaction-options').addEventListener('change', () => { $('interaction-custom').value = ''; saveDraft(); });
@@ -123,6 +128,18 @@ function history(item) {
     ${['unknown', 'sending'].includes(h.state) || h.resume?.state === 'launching' ? `<button type="button" data-retry-interaction="${esc(h.id)}">같은 접수 번호로 결과 확인·재시도</button>` : ''}</p>`).join('') || '<p class="muted">아직 제출한 답변이 없습니다.</p>'}
     ${item.remote ? `<p>원래 요청 상태: ${esc([labels[item.remote.status] ?? item.remote.status, labels[item.remote.continuation?.state]].filter(Boolean).join(' · '))}</p>${(error => error ? `<p class="error">${esc(error)}</p>` : '')(item.remote.application?.error ?? item.remote.continuation?.detail)}` : ''}`;
 }
+function remainingQuestions() {
+  return opened?.handler === 'analysis' ? (data.interactions?.items ?? []).filter(i => i.id !== opened.id &&
+    i.handler === 'analysis' && i.missionId === opened.missionId && i.runId === opened.runId &&
+    ['open', 'deferred'].includes(i.state) && i.respondSupported) : [];
+}
+function responseMessage(response, remaining) {
+  const applied = response?.state === 'applied', resume = response?.resume;
+  const prefix = applied ? '답변이 적용되었습니다.' : '답변이 접수되었습니다. 원래 처리기의 적용을 기다립니다.';
+  if (resume?.state === 'waiting-answers') return `${prefix} 남은 질문 ${remaining.length}개에 답하면 같은 요청을 이어갑니다.`;
+  const progress = labels[resume?.state];
+  return `${prefix}${progress ? ` ${progress}.` : ''}${resume?.reason || resume?.error ? ` ${resume.reason ?? resume.error}` : ''}`;
+}
 function context(item) {
   return `${item.source} · ${item.projectIds.join(', ')} · ${item.taskNumber ?? item.workId ?? item.missionId ?? '작업 ID 없음'} · ${item.stage}${item.context.branch ? ` · ${item.context.branch}` : ''}${item.context.sessionId ? ` · 세션 ${item.context.sessionId}` : ''}`;
 }
@@ -140,7 +157,8 @@ function renderList() {
     <p class="muted">${esc(context(i))}</p><p>${i.kind === 'approval' ? '별도 승인 확인 필요' : '질문'} · ${!seen.has(i.id) ? '새 요청 · ' : ''}${['open', 'deferred'].includes(i.state) ? `${Math.max(0, Math.floor((Date.now() - Date.parse(i.originAt ?? i.firstSeenAt)) / 60000))}분 대기` : esc(date(i.updatedAt))}</p>
     <p class="muted">차단 대상: ${esc(i.taskId ?? i.missionId ?? i.workId ?? '독립 설정·운영 세션')}</p>
     ${!i.respondSupported ? `<p class="muted">${esc(i.unavailableReason)}</p>` : ''}
-    <button type="button" data-interaction="${esc(i.id)}">${i.kind === 'approval' ? '승인 전문 검토' : '질문·응답 열기'}</button></article>`).join('') || '<p class="empty">조건에 맞는 요청이 없습니다.</p>';
+    <button type="button" data-interaction="${esc(i.id)}">${i.kind === 'approval' ? '승인 전문 검토' : '질문·응답 열기'}</button>
+    ${i.connectionRequired ? `<button type="button" data-connect-project="${esc(i.projectIds[0])}">프로젝트 연결 확인</button>` : ''}</article>`).join('') || '<p class="empty">조건에 맞는 요청이 없습니다.</p>';
 }
 function open(id) {
   opened = (data.interactions?.items ?? []).find(i => i.id === id); if (!opened) return;
@@ -154,32 +172,38 @@ function open(id) {
     $('approval-submit').textContent = opened.respondSupported ? '선택한 판단 제출' : '명시적 승인 제출 (연동 미지원)';
     $('approval-defer').textContent = opened.handler === 'code-agent' && opened.state === 'deferred' ? '다시 열기' : '보류';
     $('approval-history').innerHTML = history(opened); $('approval-defer').disabled = !['open', 'deferred'].includes(opened.state);
-    $('interaction-approval').showModal(); return;
+    $('interaction-approval').showModal(); checkOpen(); return;
   }
   $('interaction-title').textContent = opened.title; $('interaction-context').textContent = context(opened);
+  $('interaction-dialog').classList.toggle('verification-dialog', opened.handler === 'verification');
   $('interaction-body').textContent = opened.body;
   $('interaction-body').hidden = [opened.title, ...(opened.questions ?? []).map(q => q.title)].some(title => same(opened.body, title));
   $('interaction-recommendation').innerHTML = `<h3>추천안과 이유</h3><p>${esc(opened.recommendation || '제공된 추천안 없음')}</p><p>${esc(opened.reason)}</p>`;
   $('interaction-evidence').innerHTML = `<h3>근거</h3>${opened.references.map(r => `<p class="path">${esc(r)}</p>`).join('') || '<p class="muted">제공된 근거 없음</p>'}`;
   const draft = stored(id), compatible = draft?.contentHash === opened.contentHash;
+  renderVerification(opened.verificationSetup, compatible ? draft.recipes : null, () => { saveDraft(); checkOpen(); });
   const structured = opened.handler === 'code-agent';
   $('interaction-remote-questions').innerHTML = '';
   for (const id of ['interaction-recommendation', 'interaction-evidence', 'interaction-options']) $(id).hidden = structured;
   if (!opened.options.length) $('interaction-options').hidden = true;
   if (structured) remoteQuestions(opened, compatible ? draft : null);
-  const selected = compatible ? draft.optionIds : opened.recommendedOptionIds;
+  const applied = opened.source === 'master' ? opened.history.findLast(h => h.action === 'answer' && h.state === 'applied') : null;
+  const selected = applied ? opened.options.filter(o => o.label === applied.answer).map(o => o.id) : compatible ? draft.optionIds : opened.recommendedOptionIds;
   $('interaction-options').innerHTML = '<legend>대안 선택</legend>' + opened.options.map(o => `<label class="interaction-option"><input type="${opened.multiple ? 'checkbox' : 'radio'}" name="interaction-option" value="${esc(o.id)}" ${selected.includes(o.id) ? 'checked' : ''}>${esc(o.label)}${opened.recommendedOptionIds.includes(o.id) ? ' (추천)' : ''}</label>`).join('');
   $('interaction-custom-label').hidden = !opened.allowCustom;
-  $('interaction-custom').value = compatible ? draft.custom : '';
+  $('interaction-custom').disabled = false;
+  $('interaction-custom').value = applied ? selected.length ? '' : applied.answer : compatible ? draft.custom : '';
   $('interaction-limit').textContent = opened.unavailableReason ?? (opened.pairing ? '"제어 연결 후 기존 요청 이어 실행"을 고르면 제출할 때 연결 확인 화면이 열립니다. 연결을 마친 뒤 같은 요청·TASK에서 준비를 다시 확인합니다.'
+    : opened.handler === 'verification' ? '등록한 계약은 이 계획의 대기 작업에 적용됩니다. 같은 목표와 TASK 번호로 실행 준비를 다시 확인합니다.'
     : '답변 제출 후 기존 목표와 TASK 번호로 재분석합니다. 다른 질문이 남아 있으면 답변을 기다립니다.');
-  $('interaction-history').innerHTML = history(opened); $('interaction-error').textContent = '';
+  $('interaction-history').innerHTML = history(opened); $('interaction-error').textContent = ''; $('interaction-error').className = 'error';
   $('interaction-stale').textContent = draft && !compatible ? `질문이 변경되어 이전 초안을 자동 제출하지 않습니다. 이전 직접 입력: ${draft.custom || '(선택 답변)'}` : '';
-  $('interaction-submit').textContent = opened.handler === 'preparation' ? '준비 다시 확인 · 기존 요청 재개' : structured ? '선택 내용 명시적 제출' : '답변 제출 · 기존 요청 재개';
-  $('interaction-submit').disabled = !opened.respondSupported || !['open', 'deferred'].includes(opened.state) || structured && opened.state === 'deferred';
+  $('interaction-submit').textContent = opened.handler === 'verification' ? '검증 계약 등록 · 기존 요청 재개' : opened.handler === 'preparation' ? '준비 다시 확인 · 기존 요청 재개' : structured ? '선택 내용 명시적 제출' : '답변 제출 · 기존 요청 재개';
+  $('interaction-submit').disabled = !opened.respondSupported || !['open', 'deferred'].includes(opened.state) || structured && opened.state === 'deferred' || opened.handler === 'verification' && !verificationReviewed();
   $('interaction-defer').textContent = structured && opened.state === 'deferred' ? '다시 열기' : '보류';
   $('interaction-defer').disabled = !['open', 'deferred'].includes(opened.state);
-  $('interaction-dialog').showModal();
+  $('interaction-dialog').showModal(); checkOpen();
+  $('interaction-title').focus({ preventScroll: true }); $('interaction-dialog').scrollTop = 0;
 }
 /** The chosen pairing still needs its own confirmation dialog per project; the answer is sent only after every connection is registered. */
 async function pairFirst(item) {
@@ -200,38 +224,57 @@ async function submit(action) {
     if (!paired) { $('interaction-error').textContent = '제어 연결을 마치지 않아 답변을 제출하지 않았습니다. 선택은 유지됩니다.'; return; }
   }
   const payload = { id: item.id, revision: item.revision, contentHash: item.contentHash, context: item.context, action,
-    ...(action === 'answer' ? item.handler === 'code-agent' ? { answers: remoteAnswers() } : { optionIds: [...document.querySelectorAll('#interaction-options input:checked')].map(i => i.value), custom: $('interaction-custom').value, resume: true } : {}),
+    ...(action === 'answer' ? item.handler === 'code-agent' ? { answers: remoteAnswers() } : { optionIds: [...document.querySelectorAll('#interaction-options input:checked')].map(i => i.value), custom: $('interaction-custom').value, resume: true,
+      ...(item.handler === 'verification' ? { recipes: verificationRecipes(), reviewed: verificationReviewed() } : {}) } : {}),
     ...(['approve', 'request-changes'].includes(action) ? { reviewed: $('approval-reviewed').checked, choices: Object.fromEntries([...document.querySelectorAll('[data-approval-choice]')].map(e => [e.dataset.approvalChoice, e.value])) } : {}) };
   const serialized = JSON.stringify(payload);
   const commandId = lastSubmission?.serialized === serialized ? lastSubmission.commandId : crypto.randomUUID();
   lastSubmission = { serialized, commandId }; pending = true;
-  const errorEl = item.kind === 'approval' ? $('approval-limit') : $('interaction-error'); errorEl.textContent = '전송 중…';
-  document.querySelectorAll('#interaction-form button, #interaction-form input, #interaction-form textarea, #interaction-approval button, #interaction-approval input, #interaction-approval select').forEach(e => { e.disabled = true; });
+  const errorEl = item.kind === 'approval' ? $('approval-limit') : $('interaction-error'); errorEl.textContent = '전송 중…'; errorEl.className = 'muted';
+  document.querySelectorAll('#interaction-form button, #interaction-form input, #interaction-form textarea, #interaction-form select, #interaction-approval button, #interaction-approval input, #interaction-approval select').forEach(e => { e.disabled = true; });
   try {
     const result = await post('/api/interactions/respond', { ...payload, commandId });
+    lastSubmission.receipt = { ...result, action };
     errorEl.textContent = `${labels[result.state] ?? result.state} · ${labels[result.resume?.state] ?? ''} ${result.error ?? ''}`;
+    errorEl.className = result.state === 'failed' || result.resume?.state === 'failed' ? 'error' : 'response-status';
     if (action === 'answer' && ['received', 'applied'].includes(result.state)) try { sessionStorage.removeItem(`interaction-draft:${item.id}`); } catch { /* optional browser storage */ }
-    await refresh();
-  } catch (error) { errorEl.textContent = `${error.message} 입력은 유지됩니다. 같은 내용으로 재시도하면 같은 접수 번호를 사용합니다.`; }
+    await refresh({ afterPending: true });
+  } catch (error) { errorEl.className = 'error'; errorEl.textContent = `${error.message} 입력은 유지됩니다. 같은 내용으로 재시도하면 같은 접수 번호를 사용합니다.`; }
   finally {
     pending = false;
-    document.querySelectorAll('#interaction-form button, #interaction-form input, #interaction-form textarea, #interaction-approval button, #interaction-approval input, #interaction-approval select').forEach(e => { e.disabled = false; });
+    document.querySelectorAll('#interaction-form button, #interaction-form input, #interaction-form textarea, #interaction-form select, #interaction-approval button, #interaction-approval input, #interaction-approval select').forEach(e => { e.disabled = false; });
     enableOptionInputs(); checkOpen();
   }
 }
 function checkOpen() {
   if (!opened || pending) return;
   const current = data.interactions?.items.find(i => i.id === opened.id);
-  const stale = !current || current.contentHash !== opened.contentHash || !['open', 'deferred'].includes(current.state);
+  // Poll history without replacing the form's original version/context or the user's draft.
+  if (current) $(opened.kind === 'approval' ? 'approval-history' : 'interaction-history').innerHTML = history(current);
+  const receipt = lastSubmission?.receipt;
+  const response = current?.history.find(h => h.id === receipt?.id) ?? receipt ?? current?.history.at(-1);
+  const processed = response?.state !== 'failed' && (['answered', 'received'].includes(current?.state) ||
+    !['failed', 'expired', 'cancelled', 'closed'].includes(current?.state) &&
+    ['answer', 'approve', 'request-changes'].includes(response?.action) && ['received', 'applied'].includes(response?.state));
+  const stale = !processed && (!current || current.contentHash !== opened.contentHash || !['open', 'deferred'].includes(current.state));
   if (opened.kind === 'approval') {
-    $('approval-defer').disabled = stale;
-    $('approval-submit').disabled = stale || !opened.respondSupported || opened.state === 'deferred' || !$('approval-reviewed').checked || !$('approval-verdict').value ||
+    $('approval-defer').disabled = stale || processed;
+    $('approval-submit').disabled = stale || processed || !opened.respondSupported || opened.state === 'deferred' || !$('approval-reviewed').checked || !$('approval-verdict').value ||
       $('approval-verdict').value === 'approve' && [...document.querySelectorAll('[data-approval-choice]')].some(e => !e.value);
     if (stale) $('approval-limit').textContent = '요청이 변경되었습니다. 최신 승인 전문을 다시 열어 확인하세요.';
+    else if (processed) { $('approval-limit').textContent = responseMessage(response, []); $('approval-limit').className = response?.resume?.state === 'failed' ? 'error' : 'response-status'; }
   } else {
-    if (stale) $('interaction-stale').textContent = '요청이 변경되었거나 처리되었습니다. 입력은 유지되며 최신 질문을 다시 열어 확인해야 제출할 수 있습니다.';
-    $('interaction-submit').disabled = stale || !opened.respondSupported || opened.handler === 'code-agent' && opened.state === 'deferred';
-    $('interaction-defer').disabled = stale;
+    if (stale) $('interaction-stale').textContent = '질문 내용이나 대상 상태가 변경되었습니다. 입력은 유지되며 최신 질문을 다시 열어 확인해야 제출할 수 있습니다.';
+    if (processed) {
+      $('interaction-stale').textContent = '';
+      $('interaction-error').textContent = responseMessage(response, remainingQuestions());
+      $('interaction-error').className = response?.resume?.state === 'failed' ? 'error' : 'response-status';
+    }
+    $('interaction-next').hidden = !processed || !remainingQuestions().length;
+    $('interaction-next').textContent = `다음 질문 열기 · ${remainingQuestions().length}개 남음`;
+    $('interaction-submit').disabled = stale || processed || !opened.respondSupported || opened.handler === 'code-agent' && opened.state === 'deferred' || opened.handler === 'verification' && !verificationReviewed();
+    $('interaction-defer').disabled = stale || processed;
+    if (processed) document.querySelectorAll('#interaction-options input, #interaction-custom, #interaction-remote-questions input, #interaction-remote-questions textarea, #interaction-verification input, #interaction-verification select, #interaction-verification textarea, #interaction-verification button').forEach(e => { e.disabled = true; });
   }
 }
 export function renderInteractions(latest, send, reload, extra = {}) {
@@ -241,6 +284,6 @@ export function renderInteractions(latest, send, reload, extra = {}) {
   selectItems('interaction-group', data.groups);
   selectItems('interaction-stage', [...new Set((data.interactions?.items ?? []).map(i => i.stage))].sort().map(id => ({ id })));
   const sources = data.interactions?.sources ?? [];
-  $('interaction-capabilities').textContent = sources.length ? sources.map(s => `${s.id}: ${s.error ? `요청 조회 실패 (${s.error}) · 마지막 관측 유지` : `code-agent ${s.version ?? '?'} · ${s.responseSupported ? '요청 API 연결됨 (사람 채널 권한은 요청별 확인)' : '사람 응답 연동 미지원·제어 연결 확인'}`}`).join(' / ') : 'code-agent 전체 단계 요청 API와 사람 응답 연동을 확인하기 전에는 외부 질문을 제출할 수 없습니다.';
+  $('interaction-capabilities').textContent = sources.length ? sources.map(s => `${data.projects.find(p => p.id === s.id)?.name ?? s.id}: ${s.error ? `요청 조회 실패 (${s.error}) · 마지막 관측 유지` : `code-agent ${s.version ?? '?'} · ${s.responseSupported ? '요청 API 연결됨 (사람 채널 권한은 요청별 확인)' : s.reason ?? '프로젝트 연결 상태 확인 필요'}`}`).join(' / ') : 'code-agent 전체 단계 요청 API와 사람 응답 연동을 확인하기 전에는 외부 질문을 제출할 수 없습니다.';
   renderList(); checkOpen();
 }

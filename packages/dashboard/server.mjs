@@ -28,6 +28,7 @@ export async function startDashboard({ dbPath, port = 4310, cliPath, intervalMs 
     ['/', ['text/html; charset=utf-8', 'index.html']],
     ['/app.mjs', ['text/javascript; charset=utf-8', 'app.mjs']],
     ['/interactions.mjs', ['text/javascript; charset=utf-8', 'interactions.mjs']],
+    ['/verification.mjs', ['text/javascript; charset=utf-8', 'verification.mjs']],
     ['/history.mjs', ['text/javascript; charset=utf-8', 'history.mjs']],
     ['/style.css', ['text/css; charset=utf-8', 'style.css']],
   ].map(([path, [type, file]]) => [path, { type, body: readFileSync(new URL(`../../apps/dashboard/${file}`, import.meta.url)) }]));

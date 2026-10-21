@@ -30,7 +30,7 @@ export async function prepareRequest(store, request, { cliPath, observe = observ
     if (project.deletedAt) { issue('not-found', '프로젝트 등록이 해제되었습니다.', '프로젝트와 요청 범위를 확인하세요.'); continue; }
     if (store.get('project-maintenance', projectId)?.active) { issue('project-busy', 'code-agent 업데이트 중입니다.', '업데이트 완료 후 다시 확인하세요.'); continue; }
     if (!mission.plans.length) {
-      try { const snapshot = new Knowledge(store).prepare(projectId); checks.push({ projectId, kind: 'knowledge', sourceCount: snapshot.sources.length, basis: snapshot.sources[0]?.origin ?? 'files' }); }
+      try { const snapshot = new Knowledge(store).prepare(projectId, { includeImplementation: true, goal: request.goal ?? mission.goal }); checks.push({ projectId, kind: 'knowledge', sourceCount: snapshot.sources.length, sourcePaths: snapshot.sources.map(s => s.path), basis: snapshot.sources[0]?.origin ?? 'files' }); }
       catch (error) { issue(error.code ?? 'knowledge-unavailable', error.message, 'project collect로 필요한 UTF-8 문서·코드의 상대 경로를 지정하세요. 기존 정책 근거를 자동 제외하지 않습니다.'); }
     }
     try {

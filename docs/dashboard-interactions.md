@@ -1,10 +1,10 @@
 # 공통 질문·선택·승인 요청함
 
-기준일: 2026-10-20. 실제 연결 계약과 지원 범위를 정리한다. 조작은 [README](../README.md#공통-질문승인-요청함)와 [대시보드](ui.md#공통-요청함), 시험 결과는 [검증 기록](verification.md)을 따른다. code-agent 정본은 설치된 소스의 `doc/dashboard-interactions.md`다.
+기준일: 2026-10-22. 실제 연결 계약과 지원 범위를 정리한다. 조작은 [README](../README.md#공통-질문승인-요청함)와 [대시보드](ui.md#공통-요청함), 시험 결과는 [검증 기록](verification.md)을 따른다. code-agent 정본은 설치된 소스의 `doc/dashboard-interactions.md`다.
 
 ## 선행 API 확인
 
-연결 진입점은 설치 탐색으로 찾은 code-agent CLI다. 검증한 로컬 빌드는 1.0.0·stateSchema 7·interaction schema 1이며, 출처는 [검증 기록](verification.md)에 남긴다. 패키지 버전만으로 지원 여부를 판정하지 않는다.
+연결 진입점은 설치 탐색으로 찾은 code-agent CLI다. 지원 여부는 프로젝트에 적용된 런타임의 공개 기능 조회로 판정한다. 패키지 버전이 같아도 프로젝트별 적용 릴리스와 지원 기능은 다를 수 있다.
 
 `hello.result.codeAgent.stateSchema >= 7`, `hello.result.interactions.schemaVersion === 1`, `humanChannel: dashboard-human`, `signature: Ed25519`, 아래 명령을 함께 확인한다. 프로젝트 식별자는 `hello.result.project.projectId`다.
 
@@ -45,10 +45,21 @@
 | code-agent 보류 | 원래 요청에 defer 전송. 최신 버전으로 reopen 후 다시 응답 |
 | code-agent 동의 | 별도 전문 화면. 확인 체크·승인/수정 요청·모든 변경 후보의 적용/유지를 명시적으로 선택. 기본 승인 없음 |
 | master 분석/재분석 질문 | 추천 문구와 선택지가 정확히 일치할 때만 기본 선택. 기존 Planner.clarify로 저장. 모든 답이 모이면 같은 목표·TASK의 실행기를 재개 |
+| master 분석 오류 | 오류 코드·사유와 분석 복구·재시도 표시. 분류만 잘못된 기존 결과는 최신 근거와 전체 검증을 통과할 때 새 분석 기록으로 복구하며 이전 기록 보존 |
+| master 검증 계약 누락 | 대기 작업별 변경 파일·검사 명령·완료 조건·산출물 입력. 명시적 확인 후 모든 계약을 원자적으로 등록하고 같은 요청 재개 |
+| 연결 없는 code-agent 요청 | 공개 상태의 interaction ID도 연결 안내로 표시. 질문 전문·선택지를 추측하지 않으며 연결 후 인증된 원본으로 교체 |
 | master 검증 실패의 정보/사람 질문 | 같은 시도·검증 실행에 답을 결속. 기존 Recovery가 파일·외부 상태·근거·범위·승인을 재검사한 뒤 복구 판단 |
 | master 사람 이관 | 요청·판단 이유·근거 표시. code-agent 질문/동의의 원래 항목에서 처리하며 사람 이관 기록 자체를 승인으로 사용하지 않음 |
 
 발행 주체·프로젝트·그룹·작업/TASK·단계·상태 필터, 새 요청·대기 시간·차단 대상·응답 이력을 제공한다. 추천 없는 질문을 임의로 추천하지 않는다. 다중 선택의 기본값은 명시된 defaultOptionIds만 사용한다. 열람·시간 경과·창 닫기는 제출이 아니다. master 및 구형 관측의 보류는 master 목록에만 저장한다.
+
+정보 질문과 중대한 판단 질문이 섞인 `needs-context` 결과는 질문·대안을 보존한 채 `needs-human`으로 분류하고 전체 분석 검증을 다시 적용한다. 미응답 질문이 남은 요청의 단순 이어 실행은 질문을 새로 생성하지 않는다. 모든 답변이 모이면 이전 답변 이력도 현재 요청의 완료·추가 조치 상태를 표시한다.
+
+답변 접수·적용으로 닫힌 질문은 오래된 질문 경고 대신 처리 결과와 최신 응답 이력을 표시하고 중복 제출을 막는다. 제출 전에 시작한 조회가 늦게 끝나면 그 조회가 끝난 뒤 최신 결과를 다시 가져온다. 같은 분석에 미응답 질문이 있으면 개수와 다음 질문 열기를 제공한다. 실제 질문 내용·대상 변경은 입력을 보존한 채 최신 질문을 다시 확인하도록 차단한다. 적용된 질문을 다시 열면 저장한 답변을 표시한다.
+
+검증 계약 화면의 Gradle 명령 후보는 Windows 프로젝트에 `scripts/gradle.ps1`이 있을 때만 제공한다. 실행 파일·인자는 편집 가능한 후보이며 자동 등록하지 않는다. 후행 작업이 만들 테스트를 선행 작업의 필수 검사로 지정하지 않도록 작업 순서와 검증 설명을 함께 표시한다. 이 작업의 code-agent 문서·승인 기록을 허용하는 항목도 명시적으로 선택한다. 입력 초안은 유지하지만 다시 열거나 내용을 수정하면 최종 확인 체크를 해제한다. 일반 분석 질문에 “검증 방식 승인”이라고 답한 것은 실행 계약 등록을 대신하지 않는다.
+
+연결 안내는 적용 버전의 페어링 미지원과 아직 등록하지 않은 제어 연결을 구분한다. 구버전의 대기 질문과 업데이트 확인 절차는 [대시보드 연결 문제](ui.md#실행과-연결)를 따른다.
 
 code-agent 답은 원래 producer가 소비한다. 살아 있는 세션의 consume/complete와 저장된 관리 실행의 같은 세션 재개는 code-agent가 담당한다. 재개 가능 여부는 요청별 continuation 계약으로 확인한다. master는 새 개발 작업을 만들어 답을 복사하지 않는다. master 재개가 서버 종료로 미확인이면 기존 queued 실행만 대조·시작하며 이미 실행 중인 작업을 queued로 초기화하지 않는다.
 
@@ -68,6 +79,7 @@ npm.cmd test
 npm.cmd run check
 node scripts/check-interaction-support.mjs C:/IdeaProjects/code-agent/dist/agent/cli.js
 node scripts/smoke-dashboard-interactions.mjs
+node scripts/smoke-dashboard-verification.mjs
 node scripts/smoke-interactions-live.mjs C:/IdeaProjects/code-agent/dist/agent/cli.js
 node scripts/smoke-interactions-live.mjs C:/IdeaProjects/code-agent/dist/agent/cli.js --browser --browser-only
 ```

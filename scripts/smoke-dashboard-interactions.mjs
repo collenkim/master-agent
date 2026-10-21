@@ -46,20 +46,49 @@ try {
   assert.equal(f.store.need('mission', f.mission.id).clarifications, undefined);
   await evaluate(`document.getElementById('interaction-close').click(); document.querySelector('[data-interaction]').click()`);
   assert.equal(await evaluate('document.getElementById("interaction-custom").value'), '직접 확인한 정책');
+  // Hold a poll that captured the unanswered question; POST must fetch again after that poll completes.
+  await evaluate(`window.originalFetch = window.fetch; window.holdOverview = true;
+    window.fetch = async (...args) => {
+      const response = await window.originalFetch(...args);
+      if (args[0] === '/api/overview' && window.holdOverview) {
+        window.holdOverview = false;
+        return new Promise(resolve => { window.releaseOverview = () => resolve(response); });
+      }
+      return response;
+    }; document.getElementById('refresh').click()`);
+  await waitFor(`typeof window.releaseOverview === 'function'`);
   await evaluate(`document.getElementById('interaction-form').requestSubmit()`);
   await waitFor(`document.getElementById('interaction-error').textContent.includes('적용')`);
+  await evaluate(`window.releaseOverview(); window.fetch = window.originalFetch`);
   await waitFor(`!document.getElementById('interaction-close').disabled`);
   assert.equal(f.store.need('mission', f.mission.id).clarifications.length, 1); assert.equal(launches, 0);
-  await evaluate(`document.getElementById('interaction-close').click(); document.querySelector('[data-interaction]').click()`);
+  assert.equal(await evaluate(`document.getElementById('interaction-stale').textContent`), '');
+  assert.ok((await evaluate(`document.getElementById('interaction-history').textContent`)).includes('직접 확인한 정책'));
+  assert.equal(await evaluate(`document.getElementById('interaction-history').textContent.includes('아직 제출한 답변이 없습니다')`), false);
+  assert.equal(await evaluate(`document.getElementById('interaction-submit').disabled`), true);
+  assert.ok((await evaluate(`document.getElementById('interaction-error').textContent`)).includes('남은 질문 1개'));
+  await evaluate(`document.getElementById('interaction-next').click()`);
+  assert.equal(await evaluate(`document.getElementById('interaction-submit').disabled`), false);
+  assert.equal(await evaluate(`document.getElementById('interaction-custom').disabled`), false);
+  await evaluate(`document.getElementById('interaction-custom').value='보존할 입력'; document.getElementById('interaction-custom').dispatchEvent(new Event('input'))`);
   const mission = f.store.need('mission', f.mission.id);
   f.store.put('mission', { ...mission, reason: 'External edit to trigger stale view' }, mission.revision);
   await evaluate(`document.getElementById('refresh').click()`);
   await waitFor(`document.getElementById('interaction-stale').textContent.includes('변경')`);
   assert.equal(await evaluate('document.getElementById("interaction-submit").disabled'), true);
+  assert.equal(await evaluate(`document.getElementById('interaction-custom').value`), '보존할 입력');
   await evaluate(`document.getElementById('interaction-close').click(); document.querySelector('[data-interaction]').click(); document.getElementById('interaction-form').requestSubmit()`);
   await waitFor(`document.getElementById('interaction-error').textContent.includes('적용')`);
   await waitFor(`!document.getElementById('interaction-close').disabled`);
   assert.equal(launches, 1); assert.equal(f.store.need('mission', f.mission.id).clarifications.length, 2);
+  assert.equal(await evaluate(`document.getElementById('interaction-stale').textContent`), '');
+  assert.equal(await evaluate(`document.getElementById('interaction-next').hidden`), true);
+  assert.equal(await evaluate(`document.getElementById('interaction-history').textContent.includes('아직 제출한 답변이 없습니다')`), false);
+  await evaluate(`document.getElementById('interaction-close').click(); document.getElementById('interaction-state').value='answered'; document.getElementById('interaction-state').dispatchEvent(new Event('input')); document.querySelector('[data-interaction]').click()`);
+  assert.equal(await evaluate(`document.getElementById('interaction-stale').textContent`), '');
+  assert.ok(['직접 확인한 정책', '보존할 입력'].includes(await evaluate(`document.getElementById('interaction-custom').value`)));
+  assert.equal(await evaluate(`document.getElementById('interaction-submit').disabled`), true);
+  await evaluate(`document.getElementById('interaction-state').value='pending'; document.getElementById('interaction-state').dispatchEvent(new Event('input'))`);
   await evaluate(`document.getElementById('interaction-close').click(); document.getElementById('interaction-source').value='code-agent'; document.getElementById('interaction-source').dispatchEvent(new Event('input')); [...document.querySelectorAll('[data-interaction]')].find(b=>b.textContent.includes('승인')).click()`);
   assert.equal(await evaluate('document.getElementById("approval-reviewed").checked'), false);
   assert.equal(await evaluate('document.getElementById("approval-body").textContent'), '승인 전문: 문서 변경과 로컬 반영');
@@ -99,7 +128,7 @@ try {
   await waitFor(`document.getElementById('connection').textContent === '연결 끊김'`);
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ passed: true, producer: 'synthetic', actualCodeAgentResponses: false,
-    checks: ['recommendation-no-auto-submit', 'draft-poll-reopen', 'defer', 'explicit-submit', 'wait-other-answers', 'single-launch', 'stale-view', 'full-approval-unchecked', 'unsupported-disabled', 'XSS', 'mobile', 'preparation-legacy-failure', 'preparation-default-no-auto-submit', 'preparation-same-task-recheck', 'disconnect'], artifacts }));
+    checks: ['recommendation-no-auto-submit', 'draft-poll-reopen', 'defer', 'explicit-submit', 'poll-submit-race', 'success-not-stale', 'live-response-history', 'answered-reopen', 'next-question', 'wait-other-answers', 'single-launch', 'stale-view-preserves-input', 'full-approval-unchecked', 'unsupported-disabled', 'XSS', 'mobile', 'preparation-legacy-failure', 'preparation-default-no-auto-submit', 'preparation-same-task-recheck', 'disconnect'], artifacts }));
 } finally {
   await browser?.close();
   await dashboard.close();

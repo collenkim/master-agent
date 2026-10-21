@@ -136,7 +136,14 @@ export async function runRequest(store, id, { cliPath, host, provider, workflow,
     }
     const before = store.need('mission', id);
     if (before.planningHold && ['blocked', 'waiting-decision'].includes(before.state)) {
-      await new Planner(store).analyze(id, reasoning, { expectedRevision: before.revision });
+      const planner = new Planner(store);
+      if (planner.repairClassification(id, before.revision)) return finish({ state: 'waiting', blockers: ['human-input'], error: null });
+      const analysis = store.get('analysis-run', before.analysisRunId);
+      if (['needs-context', 'needs-human'].includes(analysis?.status) && analysis.result.issues.some(i =>
+        !(before.clarifications ?? []).some(a => a.analysisId === analysis.id && a.issueId === i.id))) {
+        return finish({ state: 'waiting', blockers: ['human-input'], error: null });
+      }
+      await planner.analyze(id, reasoning, { expectedRevision: before.revision });
     }
     const result = await (workflow ?? new LiveWorkflow(store)).run(id, executionHost, reasoning);
     const mission = store.need('mission', id);
