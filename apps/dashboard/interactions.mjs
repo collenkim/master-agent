@@ -184,7 +184,7 @@ function open(id) {
   renderVerification(opened.verificationSetup, compatible ? draft.recipes : null, () => { saveDraft(); checkOpen(); });
   const structured = opened.handler === 'code-agent';
   $('interaction-remote-questions').innerHTML = '';
-  for (const id of ['interaction-recommendation', 'interaction-evidence', 'interaction-options']) $(id).hidden = structured;
+  for (const id of ['interaction-recommendation', 'interaction-evidence', 'interaction-options']) $(id).hidden = structured || opened.handler === 'verification';
   if (!opened.options.length) $('interaction-options').hidden = true;
   if (structured) remoteQuestions(opened, compatible ? draft : null);
   const applied = opened.source === 'master' ? opened.history.findLast(h => h.action === 'answer' && h.state === 'applied') : null;

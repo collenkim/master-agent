@@ -7,6 +7,8 @@ import { startDashboard } from '../packages/dashboard/server.mjs';
 import { openBrowser } from './browser.mjs';
 
 const cleanup = [], f = verificationFixture({ after(fn) { cleanup.push(fn); } });
+writeFileSync(join(f.projects[0].path, 'build.gradle.kts'), 'plugins { java }\n');
+writeFileSync(join(f.projects[0].path, process.platform === 'win32' ? 'gradlew.bat' : 'gradlew'), 'browser fixture: never executed\n');
 let mission = f.engine.create({ mode: 'live', goal: '검증 화면 확인', requestKey: 'browser-verification', taskNumber: 'BROWSER-1',
   scope: { projectIds: ['one'], groupIds: [] }, criteria: [{ id: 'value', description: '실제 값 검사' }] });
 mission = f.engine.plan(mission.id, { schemaVersion: 1, summary: '검증 계약 없는 계획', unresolved: [],
@@ -30,6 +32,13 @@ try {
   await waitFor(`document.querySelector('[data-interaction]')`);
   await evaluate(`document.querySelector('[data-interaction]').click()`);
   assert.equal(await evaluate(`document.querySelectorAll('[data-verification-task]').length`), 2);
+  const recommendations = overview.interactions.items.find(i => i.handler === 'verification').verificationSetup.tasks.map(t => t.presets.find(p => p.recommended));
+  assert.equal(await evaluate(`document.querySelectorAll('[data-verification-recommendation]').length`), 2);
+  assert.ok((await evaluate(`document.querySelector('[data-verification-recommendation]').textContent`)).includes('Gradle test'));
+  assert.equal(await evaluate(`document.getElementById('interaction-recommendation').hidden`), true);
+  assert.equal(await evaluate(`document.querySelector('[data-executable]').value`), recommendations[0].executable);
+  assert.equal(await evaluate(`document.querySelector('[data-args]').value`), recommendations[0].args.join('\n'));
+  assert.equal(await evaluate(`document.getElementById('verification-reviewed').checked`), false);
   assert.equal(await evaluate(`document.getElementById('interaction-submit').disabled`), true);
   assert.equal(launches, 0);
   for (const [width, height] of [[1440, 900], [768, 600], [390, 844], [320, 640]]) {
@@ -68,7 +77,7 @@ try {
   assert.equal(saved.verificationRecipes['edit-one'].codeAgentRecords, true);
   assert.equal(saved.taskNumber, 'BROWSER-1'); assert.equal(launches, 1);
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ passed: true, synthetic: true, checks: ['all-task-contracts', 'explicit-review', 'edit-resets-review',
+  console.log(JSON.stringify({ passed: true, synthetic: true, checks: ['gradle-recommendation-visible', 'recommended-command-prefilled', 'no-automatic-approval', 'all-task-contracts', 'explicit-review', 'edit-resets-review',
     'draft-restored', 'work-records-option', 'long-content-1440-768-390-320', 'open-at-title', 'mobile', 'atomic-submit', 'same-task-single-launch'], artifacts }));
 } finally {
   await browser?.close(); await dashboard.close();

@@ -14,12 +14,15 @@ export function renderVerification(value, draft, onChange) {
   setup = value;
   const container = root(); container.hidden = !value;
   container.innerHTML = value ? `<p>각 명령은 해당 프로젝트 폴더에서 실행됩니다. 추천 명령도 실제 완료 조건을 검사하는지 확인하세요. 후행 작업이 만들어야 할 테스트를 선행 작업의 필수 검사로 지정하면 진행할 수 없습니다.</p>` + value.tasks.map((task, index) => {
-    const recipe = draft?.find(r => r.taskId === task.id);
-    return `<fieldset data-verification-task="${index}"><legend>${esc(task.id)} · ${esc(task.projectName)}</legend><p>${esc(task.goal)}</p><p class="muted">선행 작업: ${esc(task.dependsOn.join(', ') || '없음')} · 계획의 검증 설명: ${esc(task.verification)}</p>
+    const recipe = draft?.find(r => r.taskId === task.id), recommended = task.presets.find(p => p.recommended);
+    const checks = recipe?.checks ?? [recommended ?? {}];
+    return `<fieldset data-verification-task="${index}"><legend>${esc(task.id)} · ${esc(task.projectName)}</legend>
+      ${recommended ? `<div data-verification-recommendation><h3>추천안 · ${esc(recommended.label)}</h3><p>${esc(recommended.reason)}</p><code>${esc(recommended.command)}</code><p class="muted">${recipe ? '저장한 입력을 유지합니다.' : '아래 검증 명령에 추천안을 미리 채웠습니다.'} 확인 후 등록할 수 있으며 자동 실행하지 않습니다.</p></div>` : ''}
+      <p>${esc(task.goal)}</p><p class="muted">선행 작업: ${esc(task.dependsOn.join(', ') || '없음')} · 계획의 검증 설명: ${esc(task.verification)}</p>
       <label>변경을 허용할 파일 (한 줄에 하나)<textarea data-paths rows="4">${esc((recipe?.allowedPaths ?? task.allowedPaths).join('\n'))}</textarea></label>
       <label class="interaction-option"><input data-work-records type="checkbox" ${recipe?.codeAgentRecords ? 'checked' : ''}>이 작업의 code-agent 작업 문서·승인 기록 변경도 허용합니다. 다른 작업의 기록이나 제품 파일은 포함하지 않습니다.</label>
-      <div data-checks>${(recipe?.checks ?? [{}]).map((c, i) => checkMarkup(task, c, i)).join('')}</div>
-      <label>검증 추가<select data-preset><option value="">직접 지정</option>${task.presets.map((p, i) => `<option value="${i}">${esc(p.label)}</option>`).join('')}</select></label><button type="button" data-add-check>선택한 검증 추가</button>
+      <div data-checks>${checks.map((c, i) => checkMarkup(task, c, i)).join('')}</div>
+      <label>검증 추가<select data-preset><option value="">직접 지정</option>${task.presets.map((p, i) => `<option value="${i}">${esc(p.label)}${p.recommended ? ' (추천)' : ''}</option>`).join('')}</select></label><button type="button" data-add-check>선택한 검증 추가</button>
       <p>산출물 확인 방법 — 검증 출력에는 위 검증 번호를 입력하세요.</p>
       ${task.outputs.map(name => { const a = recipe?.artifacts.find(a => a.name === name); return `<label data-artifact="${esc(name)}">${esc(name)}<select data-artifact-kind><option value="checkId" ${a?.path ? '' : 'selected'}>검증 출력</option><option value="path" ${a?.path ? 'selected' : ''}>프로젝트 내 파일</option></select><input data-artifact-value required value="${esc(a?.path ?? a?.checkId?.replace('check-', '') ?? '')}" placeholder="검증 번호 또는 파일 상대 경로"></label>`; }).join('')}
       </fieldset>`;

@@ -27,6 +27,7 @@ dialog{width:min(650px,94vw);max-height:90vh;overflow:auto;background:#171f2c;co
 #interaction-verification legend { float: left; width: 100%; padding: 0; white-space: normal; overflow-wrap: anywhere; font-weight: 600; }
 #interaction-verification label, #interaction-verification input, #interaction-verification textarea, #interaction-verification select { min-width: 0; max-width: 100%; }
 #interaction-verification button, #interaction-dialog .dialog-actions button { white-space: normal; overflow-wrap: anywhere; }
+#interaction-verification [data-verification-recommendation] { display: grid; gap: 8px; padding: 12px; border: 1px solid #285b4c; border-radius: 8px; background: #143b34; overflow-wrap: anywhere; }
 /* Question dialog: the form grid owns spacing; host line breaks stay; legends sit inside their box. */
 #interaction-form p, #interaction-form pre { margin: 0; }
 #interaction-title { white-space: pre-line; font-size: 17px; line-height: 1.5; }

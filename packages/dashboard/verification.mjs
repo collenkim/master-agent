@@ -1,8 +1,29 @@
-import { existsSync } from 'node:fs';
+import { statSync } from 'node:fs';
 import { join } from 'node:path';
 import { VerificationTemplates } from '../verification/templates.mjs';
 import { LiveVerification } from '../verification/live-verification.mjs';
 import { requireThat } from '../domain/contracts.mjs';
+
+const file = path => { try { return statSync(path).isFile(); } catch { return false; } };
+
+/** Detect project-owned Gradle launchers without running build scripts or querying tasks. */
+export function gradlePresets(projectPath, verification = '') {
+  const windows = process.platform === 'win32';
+  const build = ['build.gradle.kts', 'build.gradle', 'settings.gradle.kts', 'settings.gradle'].find(name => file(join(projectPath, name)));
+  const script = windows ? 'scripts/gradle.ps1' : 'scripts/gradle.sh', wrapper = windows ? 'gradlew.bat' : 'gradlew';
+  const launcher = [script, wrapper].find(name => file(join(projectPath, name)));
+  if (!build && !launcher) return [];
+  const executable = windows ? join(process.env.SystemRoot ?? 'C:/Windows', 'System32/WindowsPowerShell/v1.0/powershell.exe') : '/bin/sh';
+  const runnable = launcher && file(executable);
+  const names = ['test', ...['spotbugsMain', 'compileJava'].filter(name => new RegExp(`\\b${name}\\b`).test(verification))];
+  return names.map(name => ({ label: `Gradle ${name}`, recommended: name === 'test',
+    reason: `${[build, launcher].filter(Boolean).join(' · ')}에서 Gradle 구성을 확인했습니다. ${name === 'test'
+      ? '프로젝트의 테스트를 실행하는 test를 기본 검증으로 추천합니다.' : '계획의 검증 설명에 지정된 추가 검사입니다.'}${runnable ? '' : ' 실행 가능한 Gradle Wrapper를 찾지 못했습니다. 실행 파일과 인자를 지정하세요.'}`,
+    command: `${launcher ?? 'gradle'} ${name}`, executable: runnable ? executable : '',
+    args: !runnable ? [] : !windows ? [launcher, name] : launcher === script
+      ? ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script, name]
+      : ['-NoProfile', '-Command', `$ErrorActionPreference = 'Stop'; & '.\\gradlew.bat' ${name}; exit $LASTEXITCODE`] }));
+}
 
 /** Suggestions are only editable drafts. Registration requires an explicit reviewed submission. */
 export function verificationSetup(store, m) {
@@ -10,12 +31,7 @@ export function verificationSetup(store, m) {
   const templates = new VerificationTemplates(store);
   const tasks = m.plans.at(-1).proposal.tasks.filter(t => m.tasks.find(s => s.id === t.id)?.state === 'queued' &&
     !m.verificationRecipes?.[t.id] && templates.candidates(m, t).length !== 1).map(task => {
-    const project = store.need('project', task.projectId), presets = [];
-    const powershell = process.platform === 'win32' ? join(process.env.SystemRoot ?? 'C:/Windows', 'System32/WindowsPowerShell/v1.0/powershell.exe') : null;
-    if (powershell && existsSync(powershell) && existsSync(join(project.path, 'scripts/gradle.ps1'))) {
-      for (const name of ['test', 'spotbugsMain', 'compileJava']) presets.push({ label: `Gradle ${name}`, executable: powershell,
-        args: ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'scripts/gradle.ps1', name] });
-    }
+    const project = store.need('project', task.projectId), presets = gradlePresets(project.path, task.verification);
     return { id: task.id, projectId: task.projectId, projectName: project.name, goal: task.goal, verification: task.verification,
       dependsOn: task.dependsOn, allowedPaths: task.allowedChanges, outputs: task.outputs,
       criteria: task.criteria.map(id => m.criteria.find(c => c.id === id)), presets };
