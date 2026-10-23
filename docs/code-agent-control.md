@@ -45,7 +45,7 @@ master-agent project pair <프로젝트ID> --cli <경로> [--controller dashboar
 
 `--control`은 dispatch·continue·verify·handoff·reconcile·replan·recover·advance·drive에 붙인다. reattach·stop·delegate·relay는 항상 이 경로다. `--poll-ms`(결과·이벤트 조회 주기)와 `--follow-timeout-ms`(한 실행을 기다리는 상한 — 넘으면 기다림만 멈추고 실행은 code-agent에서 계속된다)는 master 쪽 설정이다. heartbeat·연결 끊김 판단·정지 유예·실행 시간 상한 등은 code-agent 정책(`code-agent master enable --policy`, 통신 `policy`)이 정한다.
 
-`drive --control`은 독립 프로젝트를 먼저 접수하고 실행 ID를 저장한 뒤, 각 결과를 한 번씩 조회한다. 하나가 실행 중이어도 다른 프로젝트를 접수할 수 있다. 동일 프로젝트 잠금·선행 인계 조건은 유지하며 판단과 검사는 순차 수행한다. 이 경로의 관측 상한은 저장된 acceptedAt부터 계산하므로 재연결로 초기화되지 않는다. 초과·관측 불가는 unknown으로 보존하고 잠금·외부 실행은 그대로 둔다. 개별 dispatch·continue·reattach는 기존처럼 종료를 기다린다.
+`drive --control`은 독립 프로젝트를 먼저 접수하고 실행 ID를 저장한 뒤, 각 결과를 한 번씩 조회한다. 하나가 실행 중이어도 다른 프로젝트를 접수할 수 있다. 동일 프로젝트 잠금·선행 인계 조건은 유지하며 판단과 검사는 순차 수행한다. 이 경로의 관측 상한은 저장된 acceptedAt부터 계산하므로 재연결로 초기화되지 않는다. 초과·관측 불가는 unknown으로 보존하고 잠금·외부 실행은 그대로 둔다. 개별 dispatch·continue·reattach는 종료를 기다린다.
 
 `mission progress <ID>`는 원격 호출 없이 최근 저장 관측을 읽는다. 정상 위임 대기는 approval-pending, 판단·전송 중은 approval-processing, 사람 이관은 human-input, 실패·범위 위반·미확인은 blocked로 표시한다. 기존 state와 nextAction은 호환성을 위해 보존하며 새 관제에서는 progress.status·progress.nextAction과 작업별 phase·reason·runId·lastProgressAt을 사용한다.
 
@@ -100,7 +100,7 @@ PC 신뢰는 사람이 화면(확인 단어 `trust`)에서, 페어링은 사람�
 1. 배정·계속 실행은 기존과 같이 판단·시도·잠금을 한 트랜잭션으로 저장한 뒤 시작한다.
 2. 시작은 `submit` 한 번이다. 새 실행이면 요청에서 고른 host를 `payload.execution`(`{ mode, main? }`)으로 함께 보낸다. commandId는 `inv-<invocationId>`이고 기대 상태 버전(`expect.stateVersion`)과 master 식별자(`links`: 임무·작업·시도·계획 버전·호출)를 함께 보낸다. code-agent가 상태·소유·임대·작업 연결을 한 잠금 안에서 확인하고 받는다. 응답을 잃어 같은 commandId로 다시 보내면 기록된 응답이 돌아오고 실행은 하나다. 같은 commandId에 다른 내용은 `control-conflict`로 거부된다. code-agent가 이어 실행 접수를 응답으로 거부하면(`ok: false` — 재개 판정·임대·소유 등) 실행을 만들지 않았다는 확인이므로 같은 세션의 막힘(`blocked`, 결과의 `control.state: rejected`)으로 남기고 `control-submit-rejected`를 기록한다. 자동으로 다시 보내지 않는다. 통신 실패나 세션이 없는 첫 실행의 거부는 시도를 unknown으로 남긴다. 실행이 시작되면 세션 임대·hook 기록으로 상태 버전이 바뀌므로, 실행 프롬프트는 세션에 기대 상태를 다시 대조시키지 않고 지정된 작업인지만 확인하게 한다. 실행 세션 안의 `code-agent status --json`은 그 실행의 세션으로 임대를 본다. 프롬프트는 검증 계약의 독립 검사와 변경 범위 제약을 code-agent의 수락 기준·테스트 케이스로 옮기지 말라고 알린다 — 그것은 master가 반영 뒤 확인한다. 같은 프로젝트의 선행 작업이 반영한 커밋이 있으면 `codeAgentBase`로 넣어 새 작업을 그 위에서 시작하게 한다(code-agent 접수의 `--base`). 기본 기준 브랜치에서 시작하면 선행 산출물이 빠지기 때문이다. 선행 작업 증거는 요약(작업·프로젝트·검사 결과·산출물 해시·반영 커밋)만 싣는다 — 파일 트리 스냅샷·원격 상태·검사 출력은 master 기록에 남고, 통합 작업처럼 선행이 여럿이면 code-agent 접수 한도(프롬프트 20000자)를 넘기 때문이다.
 3. 접수된 실행은 `control-run` 기록으로 남기고, 끝 상태가 될 때까지(끝 상태를 본 뒤 한 번 더) 이벤트를 커서(`control-cursor`: 기록 ID·순번)로 받아 진척·질문·동의·검증·실행·연결 이벤트를 `control-event`로 남긴다. 기록 ID가 바뀌거나 구간이 비면(gap) 누락을 추측하지 않고 스냅샷으로 다시 맞춘다(`control-resynced`).
-4. 결과는 code-agent의 결과 근거(종료 코드·최종 메시지·권한 거부·실행 전후 상태·변경 파일·커밋·검증 기록)를 호스트 결과로 옮긴다. 모델의 완료 발언은 요약일 뿐이고, 회차의 처분은 기존처럼 실행 뒤 code-agent 상태와 master의 독립 검증으로 정한다. `unknown`·`abandoned` 실행은 결과로 받지 않고 시도를 unknown으로 남긴다(자동 재실행 없음).
+4. 결과는 code-agent의 결과 근거(종료 코드·최종 메시지·권한 거부·실행 전후 상태·변경 파일·커밋·검증 기록)를 호스트 결과로 옮긴다. 모델의 완료 발언은 요약일 뿐이고, 회차의 처분은 실행 뒤 code-agent 상태와 master의 독립 검증으로 정한다. `unknown`·`abandoned` 실행은 결과로 받지 않고 시도를 unknown으로 남긴다(자동 재실행 없음).
 
 연결 상태(통신), 프로세스 생존(감독·호스트 pid와 heartbeat), 업무 진척(단계·재개 판정)은 code-agent가 따로 보고한다. 통신이 끊긴 것만으로 실패·재배정하지 않는다 — 잠금은 시도가 끝날 때까지 유지되고, 실행은 code-agent 정책(`onMasterDisconnect`)에 따라 계속되거나 협력 정지한다.
 
@@ -110,7 +110,7 @@ master가 결과를 받기 전에 멈추면 시도가 `running`으로 남는다.
 
 ## 정지·취소
 
-`mission stop`은 그 시도의 지금 호출로 접수된 실행 하나만 대상으로 한다(commandId `stop-<runId>-<mode>`). 응답의 `requested`는 요청 접수, `stopped`는 끝 상태 확인이다. pause는 hook을 통한 협력 정지이고, 유예가 지나거나 `--force`면 code-agent가 확인된 프로세스만 강제 종료한다(결과에 협력·강제가 구분돼 남는다). 취소는 파일·커밋을 되돌리지 않는다. 시도의 상태는 결과를 받는 쪽(진행 중인 drive 또는 reattach)이 실행의 끝 상태로 남긴다. `mission pause`는 기존처럼 새 배정만 멈춘다. drive가 실행을 따라가는 동안 다른 터미널에서 `mission stop`·`mission relay`·`mission escalations`를 부를 수 있다 — 같은 DB의 쓰기는 잠금이 풀릴 때까지 최대 5초 기다린다.
+`mission stop`은 그 시도의 지금 호출로 접수된 실행 하나만 대상으로 한다(commandId `stop-<runId>-<mode>`). 응답의 `requested`는 요청 접수, `stopped`는 끝 상태 확인이다. pause는 hook을 통한 협력 정지이고, 유예가 지나거나 `--force`면 code-agent가 확인된 프로세스만 강제 종료한다(결과에 협력·강제가 구분돼 남는다). 취소는 파일·커밋을 되돌리지 않는다. 시도의 상태는 결과를 받는 쪽(진행 중인 drive 또는 reattach)이 실행의 끝 상태로 남긴다. `mission pause`는 새 배정만 멈춘다. drive가 실행을 따라가는 동안 다른 터미널에서 `mission stop`·`mission relay`·`mission escalations`를 부를 수 있다 — 같은 DB의 쓰기는 잠금이 풀릴 때까지 최대 5초 기다린다.
 
 ## 위임 판단
 
@@ -147,4 +147,4 @@ drive는 code-agent 통신 계약 호스트에서 판단기(`--provider`)가 있
 - 모의 시험(`tests/control.test.mjs`): code-agent 통신 계약을 흉내 낸 전송과 가짜 판단기로 두 프로젝트의 위임 → 독립 검증 → 위임 반영 → 인계 → 통합 완료, 판단 기록 선행, critical·ambiguous·권한 없음·준비하지 않은 동의의 사람 이관, 검증 전 반영 판단 금지, 위임 영수증 결합, 재부착, commandId 충돌·이벤트 재동기화, 정지 대상 제한, 독립 프로젝트 진행과 의존 작업 대기, 반영 단계에서만 하는 독립 검증과 반영 단계를 떠난 검증된 시도의 계속 실행, 위임 수정 요청 뒤 같은 세션의 재준비, 이어 실행 접수 거부의 막힘 기록, 반영 확인 수정 요청 뒤 재준비와 재검증, 선행 증거 요약 프롬프트, 업무 질문 판단 자료의 앞선 답을 본다.
 - 페어링 시험(`tests/pairing.test.mjs`): 계약을 흉내 낸 시험 대역(`tests/pairing-fake-cli.mjs`)과 임시 Ed25519 키로 연결 상태 분류, 확인 내용 해시 대조, 서명 검증·일회성 challenge, 토큰 파일 경로만 저장, 만료 임박 갱신(rotated), 다른 소유자·사용 중 프로젝트 거부, 응답 유실 뒤 같은 commandId 정산, 저장소 안 토큰 파일 거부, HTTP 확인 체크·화면 토큰을 본다. 실제 빌드와의 호환은 아래 연동 시험의 페어링 항목이 본다(빌드에 페어링이 없으면 건너뛴다).
 - 실제 code-agent CLI 연동 시험(`tests/code-agent-control.test.mjs`): 빌드된 code-agent(`CODE_AGENT_DIST` 또는 옆 저장소)와 가짜 호스트로 연결·원자적 접수·중복 거부·이벤트 커서·결과·재부착·정지·제어권 인계와 이전 소유자 거부를 본다. 시험 프로젝트에는 `init`으로 Claude 실행 절차·hook을 설치한다(관리 실행 설치 검사). 페어링 항목은 시험 폴더의 `CODE_AGENT_HOME`에서 PC 신뢰 → 확인한 연결 → 인증된 heartbeat·사람 채널 키 탐색을 보고, 화면 PC 신뢰 항목은 code-agent 문구의 해시로만 신뢰하고 바로 연결되는지와 호스트 표지를 넘기지 않는지 본다. code-agent 빌드가 없으면 건너뛴다.
-- 실제 AI 전체 사이클과 앞선 답 판단의 최신 결과·실패 이력·미검증 범위는 [검증 기록](verification.md)을 따른다.
+- 실제 AI 전체 사이클과 앞선 답 판단의 최신 결과·미검증 범위는 [검증 기록](verification.md)을 따른다.

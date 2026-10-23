@@ -1,17 +1,17 @@
 # 검증 기준과 재현 방법
 
-기준일: 2026-10-22. Windows·Node.js 24.19.0에서 검증한다. 현재 기능과 남은 범위는 [구현 현황](implementation.md)을 따른다. 변경 과정과 폐기한 검증 방식은 Git 이력에서 확인한다.
+기준일: 2026-10-23. Windows·Node.js 24.19.0에서 검증한다. 현재 기능과 남은 범위는 [구현 현황](implementation.md)을 따른다. 변경 과정과 폐기한 검증 방식은 Git 이력에서 확인한다.
 
 ## 최신 검증
 
 | 검증 | 결과·범위 | 재현 |
 | --- | --- | --- |
-| 자동 회귀 | 전체 289건 통과, 실패·건너뜀 0. 이후 보완한 분석 복구·근거·검증 계약 회귀 51건과 마지막 요청함 변경 관련 24건도 통과. 모델·개발 호스트는 모의 | `npm.cmd test`; 요청함 회귀: `node --test tests/dashboard-recovery.test.mjs tests/dashboard-interactions.test.mjs tests/dashboard-verification.test.mjs` |
+| 자동 회귀 | 전체 299건 통과, 실패·건너뜀 0(code-agent `4dd40da` 빌드 사용). 프로젝트 카드의 접수 요청 표시와 응답 거절 사유 보존은 자동 회귀로만 확인. 모델·개발 호스트는 모의 | `npm.cmd test` |
 | Gradle 검증 추천·계약 | 회귀 7건 통과. Gradle 감지·Wrapper 실행·실패 코드 전달, 파일과 검사 결과의 산출물 연결, 계획 파일 패턴의 정확한 경로 변환, 계약 등록·같은 TASK 완료·원자적 실패 처리 | `node --test tests/dashboard-verification.test.mjs` |
-| 질문·검증 계약 브라우저 | 조회·제출 경합, 응답 이력·다음 질문·저장한 답 재열기, 직접 입력 없는 검증 선택·산출물 연결, 검사 삭제 후 연결 보존·선택에 따른 검사 추가·초안 복원, 명시적 승인·전체 계약 등록·같은 TASK 1회 재개 통과. 1440/768/390/320px 화면 검사 | `node scripts/smoke-dashboard-interactions.mjs`, `node scripts/smoke-dashboard-verification.mjs` |
+| 질문·검증 계약 브라우저 | 조회·제출 경합, 응답 이력·다음 질문·저장한 답 재열기, 직접 입력 없는 검증 선택·산출물 연결, 검사 삭제 후 연결 보존·선택에 따른 검사 추가·초안 복원, 명시적 승인·전체 계약 등록·같은 TASK 1회 재개 통과(질문 20개·검증 계약 17개 항목). 1440/768/390/320px 화면 검사 | `node scripts/smoke-dashboard-interactions.mjs`, `node scripts/smoke-dashboard-verification.mjs` |
 | 실제 대시보드 관측 | 서버 재시작 후 저장된 답변·선택값·응답 이력, 검증 계약 화면의 두 작업과 4개 화면 폭, 제어 연결 미리보기 확인. 업무 답변·검증 계약·연결은 제출하지 않음 | 로컬 브라우저에서 기존 요청 조회. 사용자별 DB를 사용하는 수동 검증 |
 | 업데이트 계약·실제 설치 | 계약 회귀 18건과 격리 환경의 실제 npm 설치·빌드·릴리스 등록·프로젝트 적용·재시작 후 재확인 통과. 문구·해시·릴리스 ID·잠금·부분 실패·1440/390/320px 화면 검사 | `node --test tests/source-update.test.mjs tests/dashboard-updates.test.mjs`, `node scripts/smoke-dashboard-updates.mjs` |
-| code-agent 실행 방식별 준비 | 전체 295건 통과(code-agent `6aaa6de` 빌드 사용). 실행 방식별 준비(`runReadiness`) 정규화, 고른 방식의 확정 준비만 접수, 옛 code-agent는 주 host 준비로 판정. 브라우저 16개 항목: 카드의 방식별 준비·차단 이유, 신뢰 필요·확인 중 차단, 교차 검증 host의 신뢰 불요, 옛 형식 문구 유지, 1440/390/320px. 실제 Codex로 조회한 code-agent hello로도 화면 확인 | `node --test tests/request-host.test.mjs tests/pairing.test.mjs tests/managed-host.test.mjs`, `node scripts/smoke-dashboard-request-host.mjs` |
+| code-agent 실행 방식별 준비 | 실행 방식별 준비(`runReadiness`) 정규화, 고른 방식의 확정 준비만 접수, 옛 code-agent는 주 host 준비로 판정. 브라우저 16개 항목: 카드의 방식별 준비·차단 이유, 신뢰 필요·확인 중 차단, 교차 검증 host의 신뢰 불요, 옛 형식 문구 유지, 1440/390/320px. 실제 Codex로 조회한 code-agent hello로도 화면 확인 | `node --test tests/request-host.test.mjs tests/pairing.test.mjs tests/managed-host.test.mjs`, `node scripts/smoke-dashboard-request-host.mjs` |
 | 구문·문서 링크 | JavaScript 118개·Markdown 19개 검사 | `npm.cmd run check` |
 
 업데이트 계약 fixture는 [update-fake-cli.mjs](../tests/update-fake-cli.mjs)다. code-agent 실행 응답을 흉내 내며 실제 릴리스를 빌드하지 않는다. 실제 설치·적용 smoke는 [smoke-dashboard-updates.mjs](../scripts/smoke-dashboard-updates.mjs)를 별도로 사용한다. `CODE_AGENT_SOURCE`로 소스와 빌드가 있는 code-agent 폴더를 지정할 수 있으며 기본은 `../code-agent`다. 현재 소스의 격리 사본, 로컬 bare remote, 전용 `CODE_AGENT_HOME`·`CODE_AGENT_RELEASE_HOME`과 두 프로젝트를 만들어 사용자 프로젝트·키·릴리스 저장소를 변경하지 않는다. 모델은 호출하지 않는다.
