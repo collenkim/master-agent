@@ -138,6 +138,28 @@ test('a replaced remote ledger resets the cursor and expires old requests withou
   assert.equal(state.items.find(i => i.requestId === 'request-new').state, 'open');
 });
 
+test('setup consent binds by execution and links its escalation without inventing a work ID', async t => {
+  const f = await pending(t), project = f.fixture.projects[0], m = f.store.need('mission', f.mission.id);
+  f.store.put('mission', { ...m, taskNumber: 'TASK-SETUP', attempts: [{ id: 'attempt-setup', projectId: project.id, taskId: 'T1', state: 'waiting-decision', codeAgentWorkId: 'MA-not-started' }] }, m.revision);
+  f.store.put('control-run', { id: 'run-setup', projectId: project.id, missionId: m.id, attemptId: 'attempt-setup', sessionId: 'session-setup' });
+  f.store.put('escalation', { id: 'escalation-setup', missionId: m.id, attemptId: 'attempt-setup', taskId: 'T1', projectId: project.id, target: 'consent-setup', kind: 'consent', state: 'open', reason: 'baseline approval', createdAt: new Date().toISOString() });
+  const record = { schemaVersion: 1, source: 'code-agent', sourceInstanceId: 'source-setup', requestId: 'request-setup', revision: 1,
+    context: { workId: null, runId: 'run-setup', sessionId: 'session-setup' }, origin: { type: 'consent', id: 'consent-setup' },
+    questions: [], consent: { summary: '기준 커밋 생성', choices: [] }, title: '기준 커밋 생성', stage: 'setup', kind: 'consent', status: 'pending', canRespond: true, localKeyAvailable: true };
+  const inbox = createInteractions(f.store, { readRemote: async () => ({ capability: { sourceInstanceId: record.sourceInstanceId }, records: [record] }) });
+  await inbox.refreshProject(project);
+  let snapshot = inbox.snapshot(), remote = snapshot.items.find(i => i.handler === 'code-agent');
+  assert.equal(remote.missionId, m.id); assert.equal(remote.taskNumber, 'TASK-SETUP'); assert.equal(remote.taskId, 'T1'); assert.equal(remote.workId, null);
+  assert.equal(snapshot.items.find(i => i.handler === 'escalation').relatedInteractionId, remote.id);
+  record.context.sessionId = 'other-session';
+  await inbox.refreshProject(project);
+  snapshot = inbox.snapshot(); remote = snapshot.items.find(i => i.handler === 'code-agent');
+  assert.equal(remote.missionId, null); assert.equal(snapshot.items.find(i => i.handler === 'escalation').relatedInteractionId, null);
+  record.context.runId = null;
+  await inbox.refreshProject(project);
+  assert.equal(inbox.snapshot().items.find(i => i.handler === 'code-agent').missionId, null);
+});
+
 test('stale content/context, paused goal, invalid answers, deletion and update locks reject without receipts', async t => {
   const f = await pending(t), inbox = createInteractions(f.store), item = inbox.snapshot().items[0];
   for (const patch of [{ contentHash: 'changed' }, { context: { ...item.context, missionRevision: 0 } }]) await assert.rejects(inbox.respond(input(item, patch)), { code: 'stale-question' });

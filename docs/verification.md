@@ -7,8 +7,8 @@
 | 검증 | 결과·범위 | 재현 |
 | --- | --- | --- |
 | 자동 회귀 | 전체 289건 통과, 실패·건너뜀 0. 이후 보완한 분석 복구·근거·검증 계약 회귀 51건과 마지막 요청함 변경 관련 24건도 통과. 모델·개발 호스트는 모의 | `npm.cmd test`; 요청함 회귀: `node --test tests/dashboard-recovery.test.mjs tests/dashboard-interactions.test.mjs tests/dashboard-verification.test.mjs` |
-| Gradle 검증 추천·계약 | 회귀 5건 통과. Gradle 감지·실행 경로 누락 안내, 표준 Wrapper의 공백 경로·실패 코드 전달, 전용 스크립트 우선 사용, 계약 등록·같은 TASK 완료·원자적 실패 처리 | `node --test tests/dashboard-verification.test.mjs` |
-| 질문·검증 계약 브라우저 | 조회·제출 경합, 성공 후 이력 갱신·다음 질문·저장한 답 재열기, Gradle 추천 표시·명령 자동 입력·초안 보존, 명시적 승인·전체 계약 등록·같은 TASK 1회 재개 통과. 긴 설명·경로를 1440/768/390/320px에서 확인 | `node scripts/smoke-dashboard-interactions.mjs`, `node scripts/smoke-dashboard-verification.mjs` |
+| Gradle 검증 추천·계약 | 회귀 7건 통과. Gradle 감지·Wrapper 실행·실패 코드 전달, 파일과 검사 결과의 산출물 연결, 계획 파일 패턴의 정확한 경로 변환, 계약 등록·같은 TASK 완료·원자적 실패 처리 | `node --test tests/dashboard-verification.test.mjs` |
+| 질문·검증 계약 브라우저 | 조회·제출 경합, 응답 이력·다음 질문·저장한 답 재열기, 직접 입력 없는 검증 선택·산출물 연결, 검사 삭제 후 연결 보존·선택에 따른 검사 추가·초안 복원, 명시적 승인·전체 계약 등록·같은 TASK 1회 재개 통과. 1440/768/390/320px 화면 검사 | `node scripts/smoke-dashboard-interactions.mjs`, `node scripts/smoke-dashboard-verification.mjs` |
 | 실제 대시보드 관측 | 서버 재시작 후 저장된 답변·선택값·응답 이력, 검증 계약 화면의 두 작업과 4개 화면 폭, 제어 연결 미리보기 확인. 업무 답변·검증 계약·연결은 제출하지 않음 | 로컬 브라우저에서 기존 요청 조회. 사용자별 DB를 사용하는 수동 검증 |
 | 업데이트 계약·실제 설치 | 계약 회귀 18건과 격리 환경의 실제 npm 설치·빌드·릴리스 등록·프로젝트 적용·재시작 후 재확인 통과. 문구·해시·릴리스 ID·잠금·부분 실패·1440/390/320px 화면 검사 | `node --test tests/source-update.test.mjs tests/dashboard-updates.test.mjs`, `node scripts/smoke-dashboard-updates.mjs` |
 | code-agent 실행 방식별 준비 | 전체 295건 통과(code-agent `6aaa6de` 빌드 사용). 실행 방식별 준비(`runReadiness`) 정규화, 고른 방식의 확정 준비만 접수, 옛 code-agent는 주 host 준비로 판정. 브라우저 16개 항목: 카드의 방식별 준비·차단 이유, 신뢰 필요·확인 중 차단, 교차 검증 host의 신뢰 불요, 옛 형식 문구 유지, 1440/390/320px. 실제 Codex로 조회한 code-agent hello로도 화면 확인 | `node --test tests/request-host.test.mjs tests/pairing.test.mjs tests/managed-host.test.mjs`, `node scripts/smoke-dashboard-request-host.mjs` |

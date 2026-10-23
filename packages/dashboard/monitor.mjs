@@ -63,6 +63,9 @@ export function dashboardSnapshot(store, { live = false, refreshing = false, int
       pairing: pairing ? pairingReceipt(pairing) : null,
       lock: store.lock(project.id) ? { missionId: store.lock(project.id).mission_id, attemptId: store.lock(project.id).attempt_id } : null,
       tasks, requests: pendingRequests,
+      activity: pendingRequests.length ? { source: 'master', ids: pendingRequests.map(r => r.taskNumber ?? r.id),
+        status: pendingRequests[0].progress ?? pendingRequests[0].state,
+        detail: !state?.work ? list(state?.consents?.open).length ? '프로젝트 준비 승인 대기 · code-agent 작업 생성 전' : '요청 접수됨 · code-agent 작업 생성 전' : '' } : null,
       attention: Boolean(list(state?.consents?.open).length || list(state?.questions?.unanswered).length || list(state?.questions?.unverified).length ||
         state?.findings?.blocking || state?.findings?.humanDecision ||
         ['needs-human', 'ownership-conflict', 'replan-required', 'reapproval-required', 'limit-reached'].includes(state?.resume?.code) ||

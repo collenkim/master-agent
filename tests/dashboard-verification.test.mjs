@@ -8,7 +8,7 @@ import { verificationFixture } from './verification-fixture.mjs';
 import { answerFor } from './planning-fixture.mjs';
 import { acceptRequest, runRequest } from '../packages/orchestrator/requests.mjs';
 import { createInteractions } from '../packages/dashboard/interactions.mjs';
-import { gradlePresets } from '../packages/dashboard/verification.mjs';
+import { gradlePresets, artifactSuggestions, verificationPaths } from '../packages/dashboard/verification.mjs';
 import { validateRecipe } from '../packages/verification/live-verification.mjs';
 import { runProcess } from '../packages/reasoning/cli-provider.mjs';
 
@@ -48,6 +48,25 @@ test('project Gradle script takes precedence over the standard wrapper', async t
   assert.match(preset.command, /^scripts\/gradle/);
   const output = await runProcess(preset.executable, preset.args, { cwd: root, input: '', timeoutMs: 10000, captureExit: true });
   assert.equal(output.exitCode, 0, output.stderr); assert.match(output.stdout, /script-task=test/);
+});
+
+test('artifact choices distinguish planned files, test output and static-analysis output', () => {
+  const presets = [{ label: 'Gradle test' }, { label: 'Gradle spotbugsMain' }];
+  const task = { allowedChanges: ['README.md', 'src/test/**'], outputs: ['README.md 설정 문서', 'src/test/NewTest.java',
+    'build/test-results/test 보고서', 'build/reports/spotbugs 보고서', '../outside.txt', '구현 결과'] };
+  assert.deepEqual(artifactSuggestions(task, presets), [
+    { name: task.outputs[0], path: 'README.md' }, { name: task.outputs[1], path: 'src/test/NewTest.java' },
+    { name: task.outputs[2], presetLabel: 'Gradle test' }, { name: task.outputs[3], presetLabel: 'Gradle spotbugsMain' },
+    { name: task.outputs[4] }, { name: task.outputs[5] },
+  ]);
+  assert.deepEqual(artifactSuggestions(task, [presets[0]])[3], { name: task.outputs[3] });
+});
+
+test('planned file patterns become exact existing and declared future paths without widening the change scope', t => {
+  const root = temporary(t); mkdirSync(join(root, 'src/test'), { recursive: true }); mkdirSync(join(root, 'src/main'));
+  writeFileSync(join(root, 'src/test/ExistingTest.java'), 'existing test'); writeFileSync(join(root, 'src/main/App.java'), 'outside');
+  const task = { allowedChanges: ['README.md', 'src/test/**'], outputs: ['src/test/NewTest.java', 'src/main/App.java'] };
+  assert.deepEqual(verificationPaths(root, task, artifactSuggestions(task, [])), ['README.md', 'src/test/ExistingTest.java', 'src/test/NewTest.java']);
 });
 
 async function waiting(t) {

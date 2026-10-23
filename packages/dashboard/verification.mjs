@@ -1,10 +1,50 @@
-import { statSync } from 'node:fs';
-import { join } from 'node:path';
+import { statSync, readdirSync } from 'node:fs';
+import { join, matchesGlob, extname } from 'node:path';
 import { VerificationTemplates } from '../verification/templates.mjs';
 import { LiveVerification } from '../verification/live-verification.mjs';
 import { requireThat } from '../domain/contracts.mjs';
+import { safeRelative } from '../verification/tree.mjs';
 
 const file = path => { try { return statSync(path).isFile(); } catch { return false; } };
+const exactPath = path => { try { return safeRelative(path); } catch { return null; } };
+
+/** Offer declared files and command results, never interpret a report directory as a tracked file. */
+export function artifactSuggestions(task, presets) {
+  const declared = task.allowedChanges.filter(exactPath);
+  return task.outputs.map(name => {
+    const explicit = declared.find(path => name === path || name.startsWith(`${path} `));
+    if (explicit) return { name, path: explicit };
+    const first = name.split(/\s/)[0], path = exactPath(first);
+    if (path && extname(path) && !/^(?:build|target|dist|coverage)\//.test(path)) return { name, path };
+    const label = /spotbugs/i.test(name) ? 'Gradle spotbugsMain' : /(?:test-results|test report|테스트.*(?:결과|보고서))/i.test(name) ? 'Gradle test' : null;
+    return { name, ...(presets.some(p => p.label === label) ? { presetLabel: label } : {}) };
+  });
+}
+
+/** The verifier accepts exact paths. Resolve a plan's file patterns to existing and explicitly planned files. */
+export function verificationPaths(projectPath, task, suggestions) {
+  const paths = new Set(task.allowedChanges.filter(exactPath));
+  const patterns = task.allowedChanges.filter(p => /[*?]/.test(p) && exactPath(p.replace(/[*?]/g, 'x')));
+  for (const { path } of suggestions) if (path && patterns.some(pattern => matchesGlob(path, pattern))) paths.add(path);
+  if (patterns.length) {
+    const prefixes = patterns.map(p => p.slice(0, p.search(/[*?]/)).split('/').slice(0, -1).join('/'));
+    let count = 0;
+    const walk = (relative, depth) => {
+      if (depth > 20 || count >= 3000) return;
+      let entries;
+      try { entries = readdirSync(join(projectPath, relative), { withFileTypes: true }); } catch { return; }
+      for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+        if (++count > 3000) return;
+        if (entry.isSymbolicLink() || entry.name.startsWith('.') || ['node_modules', 'build', 'target', 'dist'].includes(entry.name)) continue;
+        const path = relative ? `${relative}/${entry.name}` : entry.name;
+        if (entry.isDirectory() && prefixes.some(p => !p || p === path || p.startsWith(`${path}/`) || path.startsWith(`${p}/`))) walk(path, depth + 1);
+        else if (entry.isFile() && exactPath(path) && patterns.some(pattern => matchesGlob(path, pattern))) paths.add(path);
+      }
+    };
+    walk('', 0);
+  }
+  return [...paths].sort();
+}
 
 /** Detect project-owned Gradle launchers without running build scripts or querying tasks. */
 export function gradlePresets(projectPath, verification = '') {
@@ -32,8 +72,9 @@ export function verificationSetup(store, m) {
   const tasks = m.plans.at(-1).proposal.tasks.filter(t => m.tasks.find(s => s.id === t.id)?.state === 'queued' &&
     !m.verificationRecipes?.[t.id] && templates.candidates(m, t).length !== 1).map(task => {
     const project = store.need('project', task.projectId), presets = gradlePresets(project.path, task.verification);
+    const artifacts = artifactSuggestions(task, presets), allowedPaths = verificationPaths(project.path, task, artifacts);
     return { id: task.id, projectId: task.projectId, projectName: project.name, goal: task.goal, verification: task.verification,
-      dependsOn: task.dependsOn, allowedPaths: task.allowedChanges, outputs: task.outputs,
+      dependsOn: task.dependsOn, allowedPaths, outputs: task.outputs, artifactSuggestions: artifacts,
       criteria: task.criteria.map(id => m.criteria.find(c => c.id === id)), presets };
   });
   return tasks.length ? { planVersion: m.plans.at(-1).version, tasks } : null;

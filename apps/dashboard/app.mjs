@@ -48,8 +48,8 @@ function render() {
   $('metrics').innerHTML = [[counts.projects, '등록 프로젝트'], [counts.activeMissions, '진행 중 목표'], [counts.attention, '판단·점검 필요 프로젝트'], [counts.unavailable, '조회 오류·오래된 관측']]
     .map(([value, label]) => `<article class="metric"><span>${label}</span><strong>${value}</strong></article>`).join('');
   const query = $('search').value.toLocaleLowerCase(), filter = $('filter').value;
-  const visible = projects.filter(p => `${p.name} ${p.id} ${p.path} ${p.work?.id ?? ''}`.toLocaleLowerCase().includes(query) &&
-    (filter === 'all' || filter === 'attention' && attention(p) || filter === 'unavailable' && unavailable(p) || filter === 'working' && p.work));
+  const visible = projects.filter(p => `${p.name} ${p.id} ${p.path} ${p.work?.id ?? ''} ${p.activity?.ids.join(' ') ?? ''}`.toLocaleLowerCase().includes(query) &&
+    (filter === 'all' || filter === 'attention' && attention(p) || filter === 'unavailable' && unavailable(p) || filter === 'working' && (p.work || p.activity)));
   $('project-count').textContent = `${visible.length} / ${projects.length}`;
   const openProjects = new Set([...document.querySelectorAll('#projects details[open]')].map(e => e.dataset.id));
   $('projects').innerHTML = visible.map(p => `<article class="project">
@@ -57,8 +57,9 @@ function render() {
     <div class="card-actions"><button type="button" class="project-request" data-id="${escape(p.id)}">이 프로젝트에 요청</button><button type="button" class="delete-project danger-button" data-id="${escape(p.id)}">프로젝트 삭제</button></div>
     <p class="path">${escape(p.path)}</p>
     ${connectionView(p)}
-    <div class="work"><span class="muted">${p.observation.historical || p.observation.stale ? '마지막 관측 작업' : '현재 관측 작업'}</span><strong>${escape(p.work?.id ?? (p.observation.status === 'observed' ? '작업 없음' : '확인되지 않음'))}</strong><span>${escape([p.work?.phase, p.work?.stage, p.work?.task].filter(Boolean).join(' / ') || '—')}</span></div>
-    <div class="chips">${p.resume ? badge(p.resume.code) : ''}${p.observation.stale ? '<span class="badge warning">오래됨·미조회</span>' : ''}${p.observation.historical && p.work ? '<span class="badge warning">이전 관측</span>' : ''}</div>
+    ${p.activity ? `<div class="work"><span class="muted">접수된 요청</span><strong>${escape(p.activity.ids.join(' · '))}</strong><span>${escape(p.activity.detail)}</span></div>` : ''}
+    ${p.work || !p.activity ? `<div class="work"><span class="muted">${p.observation.historical || p.observation.stale ? '마지막 관측 작업' : '현재 관측 작업'}</span><strong>${escape(p.work?.id ?? (p.observation.status === 'observed' ? '작업 없음' : '확인되지 않음'))}</strong><span>${escape([p.work?.phase, p.work?.stage, p.work?.task].filter(Boolean).join(' / ') || '—')}</span></div>` : ''}
+    <div class="chips">${p.activity ? badge(p.activity.status) : ''}${p.resume && !(p.activity && p.resume.code === 'no-work') ? badge(p.resume.code) : ''}${p.observation.stale ? '<span class="badge warning">오래됨·미조회</span>' : ''}${p.observation.historical && p.work ? '<span class="badge warning">이전 관측</span>' : ''}</div>
     <p class="muted">관측 ${escape(date(p.observation.observedAt))}<br>조회 시도 ${escape(date(p.observation.checkedAt))}</p>
     ${p.observation.error ? `<p class="error">${escape(p.observation.error)}</p>` : ''}
     ${(p.requests ?? []).filter(r => r.state === 'failed' || r.issues.length).map(r => `<p class="error">${escape(r.taskNumber ?? r.id)} · ${escape(r.error || '실행 준비 필요 — 공통 요청함에서 확인하세요.')}<small>${r.issues.map(i => escape(i.message)).join('<br>')}</small></p>`).join('')}

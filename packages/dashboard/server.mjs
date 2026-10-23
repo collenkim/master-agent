@@ -47,7 +47,7 @@ export async function startDashboard({ dbPath, port = 4310, cliPath, intervalMs 
   const token = randomUUID(), catalog = new Catalog(store);
   let candidateScan;
   let origin;
-  const receipt = ({ id, state, receiptId, resume, error }) => ({ id, state, receiptId, resume, error });
+  const receipt = ({ id, state, receiptId, resume, error, errorMessage }) => ({ id, state, receiptId, resume, error, errorMessage });
   const server = createServer(async (request, response) => {
     const send = (status, body, type = 'application/json; charset=utf-8') => {
       response.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',

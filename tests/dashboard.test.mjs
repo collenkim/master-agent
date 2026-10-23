@@ -45,6 +45,20 @@ test('failed observations retain historical work without presenting it as a fres
   assert.equal(project.observation.status, 'timeout');
 });
 
+test('accepted requests remain visible before code-agent creates its work', t => {
+  const { store, fixture, mission } = setup(t), p = fixture.projects[0];
+  store.put('observation', { id: p.id, status: 'observed', recordedAt: new Date().toISOString(), state: state(p, { work: null, resume: { code: 'no-work', reasons: [] }, consents: { open: [{ id: 'baseline', action: 'baseline' }] } }) });
+  store.put('target-request', { id: mission.id, projectIds: [p.id], taskNumber: 'YSIJ-263', state: 'waiting', createdAt: new Date().toISOString() });
+  let project = dashboardSnapshot(store).projects.find(x => x.id === p.id);
+  assert.equal(project.work, null); assert.equal(project.resume.code, 'no-work');
+  assert.deepEqual(project.activity.ids, ['YSIJ-263']);
+  assert.equal(project.activity.detail, '프로젝트 준비 승인 대기 · code-agent 작업 생성 전');
+  const request = store.need('target-request', mission.id);
+  store.put('target-request', { ...request, state: 'completed' }, request.revision);
+  project = dashboardSnapshot(store).projects.find(x => x.id === p.id);
+  assert.equal(project.activity, null);
+});
+
 test('monitor calls only status --json, survives malformed project output, and polls projects without missions', async t => {
   const { store, fixture, root, engine } = setup(t);
   const independent = { ...fixture.projects[0], id: 'independent', path: join(root, 'independent') };

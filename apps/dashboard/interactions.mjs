@@ -3,7 +3,7 @@ import { renderVerification, verificationRecipes, verificationReviewed } from '.
 const $ = id => document.getElementById(id);
 const date = value => value ? new Date(value).toLocaleString('ko-KR') : '기록 없음';
 const same = (a, b) => String(a ?? '').replace(/\s+/g, ' ').trim() === String(b ?? '').replace(/\s+/g, ' ').trim();
-const labels = { open: '응답 대기', deferred: '보류', answered: '답변 적용', expired: '만료', closed: '대기 종료·결과 미확인',
+const labels = { open: '응답 대기', pending: '응답 미접수·대기', deferred: '보류', answered: '답변 적용', expired: '만료', closed: '대기 종료·결과 미확인',
   received: '접수', applied: '적용', 'not-requested': '재개 요청 없음', launching: '재개 접수·실행 확인 필요',
   requested: '재개 실행기 요청됨', resumed: '기존 처리기 재개 확인', 'waiting-answers': '다른 답변 대기', manual: 'CLI 재개 필요', failed: '실패',
   sending: '전송 중', unknown: '수신 여부 미확인', reopened: '다시 열림', 'waiting-host': '원래 세션 소비 대기', queued: '재개 대기', started: '원래 세션 재개됨', blocked: '재개 후 추가 조치 필요', completed: '요청 완료', cancelled: '취소' };
@@ -124,7 +124,7 @@ function selectItems(id, items) {
 }
 function history(item) {
   return `<h3>응답 이력</h3>${item.history.map(h => `<p>${esc(date(h.createdAt))} · ${esc(labels[h.state] ?? h.state)}${h.answer ? ` · ${esc(h.answer)}` : ''}
-    <small>${esc(labels[h.resume?.state] ?? '')} ${esc(h.resume?.reason ?? h.resume?.detail ?? h.resume?.error ?? h.error ?? '')}</small>
+    <small>${h.state === 'failed' && h.resume?.state === 'not-requested' ? '응답이 접수되지 않아 재개하지 않았습니다.' : esc(labels[h.resume?.state] ?? '')} ${esc(h.errorMessage ?? h.resume?.reason ?? h.resume?.detail ?? h.resume?.error ?? (h.error === 'control-busy' ? 'code-agent가 다른 세션의 작업 소유 또는 잠금 충돌로 거절했습니다. 원인 해결 후 요청을 다시 열어 제출하세요. (control-busy)' : h.error) ?? '')}</small>
     ${['unknown', 'sending'].includes(h.state) || h.resume?.state === 'launching' ? `<button type="button" data-retry-interaction="${esc(h.id)}">같은 접수 번호로 결과 확인·재시도</button>` : ''}</p>`).join('') || '<p class="muted">아직 제출한 답변이 없습니다.</p>'}
     ${item.remote ? `<p>원래 요청 상태: ${esc([labels[item.remote.status] ?? item.remote.status, labels[item.remote.continuation?.state]].filter(Boolean).join(' · '))}</p>${(error => error ? `<p class="error">${esc(error)}</p>` : '')(item.remote.application?.error ?? item.remote.continuation?.detail)}` : ''}`;
 }
@@ -144,7 +144,7 @@ function context(item) {
   return `${item.source} · ${item.projectIds.join(', ')} · ${item.taskNumber ?? item.workId ?? item.missionId ?? '작업 ID 없음'} · ${item.stage}${item.context.branch ? ` · ${item.context.branch}` : ''}${item.context.sessionId ? ` · 세션 ${item.context.sessionId}` : ''}`;
 }
 function renderList() {
-  const items = data.interactions?.items ?? [];
+  const items = (data.interactions?.items ?? []).filter(i => !i.relatedInteractionId || $('interaction-source').value === 'master');
   const waiting = items.filter(i => ['open', 'deferred', 'received'].includes(i.state));
   $('interaction-count').textContent = `${waiting.length}건 대기 · 새 요청 ${waiting.filter(i => !seen.has(i.id)).length}건`;
   const source = $('interaction-source').value, state = $('interaction-state').value, group = $('interaction-group').value,
@@ -157,7 +157,7 @@ function renderList() {
     <p class="muted">${esc(context(i))}</p><p>${i.kind === 'approval' ? '별도 승인 확인 필요' : '질문'} · ${!seen.has(i.id) ? '새 요청 · ' : ''}${['open', 'deferred'].includes(i.state) ? `${Math.max(0, Math.floor((Date.now() - Date.parse(i.originAt ?? i.firstSeenAt)) / 60000))}분 대기` : esc(date(i.updatedAt))}</p>
     <p class="muted">차단 대상: ${esc(i.taskId ?? i.missionId ?? i.workId ?? '독립 설정·운영 세션')}</p>
     ${!i.respondSupported ? `<p class="muted">${esc(i.unavailableReason)}</p>` : ''}
-    <button type="button" data-interaction="${esc(i.id)}">${i.kind === 'approval' ? '승인 전문 검토' : '질문·응답 열기'}</button>
+    <button type="button" data-interaction="${esc(i.relatedInteractionId ?? i.id)}">${i.relatedInteractionId ? '원본 요청 열기' : i.kind === 'approval' ? '승인 전문 검토' : '질문·응답 열기'}</button>
     ${i.connectionRequired ? `<button type="button" data-connect-project="${esc(i.projectIds[0])}">프로젝트 연결 확인</button>` : ''}</article>`).join('') || '<p class="empty">조건에 맞는 요청이 없습니다.</p>';
 }
 function open(id) {
@@ -235,7 +235,7 @@ async function submit(action) {
   try {
     const result = await post('/api/interactions/respond', { ...payload, commandId });
     lastSubmission.receipt = { ...result, action };
-    errorEl.textContent = `${labels[result.state] ?? result.state} · ${labels[result.resume?.state] ?? ''} ${result.error ?? ''}`;
+    errorEl.textContent = `${labels[result.state] ?? result.state} · ${result.state === 'failed' && result.resume?.state === 'not-requested' ? '응답 미접수·재개하지 않음' : labels[result.resume?.state] ?? ''} ${result.errorMessage ?? result.error ?? ''}`;
     errorEl.className = result.state === 'failed' || result.resume?.state === 'failed' ? 'error' : 'response-status';
     if (action === 'answer' && ['received', 'applied'].includes(result.state)) try { sessionStorage.removeItem(`interaction-draft:${item.id}`); } catch { /* optional browser storage */ }
     await refresh({ afterPending: true });
