@@ -133,7 +133,7 @@ TASK 번호는 요청 기록·AI 계획·각 프로젝트의 개발 지시에 �
 
 요청 경로는 README·빌드 설정과 `src`·`tests`·`test`의 관련 구현 파일을 제한된 범위에서 자동 수집합니다. 수집할 파일이 없으면 실제 최상위 폴더 목록을 근거로 사용하며 기존 구현·정책이 있다고 가정하지 않습니다. 기존에 지정한 정책·코드 근거는 유지하며 읽기 실패를 빈 근거로 바꾸지 않습니다. 수집 규칙은 [AI 계획](docs/ai-planning.md)을 따릅니다.
 
-code-agent 설치와 위임 권한 설정은 별도로 필요합니다. 제어 연결과 사람 채널은 [code-agent 제어 연결](#code-agent-제어-연결)을 따릅니다. `code-agent init`은 Claude·Codex 두 host를 준비합니다. 요청에서 고른 host가 설치·준비되지 않았거나 code-agent가 요청별 host 선택을 지원하지 않으면 준비 점검이 막고 안내합니다. 프로젝트 설정으로 대신 실행하지 않습니다. host를 고르지 않은 실행은 프로젝트의 `code-agent execution claude|codex` 또는 `code-agent execution both --main claude|codex` 설정을 따릅니다. `master enable --host <JSON 파일>`의 실행 파일·모델·권한 설정을 code-agent가 주입하며 master-agent가 덮어쓰지 않습니다. 기본 호스트 선택과 세션 재개 조건은 [통신 계약](docs/code-agent-control.md)을 따릅니다. 준비가 부족하면 안내하며, 이미 실패한 요청도 같은 TASK로 재점검할 수 있습니다. 독립 검증 계약은 화면의 검증 계약 설정 또는 `--input <JSON>`의 `templates`로 전달합니다. 상세 입력과 준비 순서는 [사용법](docs/usage.md)을 따릅니다.
+code-agent 설치와 위임 권한 설정은 별도로 필요합니다. 제어 연결과 사람 채널은 [code-agent 제어 연결](#code-agent-제어-연결)을 따릅니다. `code-agent init`은 Claude·Codex 두 host를 준비합니다. 요청에서 고른 host가 설치·준비되지 않았거나 code-agent가 요청별 host 선택을 지원하지 않으면 준비 점검이 막고 안내합니다. 설치만으로는 실행 준비가 아닙니다 — code-agent가 알리는 실행 방식별 준비가 확정돼야 하며, Codex 프로젝트 신뢰·hook 검토가 남았거나 준비를 확인하지 못했으면 막습니다. 프로젝트 설정으로 대신 실행하지 않습니다. host를 고르지 않은 실행은 프로젝트의 `code-agent execution claude|codex` 또는 `code-agent execution both --main claude|codex` 설정을 따릅니다. `master enable --host <JSON 파일>`의 실행 파일·모델·권한 설정을 code-agent가 주입하며 master-agent가 덮어쓰지 않습니다. 기본 호스트 선택과 세션 재개 조건은 [통신 계약](docs/code-agent-control.md)을 따릅니다. 준비가 부족하면 안내하며, 이미 실패한 요청도 같은 TASK로 재점검할 수 있습니다. 독립 검증 계약은 화면의 검증 계약 설정 또는 `--input <JSON>`의 `templates`로 전달합니다. 상세 입력과 준비 순서는 [사용법](docs/usage.md)을 따릅니다.
 
 ## 실제 실행과 조회
 

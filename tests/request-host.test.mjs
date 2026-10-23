@@ -11,6 +11,7 @@ import { Knowledge } from '../packages/knowledge/sources.mjs';
 import { Planner } from '../packages/reasoning/planner.mjs';
 import { CrossProvider, crossReviewSchema, hostSelection, reasoningFor } from '../packages/reasoning/hosts.mjs';
 import { dashboardSnapshot } from '../packages/dashboard/monitor.mjs';
+import { controlProbe, hostReadinessIssue } from '../packages/code-agent-adapter/pairing.mjs';
 
 // 모의 시험 — 가짜 AI·code-agent 전송을 쓴다. 실제 Claude·Codex 실행 결과가 아니다.
 
@@ -77,6 +78,32 @@ test('host 를 고른 요청은 code-agent 의 요청별 선택 지원과 고른
   assert.deepEqual(notReady.issues.map(i => i.code), ['host-not-ready', 'control-pairing-available']); assert.match(notReady.issues[0].message, /codex.*Codex 프로젝트 신뢰 필요/);
   // 고른 주 host 가 준비되면 프로젝트 기본 호스트의 문제는 이번 요청을 막지 않는다
   assert.deepEqual(await codes(hello(managed({ ready: false, problems: [{ code: 'hooks-missing', message: 'Claude hook 없음' }], runSelection: all, hosts: { codex: { ready: true, problems: [] } } }))), ['control-pairing-available']);
+});
+
+test('code-agent 가 실행 방식별 준비를 알리면 확정된 준비만 통과하고 상태별 조치를 안내한다', () => {
+  const ready = { ready: true, state: 'ready', blocking: [] };
+  const blocked = (state, code, message) => ({ ready: false, state, blocking: [{ host: 'codex', code, message }] });
+  const probe = runReadiness => controlProbe({ managedHost: { selected: 'claude', ready: true, state: 'ready', problems: [], runSelection: { supported: true, modes: ['claude', 'codex', 'both'] },
+    hosts: { claude: { ready: true, state: 'ready', problems: [] }, codex: { ready: false, state: 'project-untrusted', problems: [] } }, runReadiness } });
+  const untrusted = blocked('project-untrusted', 'codex-project-untrusted', 'Codex 가 이 저장소를 신뢰하지 않아 프로젝트 설정·hook 을 껐습니다');
+  const view = probe({ claude: ready, codex: untrusted, both: { claude: ready, codex: untrusted }, extra: 1 });
+  assert.deepEqual(view.managedHost.runReadiness, { claude: ready, codex: untrusted, both: { claude: ready, codex: untrusted } });
+  assert.equal(view.managedHost.hosts.codex.state, 'project-untrusted');
+  assert.equal(hostReadinessIssue(view, { mode: 'claude' }), null);
+  assert.equal(hostReadinessIssue(view, { mode: 'both', main: 'claude' }), null, '교차 검증 host 의 신뢰는 Claude 주 실행을 막지 않는다');
+  const issue = hostReadinessIssue(view, { mode: 'codex' });
+  assert.equal(issue.code, 'host-not-ready');
+  assert.match(issue.message, /실행 방식\(codex\).*\(프로젝트 신뢰 필요\)\. codex: Codex 가 이 저장소를 신뢰하지 않아/);
+  assert.match(issue.guidance, /프로젝트를 신뢰한 뒤 .*code-agent doctor --host codex/);
+  assert.match(hostReadinessIssue(view, { mode: 'both', main: 'codex' }).message, /both\(주 host codex\)/);
+  const review = probe({ claude: ready, codex: blocked('hooks-review', 'codex-hooks-untrusted', '검토·신뢰가 필요한 code-agent hook: PreToolUse(검토 전)'), both: {} });
+  assert.match(hostReadinessIssue(review, { mode: 'codex' }).guidance, /\/hooks/);
+  // 조회 실패·확인 중·모르는 상태, 알리지 않은 실행 방식도 준비로 보지 않는다
+  for (const state of ['query-failed', 'checking', 'bogus']) {
+    const unknown = probe({ claude: ready, codex: { ready: false, state, blocking: [] }, both: {} });
+    assert.equal(hostReadinessIssue(unknown, { mode: 'codex' }).code, 'host-not-ready', state);
+    assert.equal(hostReadinessIssue(unknown, { mode: 'both', main: 'claude' }).code, 'host-not-ready', state);
+  }
 });
 
 test('교차 검증 계획은 반려 지적을 다음 회차 피드백으로 넘기고 승인된 계획만 활성화한다', async t => {

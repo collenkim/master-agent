@@ -30,6 +30,19 @@ export const pairingSupported = hello => hello?.pairing?.supported === true && h
   (hello.pairing.domain === undefined || hello.pairing.domain === PAIR_DOMAIN) && (hello.pairing.signature === undefined || hello.pairing.signature === 'Ed25519');
 
 const problemsOf = value => (Array.isArray(value) ? value : []).slice(0, 20).map(p => ({ code: text(p?.code, 64) ?? 'unknown', message: text(p?.message) ?? '' }));
+/** code-agent 실행 준비 상태 — 설치 누락·프로젝트 미신뢰·hook 검토 필요·조회 실패·확인 중·준비 완료. ready 가 true 인 것만 실행할 수 있다 */
+export const READINESS_STATES = ['not-installed', 'project-untrusted', 'hooks-review', 'query-failed', 'checking', 'ready'];
+const HOSTS = ['claude', 'codex'];
+const stateOf = value => READINESS_STATES.includes(value) ? value : null;
+const modeReadinessOf = value => value && typeof value === 'object' ? {
+  ready: typeof value.ready === 'boolean' ? value.ready : null, state: stateOf(value.state),
+  blocking: (Array.isArray(value.blocking) ? value.blocking : []).slice(0, 20).map(p => ({ host: HOSTS.includes(p?.host) ? p.host : null, code: text(p?.code, 64) ?? 'unknown', message: text(p?.message) ?? '' })),
+} : null;
+/** 실행 방식별 준비(hello.managedHost.runReadiness) — both 는 주 host 마다. 옛 code-agent 는 보내지 않는다(null) */
+const runReadinessOf = value => value && typeof value === 'object' ? {
+  claude: modeReadinessOf(value.claude), codex: modeReadinessOf(value.codex),
+  both: Object.fromEntries(HOSTS.map(main => [main, modeReadinessOf(value.both?.[main])])),
+} : null;
 
 /** 토큰 없이 받은 hello 에서 연결 판단에 쓰는 값만 남긴다 */
 export function controlProbe(hello) {
@@ -48,18 +61,34 @@ export function controlProbe(hello) {
       installedHosts: (Array.isArray(managed.installedHosts) ? managed.installedHosts : []).filter(h => typeof h === 'string').slice(0, 8).map(h => h.slice(0, 32)),
       execution: execution && typeof execution === 'object' ? { mode: text(execution.mode, 16), main: text(execution.main, 16) } : text(execution, 64),
       ready: typeof managed.ready === 'boolean' ? managed.ready : null,
+      state: stateOf(managed.state),
       problems: problemsOf(managed.problems),
       runSelection: managed.runSelection?.supported === true ? { supported: true,
         modes: (Array.isArray(managed.runSelection.modes) ? managed.runSelection.modes : []).filter(m => ['claude', 'codex', 'both'].includes(m)) } : { supported: false },
       hosts: Object.fromEntries(['claude', 'codex'].filter(kind => managed.hosts?.[kind] && typeof managed.hosts[kind] === 'object')
-        .map(kind => [kind, { ready: typeof managed.hosts[kind].ready === 'boolean' ? managed.hosts[kind].ready : null, problems: problemsOf(managed.hosts[kind].problems) }])),
+        .map(kind => [kind, { ready: typeof managed.hosts[kind].ready === 'boolean' ? managed.hosts[kind].ready : null, state: stateOf(managed.hosts[kind].state),
+          problems: problemsOf(managed.hosts[kind].problems) }])),
+      runReadiness: runReadinessOf(managed.runReadiness),
     } : null,
   };
 }
 
+/** 준비 상태별 조치 — 설치 복구·Codex 신뢰·hook 검토는 사람이 프로젝트에서 하고, 조회 실패·확인 중은 확인되기 전에는 실행하지 않는다 */
+const READINESS_GUIDANCE = {
+  'not-installed': '프로젝트에서 code-agent init·doctor로 그 host의 실행 절차·hook을 복구하고 Codex 실행 파일·버전을 확인하세요. 자동 설치하지 않습니다.',
+  'project-untrusted': 'Codex 대화형 세션에서 이 저장소를 열어 프로젝트를 신뢰한 뒤 프로젝트에서 code-agent doctor --host codex로 다시 확인하세요. 신뢰를 자동 우회하지 않습니다.',
+  'hooks-review': 'Codex 대화형 세션의 /hooks에서 알린 code-agent hook만 검토·신뢰한 뒤 code-agent doctor --host codex로 다시 확인하세요.',
+  'query-failed': 'Codex 준비 상태를 확인하지 못했습니다. 프로젝트에서 code-agent doctor --host codex로 확인한 뒤 다시 점검하세요. 확인되기 전에는 실행하지 않습니다.',
+  checking: 'code-agent가 Codex 준비 상태를 확인하는 중입니다. 잠시 뒤 다시 점검하세요. 계속되면 프로젝트에서 code-agent doctor --host codex로 확인하세요.',
+};
+export const READINESS_LABEL = { 'not-installed': '설치 확인 필요', 'project-untrusted': '프로젝트 신뢰 필요', 'hooks-review': 'hook 검토 필요',
+  'query-failed': '준비 확인 실패', checking: '준비 확인 중', ready: '준비 완료' };
+
 /**
- * 이 실행에 쓸 개발 호스트의 준비 문제. 요청에서 host 를 골랐으면 code-agent 가 요청별 선택을 지원하는지와 고른 주 host 의 준비를 본다 —
- * 지원하지 않으면 프로젝트 실행 방식으로 대신 실행하지 않는다. 고르지 않았으면 code-agent 가 정할 호스트가 준비되지 않았다고 알렸을 때만 문제로 본다.
+ * 이 실행에 쓸 개발 호스트의 준비 문제. 요청에서 host 를 골랐으면 code-agent 가 요청별 선택을 지원하는지와 그 실행 방식의 준비를 본다 —
+ * 지원하지 않으면 프로젝트 실행 방식으로 대신 실행하지 않는다. 실행 방식별 준비(runReadiness)를 알리는 code-agent 면 확정된 준비(ready true)만
+ * 통과한다(both 는 주 host 마다 — 교차 검증 host 의 실행 파일까지). 옛 code-agent 는 고른 주 host 의 준비만 본다.
+ * 고르지 않았으면 code-agent 가 정할 호스트가 준비되지 않았다고 알렸을 때만 문제로 본다.
  */
 export function hostReadinessIssue(probe, execution = null) {
   const host = probe?.managedHost;
@@ -69,14 +98,23 @@ export function hostReadinessIssue(probe, execution = null) {
       guidance: '프로젝트에서 code-agent update로 요청별 실행 방식(submit execution)을 지원하는 버전을 적용한 뒤 다시 확인하세요. 프로젝트 실행 방식으로 대신 실행하지 않습니다.' };
     if (!host.runSelection.modes.includes(execution.mode)) return { code: 'host-not-installed', message: `이 프로젝트에 ${execution.mode === 'both' ? 'Claude·Codex 두 host가' : `${main} host가`} 설치되어 있지 않습니다.`,
       guidance: '프로젝트에서 code-agent init으로 두 host를 준비하세요. 자동 설치하지 않습니다.' };
+    if (host.runReadiness) {
+      const mode = execution.mode === 'both' ? host.runReadiness.both?.[main] : host.runReadiness[execution.mode];
+      if (mode?.ready === true) return null;
+      const label = execution.mode === 'both' ? `both(주 host ${main})` : execution.mode;
+      const reasons = (mode?.blocking ?? []).map(p => `${p.host ? `${p.host}: ` : ''}${p.message || p.code}`).filter(Boolean);
+      return { code: 'host-not-ready', message: `요청에서 고른 실행 방식(${label})이 이 프로젝트에서 실행 준비되지 않았습니다(${READINESS_LABEL[mode?.state] ?? '준비 상태 미확인'}).${reasons.length ? ` ${reasons.join(' / ')}` : ''}`,
+        guidance: `${READINESS_GUIDANCE[mode?.state] ?? READINESS_GUIDANCE['query-failed']} 다른 host로 자동 전환하지 않습니다.` };
+    }
     if (host.hosts?.[main]?.ready !== false) return null;
     return { code: 'host-not-ready', message: `요청에서 고른 주 host(${main})가 이 프로젝트에서 실행 준비되지 않았습니다.${problems.length ? ` ${problems.join(' / ')}` : ''}`,
       guidance: '프로젝트에서 code-agent init·doctor로 그 host의 실행 절차·hook을 설치하세요. Codex는 프로젝트·hook 신뢰도 확인하세요. 다른 host로 자동 전환하지 않습니다.' };
   }
   if (host?.ready !== false) return null;
   const problems = host.problems.map(p => p.message || p.code).filter(Boolean);
-  return { code: 'host-not-ready', message: `선택될 개발 호스트(${host.selected ?? '미확인'})가 이 프로젝트에서 실행 준비되지 않았습니다.${problems.length ? ` ${problems.join(' / ')}` : ''}`,
-    guidance: '프로젝트에서 code-agent init으로 선택 호스트의 실행 절차·hook을 설치하거나 code-agent execution claude|codex로 설치된 호스트를 고르세요. Codex는 프로젝트·hook 신뢰도 확인하세요. 자동 설치·우회는 하지 않습니다.' };
+  return { code: 'host-not-ready', message: `선택될 개발 호스트(${host.selected ?? '미확인'})가 이 프로젝트에서 실행 준비되지 않았습니다${host.state ? `(${READINESS_LABEL[host.state]})` : ''}.${problems.length ? ` ${problems.join(' / ')}` : ''}`,
+    guidance: READINESS_GUIDANCE[host.state] && host.state !== 'not-installed' ? READINESS_GUIDANCE[host.state]
+      : '프로젝트에서 code-agent init으로 선택 호스트의 실행 절차·hook을 설치하거나 code-agent execution claude|codex로 설치된 호스트를 고르세요. Codex는 프로젝트·hook 신뢰도 확인하세요. 자동 설치·우회는 하지 않습니다.' };
 }
 
 /**

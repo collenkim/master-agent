@@ -15,7 +15,8 @@ const ready = { ready: true, problems: [] };
 const managed = patch => ({ selected: 'claude', source: 'default', installedHosts: ['claude', 'codex'], execution: { mode: 'auto' }, ready: true, problems: [],
   runSelection: { supported: true, modes: ['claude', 'codex', 'both'] }, hosts: { claude: ready, codex: ready }, ...patch });
 const hello = managedHost => ({ project: { enabled: false }, pairing: { supported: true, version: 1, trustedControllers: ['dashboard'] }, managedHost });
-const source = (project, managedHost) => f.store.put('interaction-source', { id: project.id, control: controlProbe(hello(managedHost)), error: null, checkedAt: new Date().toISOString() });
+const source = (project, managedHost) => f.store.put('interaction-source', { id: project.id, control: controlProbe(hello(managedHost)), error: null, checkedAt: new Date().toISOString() },
+  f.store.get('interaction-source', project.id)?.revision ?? 0);
 source(both, managed({ selected: 'codex', source: 'execution-main', execution: { mode: 'both', main: 'codex' } }));
 source(single, managed({ hosts: { claude: ready, codex: { ready: false, problems: [{ code: 'codex-project-untrusted', message: '<b>Codex 프로젝트 신뢰 필요</b>' }] } } }));
 const old = managed(); delete old.runSelection; delete old.hosts; source(legacy, old);
@@ -77,9 +78,41 @@ try {
   const saved = f.store.list('target-request').find(r => r.goal === 'host 선택 확인');
   assert.deepEqual(saved.execution, { mode: 'both', main: 'claude' }); assert.equal(saved.provider, 'claude'); assert.deepEqual(launched, [saved.id]);
   assert.match(await text('requests'), /host: Claude 주 · Codex 교차 검증/);
+
+  // code-agent that reports readiness per run mode: only confirmed readiness is selectable.
+  const mode = (state, blocking = []) => ({ ready: state === 'ready', state, blocking });
+  const untrusted = mode('project-untrusted', [{ host: 'codex', code: 'codex-project-untrusted', message: 'Codex 가 이 저장소를 신뢰하지 않아 프로젝트 설정·hook 을 껐습니다' }]);
+  const checking = mode('checking', [{ host: 'codex', code: 'codex-unchecked', message: 'Codex 준비 상태를 아직 확인하지 않았습니다' }]);
+  source(single, managed({ state: 'ready', hosts: { claude: { ...ready, state: 'ready' }, codex: { ready: false, state: 'project-untrusted', problems: untrusted.blocking } },
+    runReadiness: { claude: mode('ready'), codex: untrusted, both: { claude: mode('ready'), codex: untrusted } } }));
+  source(both, managed({ selected: 'codex', source: 'execution-main', execution: { mode: 'both', main: 'codex' }, ready: false, state: 'checking',
+    runReadiness: { claude: mode('ready'), codex: checking, both: { claude: mode('ready'), codex: checking } } }));
+  await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
+  await send('Page.reload', {});
+  await waitFor(`document.querySelectorAll('.project-request').length === 3 && document.getElementById('projects').textContent.includes('준비 확인 중')`);
+  const card = name => evaluate(`[...document.querySelectorAll('#projects article.project')].map(e => e.textContent).filter(t => t.includes(${JSON.stringify(name)}) && t.includes('요청별 host 선택')).sort((a, b) => a.length - b.length)[0] ?? ''`);
+  const singleCard = await card(single.name);
+  assert.match(singleCard, /요청별 host 선택: claude 준비 완료 · codex 프로젝트 신뢰 필요 · both\(주 claude\) 준비 완료 · both\(주 codex\) 프로젝트 신뢰 필요/, singleCard);
+  assert.match(singleCard, /Codex: Codex 가 이 저장소를 신뢰하지 않아/, singleCard);
+  assert.match(await card(both.name), /codex 준비 확인 중/);
+  await evaluate(`document.getElementById('new-request').click()`);
+  await select('request-type', 'project'); await select('request-target', single.id);
+  await select('request-host', 'codex');
+  const blocked = await text('request-host-projects');
+  assert.match(blocked, /Codex 프로젝트 신뢰 필요: Codex 가 이 저장소를 신뢰하지 않아/, blocked);
+  assert.doesNotMatch(blocked, /Codex Codex/, '막는 host 가 주 host 면 이름을 겹쳐 쓰지 않는다');
+  await select('request-host', 'both'); await select('request-main', 'claude');
+  assert.match(await text('request-host-projects'), /선택 가능/, '교차 검증 host 는 Codex 프로젝트 신뢰가 필요 없다');
+  await select('request-main', 'codex');
+  assert.match(await text('request-host-projects'), /both\(주 Codex\) 프로젝트 신뢰 필요/);
+  await select('request-target', both.id);
+  assert.equal(await value('request-host'), 'both'); assert.equal(await value('request-main'), 'codex');
+  assert.match(await text('request-host-projects'), /both\(주 Codex\) 준비 확인 중: Codex 준비 상태를 아직 확인하지 않았습니다/, '확인 중은 선택 가능이 아니다');
+  await screenshot('run-readiness-checking.png');
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ passed: true, artifacts, checks: ['no-provider-select', 'card-run-selection', 'group-default-mixed', 'main-toggle', 'help-text', 'per-project-status', 'unsupported-code-agent',
-    'problem-text-escaped', 'project-default-from-setting', 'submit-records-host', 'request-card-host', 'dialog-1440-390-320'] }));
+    'problem-text-escaped', 'project-default-from-setting', 'submit-records-host', 'request-card-host', 'dialog-1440-390-320',
+    'card-run-readiness', 'run-readiness-blocked', 'cross-host-no-trust', 'run-readiness-checking'] }));
 } finally {
   await browser?.close();
   await dashboard?.close();

@@ -11,6 +11,7 @@
 | 질문·검증 계약 브라우저 | 조회·제출 경합, 성공 후 이력 갱신·다음 질문·저장한 답 재열기, Gradle 추천 표시·명령 자동 입력·초안 보존, 명시적 승인·전체 계약 등록·같은 TASK 1회 재개 통과. 긴 설명·경로를 1440/768/390/320px에서 확인 | `node scripts/smoke-dashboard-interactions.mjs`, `node scripts/smoke-dashboard-verification.mjs` |
 | 실제 대시보드 관측 | 서버 재시작 후 저장된 답변·선택값·응답 이력, 검증 계약 화면의 두 작업과 4개 화면 폭, 제어 연결 미리보기 확인. 업무 답변·검증 계약·연결은 제출하지 않음 | 로컬 브라우저에서 기존 요청 조회. 사용자별 DB를 사용하는 수동 검증 |
 | 업데이트 계약·실제 설치 | 계약 회귀 18건과 격리 환경의 실제 npm 설치·빌드·릴리스 등록·프로젝트 적용·재시작 후 재확인 통과. 문구·해시·릴리스 ID·잠금·부분 실패·1440/390/320px 화면 검사 | `node --test tests/source-update.test.mjs tests/dashboard-updates.test.mjs`, `node scripts/smoke-dashboard-updates.mjs` |
+| code-agent 실행 방식별 준비 | 전체 295건 통과(code-agent `6aaa6de` 빌드 사용). 실행 방식별 준비(`runReadiness`) 정규화, 고른 방식의 확정 준비만 접수, 옛 code-agent는 주 host 준비로 판정. 브라우저 16개 항목: 카드의 방식별 준비·차단 이유, 신뢰 필요·확인 중 차단, 교차 검증 host의 신뢰 불요, 옛 형식 문구 유지, 1440/390/320px. 실제 Codex로 조회한 code-agent hello로도 화면 확인 | `node --test tests/request-host.test.mjs tests/pairing.test.mjs tests/managed-host.test.mjs`, `node scripts/smoke-dashboard-request-host.mjs` |
 | 구문·문서 링크 | JavaScript 118개·Markdown 19개 검사 | `npm.cmd run check` |
 
 업데이트 계약 fixture는 [update-fake-cli.mjs](../tests/update-fake-cli.mjs)다. code-agent 실행 응답을 흉내 내며 실제 릴리스를 빌드하지 않는다. 실제 설치·적용 smoke는 [smoke-dashboard-updates.mjs](../scripts/smoke-dashboard-updates.mjs)를 별도로 사용한다. `CODE_AGENT_SOURCE`로 소스와 빌드가 있는 code-agent 폴더를 지정할 수 있으며 기본은 `../code-agent`다. 현재 소스의 격리 사본, 로컬 bare remote, 전용 `CODE_AGENT_HOME`·`CODE_AGENT_RELEASE_HOME`과 두 프로젝트를 만들어 사용자 프로젝트·키·릴리스 저장소를 변경하지 않는다. 모델은 호출하지 않는다.

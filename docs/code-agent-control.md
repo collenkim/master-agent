@@ -65,9 +65,13 @@ PC 신뢰 (code-agent, PC당 1회 — 대시보드 확인 화면 또는 터미�
 
 hello (인증 없음) — 추가 필드
   pairing:     { supported: true, version: 1, signature: "Ed25519", domain: "code-agent.master-pair.v1", trustedControllers: ["dashboard"] }
-  managedHost: { selected, source, installedHosts, execution, ready, problems: [{ code, message }],
-                 runSelection: { supported: true, modes: ["claude", "codex", "both"] },   # submit execution 으로 고를 수 있는 방식
-                 hosts: { claude: { ready, problems }, codex: { ready, problems } } }       # 설치된 host마다의 준비
+  managedHost: { selected, source, installedHosts, execution, ready, state, problems: [{ code, message }],
+                 runSelection: { supported: true, modes: ["claude", "codex", "both"] },   # submit execution 으로 고를 수 있는 방식(설치 기준)
+                 runReadiness: { claude: { ready, state, blocking: [{ host, code, message }] },
+                                 codex: { … }, both: { claude: { … }, codex: { … } } },    # 실행 방식별 준비, both 는 주 host마다
+                 hosts: { claude: { ready, state, problems },
+                          codex: { ready, state, problems, checkedAt, target: { executable, codexHome, version } } } }
+                 # state: ready · not-installed · project-untrusted · hooks-review · query-failed · checking
 
 pair.challenge (인증 없음)
   요청 payload: { controller }
@@ -89,7 +93,7 @@ master 쪽 동작(`packages/runner/control-pairing.mjs`, 어댑터 `packages/cod
 4. 결과는 owner·generation·저장소 밖 절대 경로의 tokenFile을 확인한 뒤 `bindControl`로 등록하고 `control-paired` 이벤트를 남긴다. `rotated`는 같은 연결의 토큰 갱신이다. 바인딩에는 토큰 파일 경로와 사람 응답 채널 ID·만료만 더한다. 신뢰 키·사람 채널 키는 code-agent 키 저장소(`CODE_AGENT_HOME` 또는 `~/.code-agent`)에서 찾는다.
 5. 응답을 잃으면 같은 commandId로 두 번 다시 보낸다. 그래도 모르면 `unknown`으로 남기고 같은 프로젝트의 새 연결을 막는다. 화면·`/api/projects/pair/retry`는 같은 서명을 다시 보내 기록된 결과를 받는다. DB 등록만 실패하면(`bind-failed`) 받은 결과로 등록만 다시 한다.
 
-PC 신뢰는 사람이 화면(확인 단어 `trust`)에서, 페어링은 사람이 화면(확인 체크) 또는 TTY(`project pair`, 확인 단어 `pair`)에서 확인할 때만 한다. 요청 실행기·AI 계획·복구·백그라운드 순회는 hello로 상태를 읽기만 한다. 준비 점검은 연결이 없을 때 원인을 `control-pairing-available`·`control-trust-missing`·`control-owned-by-other`·`control-enabled-unbound`로 나누고, 미지원 code-agent는 기존 `control-not-bound` 안내를 낸다. host를 고른 요청은 `managedHost.runSelection`이 없으면 `host-selection-unsupported`(프로젝트 설정으로 대신 실행하지 않는다), 고른 방식이 `modes`에 없으면 `host-not-installed`, 고른 주 host의 `hosts.<host>.ready === false`면 `host-not-ready`를 낸다. host 없이 접수된 요청은 `managedHost.ready === false`면 `host-not-ready`를 낸다. 관측한 저장소에 커밋이 없으면 `repository-no-commit`(안내: `code-agent setup baseline`)을 함께 낸다.
+PC 신뢰는 사람이 화면(확인 단어 `trust`)에서, 페어링은 사람이 화면(확인 체크) 또는 TTY(`project pair`, 확인 단어 `pair`)에서 확인할 때만 한다. 요청 실행기·AI 계획·복구·백그라운드 순회는 hello로 상태를 읽기만 한다. 준비 점검은 연결이 없을 때 원인을 `control-pairing-available`·`control-trust-missing`·`control-owned-by-other`·`control-enabled-unbound`로 나누고, 미지원 code-agent는 기존 `control-not-bound` 안내를 낸다. host를 고른 요청은 `managedHost.runSelection`이 없으면 `host-selection-unsupported`(프로젝트 설정으로 대신 실행하지 않는다), 고른 방식이 `modes`에 없으면 `host-not-installed`를 낸다. `modes`는 설치된 실행 방식일 뿐 실행 준비가 아니다 — code-agent가 실행 방식별 준비 `managedHost.runReadiness`(`claude`·`codex`·`both.<주 host>`마다 `ready`·`state`·`blocking[{host, code, message}]`)를 알리면 고른 방식의 `ready === true`만 통과하고, 그 밖(설치 확인 필요·프로젝트 신뢰 필요·hook 검토 필요·준비 확인 실패·준비 확인 중, 알리지 않은 방식 포함)은 `host-not-ready`와 상태별 조치(Codex 신뢰·`/hooks` 검토 뒤 `code-agent doctor --host codex`)를 낸다. `runReadiness`가 없는 옛 code-agent는 고른 주 host의 `hosts.<host>.ready === false`일 때만 `host-not-ready`다. host 없이 접수된 요청은 `managedHost.ready === false`면 `host-not-ready`를 낸다. 프로젝트 카드의 '요청별 host 선택'과 요청 창은 실행 방식마다 준비 상태와 차단 이유를 보인다. 관측한 저장소에 커밋이 없으면 `repository-no-commit`(안내: `code-agent setup baseline`)을 함께 낸다.
 
 ## 실행 — 원자적 접수와 관찰
 

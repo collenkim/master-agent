@@ -67,7 +67,7 @@ function render() {
       <p>프로젝트 ID: ${escape(p.id)}</p><p>제어 연결: ${p.control ? `${escape(p.control.controller)} (등록 당시 ${p.control.owner ? '소유자' : '관찰자'})` : '없음'}</p>
       ${p.connection.guidance ? `<p class="muted">${escape(p.connection.guidance)}</p>` : ''}
       ${p.connection.managedHost ? `<p>기본 개발 호스트(요청에서 host를 고르지 않을 때): ${escape(p.connection.managedHost.selected ?? '미확인')} · ${p.connection.managedHost.ready === false ? `준비 안 됨 ${escape(p.connection.managedHost.problems.map(x => x.message || x.code).join(' / '))}` : p.connection.managedHost.ready ? '준비됨' : '준비 상태 미확인'}</p>
-      <p>요청별 host 선택: ${p.connection.managedHost.runSelection?.supported ? escape(p.connection.managedHost.runSelection.modes.join(' · ') || '고를 수 있는 host 없음') : '지원하지 않음 — code-agent 업데이트 필요'}</p>` : ''}
+      <p>요청별 host 선택: ${escape(selectionText(p.connection.managedHost))}${selectionBlocking(p.connection.managedHost).length ? `<br><small>${selectionBlocking(p.connection.managedHost).map(escape).join('<br>')}</small>` : ''}</p>` : ''}
       ${renderStageDetails(p.stages)}
       ${p.resume?.reasons.map(r => `<p>${escape(r)}</p>`).join('') ?? ''}
       ${p.consents.map(c => `<p>승인: ${escape(c.action)} · ${escape(c.id)}</p>`).join('')}
@@ -319,6 +319,42 @@ function defaultHost(ids) {
   const choices = ids.map(own), first = choices[0];
   return first && choices.every(c => c && c.mode === first.mode && c.main === first.main) ? first : { mode: 'claude' };
 }
+/**
+ * 실행 방식의 준비 — code-agent 가 실행 방식별 준비(runReadiness — both 는 주 host 마다)를 알리면 그것을, 옛 code-agent 면 주 host 의 준비를 쓴다.
+ * 고를 수 있는 방식(runSelection)이라도 ready 가 true 가 아니면 실행 준비가 끝난 것이 아니다
+ */
+function modeReadiness(managed, execution) {
+  const main = execution.mode === 'both' ? execution.main : execution.mode;
+  if (managed?.runReadiness) return (execution.mode === 'both' ? managed.runReadiness.both?.[main] : managed.runReadiness[execution.mode]) ?? null;
+  const state = managed?.hosts?.[main];
+  return state ? { ready: state.ready, state: null, blocking: (state.problems ?? []).map(p => ({ host: main, ...p })) } : null;
+}
+function readinessText(readiness) {
+  const label = { 'not-installed': '설치 확인 필요', 'project-untrusted': '프로젝트 신뢰 필요', 'hooks-review': 'hook 검토 필요', 'query-failed': '준비 확인 실패', checking: '준비 확인 중' };
+  return readiness?.ready === true ? '준비 완료' : label[readiness?.state] ?? (readiness?.ready === false ? '준비 안 됨' : '준비 상태 미확인');
+}
+const selectionOptions = managed => (managed.runSelection?.modes ?? []).flatMap(mode => mode === 'both' ? ['claude', 'codex'].map(main => ({ mode, main })) : [{ mode }]);
+/** 카드의 '요청별 host 선택' — 고를 수 있는 방식마다 준비 상태 */
+function selectionText(managed) {
+  if (!managed.runSelection?.supported) return '지원하지 않음 — code-agent 업데이트 필요';
+  if (!managed.runSelection.modes.length) return '고를 수 있는 host 없음';
+  if (!managed.runReadiness) return managed.runSelection.modes.join(' · ');
+  return selectionOptions(managed).map(o => `${o.mode === 'both' ? `both(주 ${o.main})` : o.mode} ${readinessText(modeReadiness(managed, o))}`).join(' · ');
+}
+/** 준비되지 않은 방식의 차단 이유 — 같은 이유는 한 번만 */
+function selectionBlocking(managed) {
+  if (!managed.runSelection?.supported || !managed.runReadiness) return [];
+  return [...new Set(selectionOptions(managed).flatMap(o => {
+    const readiness = modeReadiness(managed, o);
+    return readiness?.ready === true ? [] : (readiness?.blocking ?? []).map(b => `${hostNames[b.host] ?? b.host ?? ''}: ${b.message || b.code}`);
+  }))];
+}
+function runReadinessStatus(readiness, host, main) {
+  if (readiness?.ready === true) return '선택 가능';
+  // 막는 host 가 주 host 면 이름을 다시 붙이지 않는다 — both 의 교차 검증 host 일 때만 붙인다
+  const reasons = (readiness?.blocking ?? []).map(x => `${x.host && x.host !== main ? `${hostNames[x.host] ?? x.host}: ` : ''}${x.message || x.code}`).join(' / ');
+  return `${host.mode === 'both' ? `both(주 ${hostNames[main]})` : hostNames[main]} ${readinessText(readiness)}: ${reasons}`;
+}
 function hostChanged() {
   const host = requestHost(), main = host.mode === 'both' ? host.main : host.mode;
   $('request-main-field').hidden = host.mode !== 'both';
@@ -330,6 +366,8 @@ function hostChanged() {
     const status = !managed ? '제어 연결 상태 미확인 — 접수 후 준비 점검에서 확인합니다'
       : !managed.runSelection?.supported ? '요청별 host 선택 미지원 — 프로젝트에서 code-agent 업데이트가 필요합니다'
       : !managed.runSelection.modes.includes(host.mode) ? '이 host가 설치되어 있지 않습니다 — code-agent init으로 두 host를 준비하세요'
+      // 실행 방식별 준비를 알리는 code-agent 면 확정된 준비만 '선택 가능'이다(조회 실패·확인 중도 실행하지 않는다). 옛 code-agent 는 주 host 의 준비만 본다
+      : managed.runReadiness ? runReadinessStatus(modeReadiness(managed, host), host, main)
       : state?.ready === false ? `${hostNames[main]} 준비 안 됨: ${state.problems.map(x => x.message || x.code).join(' / ')}` : '선택 가능';
     const ok = status === '선택 가능';
     return `<p class="${ok ? 'muted' : 'error'}">${escape(p?.name ?? id)} · ${escape(status)}</p>`;
