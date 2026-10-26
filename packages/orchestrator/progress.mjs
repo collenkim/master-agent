@@ -22,6 +22,9 @@ export function missionProgress(store, mission, tasks, events) {
   const details = tasks.map(task => {
     const attempt = mission.attempts.find(a => a.id === task.attemptIds.at(-1));
     const turn = attempt?.turns?.at(-1), remote = turn?.state;
+    const openConsents = remote?.openConsents ?? remote?.consents?.open?.length ?? 0;
+    const deliveryConsentsOnly = remote?.deliveryConsentsOnly ?? Boolean(openConsents && remote.consents.open.every(c => c.action === 'deliver'));
+    const unansweredQuestions = remote?.unansweredQuestions ?? remote?.questions?.unanswered?.length ?? 0;
     const run = runs.find(r => r.invocationId === attempt?.invocationId);
     const activity = attempt && store.get('delegation-activity', attempt.id);
     const observed = store.get('workflow-observation', `${mission.id}:${task.id}`);
@@ -45,9 +48,9 @@ export function missionProgress(store, mission, tasks, events) {
       status = 'blocked'; reason = 'delegation-failed';
     } else if (attempt?.delegatedTurnId && attempt.delegatedTurnId === turn?.id) {
       status = task.state === 'verified' ? 'handoff-pending' : 'ready'; reason = 'delegation-applied';
-    } else if (task.state === 'waiting-decision' || task.state === 'verified' && remote?.consents?.open?.length) {
-      status = !run && !turn?.result?.control ? 'human-input' : task.state !== 'verified' && remote?.work?.phase === 'deliver' && remote?.consents?.open?.length &&
-        remote.consents.open.every(c => c.action === 'deliver') && !remote.questions?.unanswered?.length ? 'verification-pending' : 'approval-pending';
+    } else if (task.state === 'waiting-decision' || task.state === 'verified' && openConsents) {
+      status = !run && !turn?.result?.control ? 'human-input' : task.state !== 'verified' && remote?.work?.phase === 'deliver' &&
+        deliveryConsentsOnly && !unansweredQuestions ? 'verification-pending' : 'approval-pending';
       reason = status === 'human-input' ? 'host-decision-required' : status === 'approval-pending' ? 'delegation-not-yet-resolved' : 'verify-before-delivery-approval';
     } else if (task.state === 'verified') status = 'handoff-pending';
     else if (task.state === 'awaiting-verification') status = run && remote?.work?.phase !== 'deliver' ? 'ready' : 'verification-pending';

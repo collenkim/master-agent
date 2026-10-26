@@ -26,6 +26,8 @@ master-agent group list
 
 모든 명령은 `--db <경로>`로 저장소를 바꿀 수 있다. 기본 DB는 현재 작업 디렉터리의 `.master-agent/master.db`이므로 같은 작업을 조회할 때 동일한 절대 경로를 권장한다. 출력은 JSON이며 오류는 표준 오류에 코드와 메시지로 출력한다. `help`는 데이터베이스를 만들지 않는다. Windows 실행 정책이 막으면 `master-agent.cmd`를 사용한다.
 
+`master-agent mission events prune <목표ID> --revision <버전>`은 종료 후 30일이 지난 목표의 오래된 이벤트를 정리한다. 종료 체크포인트 삭제와 근거·회차 저장 범위는 [기록 보존과 정리](langgraph.md#기록-보존과-정리)를 따른다.
+
 `master-agent dashboard --db <DB 경로>`로 전체 등록 프로젝트의 로컬 웹 관제를 연다. 설치된 code-agent를 자동 탐색한다. 출력된 URL에 접속하며 Ctrl+C로 대시보드만 종료한다. 저장된 관측만 볼 때는 `--saved`를 쓴다. 모든 code-agent 연동 명령의 `--cli`는 별도 빌드 지정용 선택 옵션이며 환경 변수 `CODE_AGENT_CLI`보다 우선한다. 자세한 범위는 [대시보드](ui.md)를 따른다.
 
 같은 `--db`를 지정해 `dashboard status`로 서버 상태를 확인하고 `dashboard restart`로 기존 설정을 유지해 재시작한다. `dashboard stop`은 대시보드만 종료한다. 시작·재시작 명령은 해당 터미널을 유지해야 한다. 등록 창의 설치 후보는 실행 중에도 자동 갱신되므로 새 프로젝트에 code-agent를 설치한 뒤 서버를 재시작할 필요가 없다.

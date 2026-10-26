@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { runCommand } from '../../packages/orchestrator/operation-graph.mjs';
 import { graphStatus, unlockMission } from '../../packages/orchestrator/graph-runtime.mjs';
 import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
@@ -75,6 +74,7 @@ code-agent는 설치된 명령에서 자동 탐색합니다. --cli는 별도 빌
   mission graph <ID>                   LangGraph checkpoint and last execution
   mission unlock <ID> --revision <N> --confirm  중단된 그래프 임대 회수(프로젝트 실행 잠금은 유지)
   mission show <ID>                    계획·판단·상태·증거·이벤트
+  mission events prune <ID> --revision <N>  종료 후 30일이 지난 목표의 오래된 이벤트 정리
   mission progress <ID>                작업별 실행·승인 처리·사람 답·장애와 마지막 진척
   mission plan <ID> <JSON> --revision <N>  검증 후 계획 활성화
   mission analyze <ID> --revision <N> --provider codex|claude [--ai-cli <절대경로>] [--model <모델>]
@@ -152,13 +152,14 @@ async function main() {
     }
     return;
   }
-  const [category, action, id, file, extra] = args;
+  const eventPrune = args[0] === 'mission' && args[1] === 'events' && args[2] === 'prune';
+  const [category, action, id, file, extra] = eventPrune ? ['mission', 'events-prune', args[3]] : args;
   const counts = { demo: 1, 'project add': 3, 'project update': 4, 'project list': 2, 'project observe': 3, 'group save': 3, 'group list': 2,
     'project collect': 4, 'project sources': 3, 'project search': 4, 'mission analyze': 3, 'mission clarify': 4,
     'mission dispatch': 4, 'mission continue': 4, 'mission recover': 4, 'mission replan': 4, 'mission replan-refresh': 3, 'mission reconcile': 4,
     'mission stop-analysis': 4, 'mission reconcile-verification': 4, 'mission verification-template': 4,
     'mission verification': 4, 'mission verify': 4, 'mission handoff': 4, 'mission complete': 3,
-    'mission advance': 3, 'mission drive': 3, 'mission progress': 3, 'mission unlock': 3,
+    'mission advance': 3, 'mission drive': 3, 'mission progress': 3, 'mission unlock': 3, 'mission events-prune': 4,
     'project control': 3, 'project pair': 3, 'project snapshot': 3, 'project handover': 3, 'project accept': 3,
     'mission reattach': 4, 'mission stop': 4, 'mission delegate': 4, 'mission escalations': 3, 'mission relay': 5,
     'mission create': 3, 'mission list': 2, 'mission show': 3, 'mission graph': 3, 'mission plan': 4, 'mission step': 3, 'mission run': 3,
@@ -169,7 +170,7 @@ async function main() {
   requireThat(counts[key] === args.length, 'usage', help);
   const revision = values.revision === undefined ? undefined : Number(values.revision);
   if (values.revision !== undefined) requireThat(Number.isSafeInteger(revision) && revision > 0, 'usage', '--revision은 양의 정수입니다.');
-  if (['mission cancel', 'mission replan-refresh'].includes(key)) requireThat(revision, 'usage', '--revision이 필요합니다.');
+  if (['mission cancel', 'mission replan-refresh', 'mission events-prune'].includes(key)) requireThat(revision, 'usage', '--revision이 필요합니다.');
   if (['mission unlock', 'request reset'].includes(key)) requireThat(revision && values.confirm === true, 'usage', '--revision과 --confirm이 필요합니다.');
   if (['project update', 'project collect', 'mission analyze', 'mission clarify', 'mission plan', 'mission pause', 'mission resume', 'mission retry', 'mission unknown', 'mission dispatch', 'mission continue', 'mission verification', 'mission verify', 'mission handoff', 'mission complete'].includes(key)) requireThat(revision, 'usage', '--revision이 필요합니다.');
   if (['mission dispatch', 'mission continue', 'mission verify', 'mission handoff'].includes(key)) requireThat(values['expect-state'] && !values.simulate, 'usage', '--expect-state가 필요합니다. 모의 실행 옵션과 함께 사용할 수 없습니다.');
@@ -263,6 +264,7 @@ async function main() {
       case 'mission list': result = store.list('mission').map(summary); break;
       case 'mission graph': result = await graphStatus(store, store.need('mission', id).mode === 'live' ? 'mission' : 'simulation', id); break;
       case 'mission show': result = engine.describe(id); break;
+      case 'mission events-prune': requireThat(eventPrune, 'usage', help); result = engine.pruneEvents(id, revision); break;
       case 'mission progress': { const m = engine.describe(id); result = { id: m.id, state: m.state, ...m.progress }; break; }
       case 'mission plan': result = engine.plan(id, json(file), revision); break;
       case 'mission analyze': {
@@ -333,8 +335,7 @@ async function main() {
     }
     return result;
     };
-    const result = category === 'mission' && !['list', 'show', 'progress', 'graph', 'escalations'].includes(action)
-      ? await runCommand(store, id, action, execute) : await execute();
+    const result = await execute();
     console.log(JSON.stringify(result, null, 2));
   } finally { store.close(); }
 }

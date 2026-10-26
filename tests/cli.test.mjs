@@ -12,6 +12,16 @@ import { acceptRequest } from '../packages/orchestrator/requests.mjs';
 const cli = resolve('apps/cli/main.mjs');
 const run = (root, ...args) => JSON.parse(execFileSync(process.execPath, [cli, ...args], { cwd: root, encoding: 'utf8' }));
 
+test('M2: CLI events prune은 오래된 이벤트만 정리하고 임시 command thread를 만들지 않는다', t => {
+  const { store, engine, root, db, mission } = setup(t);
+  let m = engine.control(mission.id, 'cancel', mission.revision);
+  const old = new Date(Date.now() - 31 * 86400000).toISOString();
+  m = store.put('mission', { ...m, finishedAt: old }, m.revision);
+  store.db.prepare('UPDATE events SET at=? WHERE mission_id=?').run(old, m.id);
+  assert.ok(run(root, 'mission', 'events', 'prune', m.id, '--revision', String(m.revision), '--db', db).deleted > 0);
+  assert.equal(store.db.prepare('SELECT count(*) AS n FROM graph_runs').get().n, 0);
+});
+
 test('S1: CLI mission cancel은 사유를 저장하고 request show에 취소를 표시한다', t => {
   const { store, root, db, fixture } = setup(t);
   const { request } = acceptRequest(store, { targetType: 'project', targetId: fixture.projects[0].id, goal: '잘못 접수' });

@@ -34,6 +34,20 @@ function fixture(t) {
     options: { expectedRevision: mission.revision, expectedState: 'v1' } };
 }
 
+test('M2: 회차에는 원격 상태 요약을 저장하고 큰 원본 키를 보존하지 않는다', async t => {
+  const f = fixture(t);
+  f.state.extraPayload = 'raw-state-marker'.repeat(10000);
+  const m = await f.live.dispatch(f.mission.id, f.taskId, f.host, f.options);
+  const a = m.attempts[0], state = a.turns[0].state;
+  assert.equal(state.status, 'ready'); assert.equal(state.phase, 'implement');
+  assert.equal(state.stateVersion, 'v2'); assert.equal(state.hash.length, 64);
+  assert.ok(state.observedAt);
+  for (const key of ['extraPayload', 'repo', 'ownership', 'request', 'consents', 'questions']) assert.ok(!(key in state) && !(key in a.initialState));
+  assert.ok(!JSON.stringify(a).includes('raw-state-marker'));
+  const next = await f.live.continue(m.id, a.id, f.host, { expectedRevision: m.revision, expectedState: 'v2' });
+  assert.equal(next.attempts[0].turns.length, 2);
+});
+
 test('실제 배정은 판단·잠금 이후 수행하고 모델 완료 주장으로 작업을 성공시키지 않는다', async t => {
   const f = fixture(t);
   const m = await f.live.dispatch(f.mission.id, f.taskId, f.host, f.options);

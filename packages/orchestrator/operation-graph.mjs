@@ -1,17 +1,5 @@
 import { Annotation, StateGraph, START, END } from '@langchain/langgraph';
-import { randomUUID } from 'node:crypto';
 import { checkpointer, invokeGraph } from './graph-runtime.mjs';
-
-/** Each command has a named graph entry; longer services expose their own graphs. */
-export async function runCommand(store, missionId, command, execute) {
-  const State = Annotation.Root({ result: Annotation() });
-  const graph = new StateGraph(State)
-    .addNode(command, async () => ({ result: await execute() }))
-    .addEdge(START, command).addEdge(command, END)
-    .compile({ checkpointer: checkpointer(store) });
-  const output = await invokeGraph(store, graph, `command-${command}`, `${missionId}:${randomUUID()}`, {});
-  return output.result;
-}
 
 /** Review callbacks are individual nodes; routing and retry limits belong to LangGraph. */
 export async function reviewGraph(store, name, id, { prepare, generate, validate, record, finish, maxPasses }) {

@@ -7,6 +7,7 @@ import { relevantSource, taskHeld, activeHolds } from './scope.mjs';
 import { assertReplanTrees } from './replan-guard.mjs';
 import { missionProgress } from './progress.mjs';
 import { observationIdentity } from '../code-agent-adapter/observe.mjs';
+import { clearMissionCheckpoints, EVENT_RETENTION_DAYS } from '../storage/retention.mjs';
 import { requireThat, string, strings, hash, now, validateMission, validatePlan } from '../domain/contracts.mjs';
 
 const finished = new Set(['simulation-complete', 'succeeded', 'cancelled']);
@@ -71,9 +72,27 @@ export class Engine {
     return d;
   }
   save(mission, type, payload = {}) {
+    if (finished.has(mission.state)) {
+      mission.finishedAt ??= now();
+      clearMissionCheckpoints(this.store, mission);
+    }
     const saved = this.store.put('mission', mission, mission.revision);
     this.store.event(mission.id, type, payload);
     return saved;
+  }
+  pruneEvents(id, expectedRevision) {
+    return this.store.transaction(() => {
+      const mission = this.checked(id, expectedRevision);
+      requireThat(finished.has(mission.state), 'invalid-state', '종료된 목표의 이벤트만 정리한다.');
+      const cutoff = new Date(Date.now() - EVENT_RETENTION_DAYS * 86400000).toISOString();
+      const endedAt = mission.finishedAt ?? this.store.events(id).filter(e => ['live-completed', 'simulation-completed', 'cancel'].includes(e.type)).at(-1)?.at;
+      requireThat(endedAt && endedAt < cutoff, 'retention-pending', `목표 종료 후 ${EVENT_RETENTION_DAYS}일이 지나야 이벤트를 정리한다.`);
+      const deleted = this.store.db.prepare('DELETE FROM events WHERE mission_id=? AND at<?').run(id, cutoff).changes;
+      const decision = this.decision(mission, 'prune-events', { actor: 'operator', reason: `보존 기간이 지난 이벤트 ${deleted}건을 정리했다.`,
+        evidence: [`mission:${id}`], alternatives: ['이벤트 유지', '보존 기간 지난 이벤트 정리'], nextAction: 'none', verification: '종료 상태·종료 시각·기대 버전 대조', deleted, cutoff });
+      const saved = this.save(mission, 'events-pruned', { decisionId: decision.id, deleted, cutoff });
+      return { missionId: id, revision: saved.revision, deleted, cutoff };
+    });
   }
   plan(id, proposal, expectedRevision, { analysisId } = {}) {
     const copy = structuredClone(proposal);
@@ -146,18 +165,21 @@ export class Engine {
       return { ...t, ...state, waitingFor };
     }) : [];
     const events = this.store.events(id);
-    const decisions = events.filter(e => e.type === 'decision-recorded').map(e => this.store.need('decision', e.decisionId));
+    // 이벤트 보존 기간과 결정·검증 원본의 수명은 독립적이다.
+    const records = kind => this.store.db.prepare('SELECT body,revision FROM records WHERE kind=? AND mission_id=? ORDER BY rowid')
+      .all(kind, id).map(r => ({ ...JSON.parse(r.body), revision: r.revision }));
+    const decisions = records('decision');
     const evidence = this.store.list('evidence').filter(e => e.missionId === id);
-    const analyses = events.filter(e => e.type === 'analysis-started').map(e => this.store.need('analysis-run', e.runId)).map(r => ({ id: r.id, status: r.status, provider: r.provider, model: r.model, promptVersion: r.promptVersion, contextHash: r.contextHash, passes: r.passes.length, result: r.result ?? null, error: r.error ?? null }));
-    const verifications = events.filter(e => e.type === 'verification-started').map(e => this.store.need('verification-run', e.runId)).map(r => ({
+    const analyses = records('analysis-run').map(r => ({ id: r.id, status: r.status, provider: r.provider, model: r.model, promptVersion: r.promptVersion, contextHash: r.contextHash, passes: r.passes?.length ?? 0, result: r.result ?? null, error: r.error ?? null }));
+    const verifications = records('verification-run').map(r => ({
       id: r.id, attemptId: r.attemptId, state: r.state, decisionId: r.decisionId, changedPaths: r.changedPaths,
       beforeHash: r.before.digest, afterHash: r.after?.digest ?? null, checks: r.checks, artifacts: r.artifacts ?? [], error: r.error ?? null, seal: r.seal ?? null,
     }));
     const live = m.attempts.find(a => a.mode === 'live' && !['running', 'succeeded', 'abandoned'].includes(a.state));
-    const recoveries = events.filter(e => e.type === 'recovery-started').map(e => this.store.need('recovery-run', e.runId));
-    const replans = events.filter(e => e.type === 'replan-handed-off').map(e => this.store.need('replan-handoff', e.handoffId));
-    const deliveries = events.filter(e => e.type === 'delivery-started').map(e => this.store.need('delivery-run', e.runId));
-    const reconciliations = events.filter(e => e.type === 'live-reconciled').map(e => this.store.need('reconciliation', e.reconciliationId));
+    const recoveries = records('recovery-run');
+    const replans = records('replan-handoff');
+    const deliveries = records('delivery-run');
+    const reconciliations = records('reconciliation');
     const commands = this.store.list('command-run').filter(c => c.missionId === id);
     const progress = missionProgress(this.store, m, tasks, events);
     return { ...m, recoveryHolds: activeHolds(this.store, m).map(r => ({ runId: r.id, attemptId: r.attemptId, action: r.proposal?.action, category: r.proposal?.category })), taskDetails: tasks, decisions, evidence, analyses, verifications, recoveries, replans, deliveries, reconciliations, commands, events,

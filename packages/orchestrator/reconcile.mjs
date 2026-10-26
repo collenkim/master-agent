@@ -72,10 +72,11 @@ export class Reconciliation {
         evidence: [returned.id, `state:${expectedState}`, `tree:${tree.digest}`], alternatives: ['미확인 상태 유지', '독립 검증으로 이동'], nextAction: 'verify-live', verification: task.verification });
       const record = { id: randomUUID(), missionId: id, attemptId, invocationId: returned.id, decisionId: d.id, remote, tree, at: now() };
       record.seal = sealOf(record); this.store.put('reconciliation', record);
-      current.attempt.turns.push({ id: randomUUID(), at: now(), result: returned.result, state: remote, disposition: 'awaiting-verification', reconciliationId: record.id });
+      current.attempt.turns.push({ id: randomUUID(), at: now(), result: returned.result, state: remoteStateSummary(remote, returned.result.control?.runId), disposition: 'awaiting-verification', reconciliationId: record.id });
       current.attempt.state = 'awaiting-verification'; current.attempt.reconciliationPending = record.id;
       current.m.tasks.find(t => t.id === task.id).state = 'awaiting-verification'; current.m.state = 'blocked'; current.m.reason = d.reason;
       return this.engine.save(current.m, 'live-reconciled', { reconciliationId: record.id, decisionId: d.id });
     });
   }
 }
+import { remoteStateSummary } from './remote-state.mjs';

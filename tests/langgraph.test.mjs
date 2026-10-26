@@ -1,5 +1,4 @@
 import { planningSetup, answerFor, blockedAnswer } from './planning-fixture.mjs';
-import { runCommand } from '../packages/orchestrator/operation-graph.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
@@ -17,6 +16,23 @@ import { LiveWorkflow } from '../packages/orchestrator/drive.mjs';
 
 const exec = promisify(execFile);
 const moduleUrl = name => pathToFileURL(resolve(name)).href;
+
+test('M2: 취소한 thread는 재열기 뒤에도 checkpoint와 지연 writes를 남기지 않는다', async t => {
+  const f = setup(t);
+  f.engine.control(f.mission.id, 'pause', f.mission.revision);
+  await f.engine.run(f.mission.id, new SimulationRunner());
+  const config = { configurable: { thread_id: `master:v1:simulation:${f.mission.id}` } };
+  const tuple = await checkpointer(f.store).getTuple(config);
+  f.close();
+  const store = new Store(f.db); cleanup(t, () => store.close());
+  const m = new Engine(store).control(f.mission.id, 'cancel', store.need('mission', f.mission.id).revision);
+  assert.deepEqual(m.lastCheckpoint, { id: tuple.checkpoint.id, at: tuple.checkpoint.ts });
+  const saver = checkpointer(store);
+  await saver.put(tuple.config, tuple.checkpoint, tuple.metadata);
+  await saver.putWrites(tuple.config, [['late', 'value']], 'late-task');
+  assert.equal(await saver.getTuple(config), undefined);
+  for (const table of ['checkpoints', 'writes']) assert.equal(store.db.prepare(`SELECT count(*) AS n FROM ${table} WHERE thread_id=?`).get(config.configurable.thread_id).n, 0);
+});
 
 test('LangGraph wait survives reopening SQLite and waking it does not bypass mission pause', async t => {
   const f = setup(t);
@@ -38,9 +54,9 @@ test('LangGraph wait survives reopening SQLite and waking it does not bypass mis
   assert.equal((await graphStatus(store, 'simulation', f.mission.id)).lastRun.status, 'completed');
   const checkpoints = [];
   for await (const tuple of checkpointer(store).list({ configurable: { thread_id: before.threadId } })) checkpoints.push(tuple);
-  assert.ok(checkpoints.length > 10);
-  assert.ok(checkpoints.some(t => t.checkpoint.channel_values.route === 'execute'));
-  assert.ok(checkpoints.some(t => t.checkpoint.channel_values.route === 'accept'));
+  assert.equal(checkpoints.length, 0);
+  assert.equal(store.db.prepare('SELECT count(*) AS n FROM writes WHERE thread_id=?').get(before.threadId).n, 0);
+  assert.ok(result.lastCheckpoint.id); assert.ok(Date.parse(result.lastCheckpoint.at));
 });
 
 test('same graph thread cannot be driven concurrently from two Store connections', async t => {
@@ -134,7 +150,7 @@ test('received live mission is planned by the graph and missing verification nev
   const mission = f.engine.create({ ...f.fixture.mission, mode: 'live', requestKey: 'live-graph-plan' });
   let calls = 0, starts = 0;
   const provider = { name: 'fixture', async generate({ context }) { calls++; return { data: answerFor(context) }; } };
-  const result = await runCommand(f.store, mission.id, 'drive', () => new LiveWorkflow(f.store).run(mission.id, { execute() { starts++; } }, provider));
+  const result = await new LiveWorkflow(f.store).run(mission.id, { execute() { starts++; } }, provider);
   assert.equal(calls, 1); assert.equal(starts, 0);
   assert.equal(result.mission.plans.length, 1);
   assert.ok(result.blockers.some(b => b.endsWith('missing-verification-recipe')));

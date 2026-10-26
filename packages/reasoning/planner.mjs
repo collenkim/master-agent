@@ -8,6 +8,13 @@ import { assertReplanTrees } from '../orchestrator/replan-guard.mjs';
 import { observationIdentity } from '../code-agent-adapter/observe.mjs';
 
 export const PROMPT_VERSION = 'master-planner-v6';
+function contextSummary(context) {
+  return { mission: { id: context.mission.id }, projects: context.projects.map(p => ({
+    id: p.id, revision: p.revision, knowledgeSnapshotId: p.knowledgeSnapshotId,
+    observationRevision: p.observationRevision, observationIdentity: p.observationIdentity,
+    sources: p.sources.map(s => ({ id: s.id, bytes: Buffer.byteLength(s.content) })),
+  })) };
+}
 // Escalate a mixed waiting result to human review. Never downgrade critical issues or repair a ready plan.
 export function classifyWaitingAnalysis(data) {
   if (data?.status === 'needs-context' && Array.isArray(data.issues) && data.issues.some(i => i?.kind === 'critical')) {
@@ -112,29 +119,34 @@ export class Planner {
         run?.status !== 'invalid' || run.error?.code !== 'issue-classification') return null;
     const last = run.passes.at(-1), result = classifyWaitingAnalysis(last?.data);
     if (result === last?.data || (last?.review || run.provider?.includes('+')) && last?.review?.verdict !== 'approve') return null;
+    let context;
     try {
       this.assertContext(run.context);
-      const current = this.context(m);
-      if (hash(current.mission) !== hash(run.context.mission) || hash(current.previousPlan) !== hash(run.context.previousPlan) || hash(current.replan) !== hash(run.context.replan)) return null;
-      validateAnalysis(result, run.context);
+      context = this.context(m, { recollect: true });
+      if (hash(context) !== run.contextHash) return null;
+      validateAnalysis(result, context);
     }
     catch { return null; } // Changed evidence or another validation error needs a fresh analysis.
     return this.store.transaction(() => {
-      const current = this.engine.checked(id, expectedRevision); this.assertContext(run.context);
+      const current = this.engine.checked(id, expectedRevision); this.assertContext(context);
       const runId = randomUUID();
       const decision = this.engine.decision(current, 'repair-analysis-classification', { actor: 'rule-engine',
         reason: '중대한 판단 질문을 보존하고 전체 대기 분류를 사람 판단으로 올립니다.', evidence: [run.id],
         alternatives: ['새 분석', '동일 근거의 분류만 정정'], nextAction: 'human-decision', verification: '최신 근거·전체 분석 검증; 업무 답변·계획 실행 없음' });
-      this.store.put('analysis-run', { ...run, id: runId, status: result.status, result, error: null, repairedFrom: run.id,
+      this.store.put('analysis-run', { ...run, context: contextSummary(context), id: runId, status: result.status, result, error: null, repairedFrom: run.id,
         decisionId: decision.id, startedAt: now(), finishedAt: now(), expectedMissionRevision: current.revision,
         passes: [{ ...last, data: result, responseHash: hash(result), error: null, originalStatus: last.data.status, at: now() }] });
       current.analysisRunId = runId; current.state = 'waiting-decision'; current.reason = result.summary;
       return this.engine.save(current, 'analysis-classification-repaired', { runId, previousRunId: run.id, decisionId: decision.id });
     });
   }
-  context(mission) {
+  context(mission, { recollect = false } = {}) {
     const projects = mission.scope.projectIds.map(id => {
       const p = this.store.need('project', id), snapshot = this.knowledge.current(id);
+      if (recollect && !snapshot.sources.some(s => s.origin === 'directory-inventory')) {
+        const reread = this.knowledge.collect(id, { schemaVersion: 1, sources: snapshot.sources.map(({ path, kind }) => ({ path, kind })) }, p.revision);
+        requireThat(reread.snapshot.id === snapshot.id, 'stale-knowledge', '재검토 근거가 변경되었다. 새 분석이 필요하다.');
+      }
       const observation = this.store.get('observation', id);
       return { id, name: p.name, revision: p.revision, domains: p.domains, capabilities: p.capabilities,
         constraints: p.constraints, currentPlans: p.currentPlans, references: p.references,
@@ -200,13 +212,13 @@ export class Planner {
               alternatives: ['수동 계획 유지', 'AI 분석과 규칙 검증'], nextAction: 'AI 계획 분석', verification: '구조·실제 출처·도메인·완료 조건 검사',
               contextHash: hash(context), provider: provider.name,
             });
-            this.store.put('analysis-run', { id: runId, missionId: id, status: 'running', context, contextHash: hash(context), promptVersion: PROMPT_VERSION,
+            this.store.put('analysis-run', { id: runId, missionId: id, status: 'running', context: contextSummary(context), contextHash: hash(context), promptVersion: PROMPT_VERSION,
               provider: provider.name, model: provider.model ?? 'unspecified', decisionId: decision.id, passes: [], startedAt: now() });
             m.state = 'analyzing'; m.planningHold = true; m.analysisRunId = runId; m.reason = 'AI가 근거를 검토하고 계획을 생성 중입니다.';
             return this.engine.save(m, 'analysis-started', { runId, decisionId: decision.id });
           });
 
-          return { context, runId, revision: mission.revision, feedback: null, ready: false };
+          return { runId, revision: mission.revision, feedback: null, ready: false };
         },
         generate: async s => {
           this.engine.checked(id, mission.revision); this.assertContext(context);

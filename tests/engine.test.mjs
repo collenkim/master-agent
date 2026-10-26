@@ -11,6 +11,27 @@ import { acceptRequest } from '../packages/orchestrator/requests.mjs';
 
 const rejects = code => error => error.code === code;
 
+test('M2: 이벤트 정리는 종료 30일 뒤에만 수행하고 판단 원본과 다른 목표를 보존한다', t => {
+  const { engine, store, mission, fixture } = setup(t);
+  assert.throws(() => engine.pruneEvents(mission.id, mission.revision), { code: 'invalid-state' });
+  let m = engine.control(mission.id, 'cancel', mission.revision);
+  assert.throws(() => engine.pruneEvents(m.id, m.revision), { code: 'retention-pending' });
+  const old = new Date(Date.now() - 31 * 86400000).toISOString();
+  m = store.put('mission', { ...m, finishedAt: old }, m.revision);
+  store.db.prepare('UPDATE events SET at=? WHERE mission_id=?').run(old, m.id);
+  const other = engine.create({ ...fixture.mission, requestKey: 'retention-other' });
+  const otherEvents = store.events(other.id), decisions = engine.describe(m.id).decisions;
+  store.event(m.id, 'recent', {});
+  assert.throws(() => engine.pruneEvents(m.id, m.revision - 1), { code: 'stale-state' });
+  const result = engine.pruneEvents(m.id, m.revision);
+  assert.ok(result.deleted > 0);
+  assert.ok(store.events(m.id).every(e => e.at > old));
+  assert.ok(store.events(m.id).some(e => e.type === 'recent'));
+  assert.deepEqual(store.events(other.id), otherEvents);
+  assert.deepEqual(engine.describe(m.id).decisions.slice(0, decisions.length), decisions);
+  assert.equal(engine.describe(m.id).decisions.at(-1).action, 'prune-events');
+});
+
 test('S1: 취소는 잠금·분석·복구 보류를 해제하고 프로젝트 등록 해제를 허용한다', t => {
   const { engine, store, mission } = setup(t);
   const ticket = engine.prepare(mission.id, mission.revision);

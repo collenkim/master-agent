@@ -1,6 +1,6 @@
 # LangGraph 실행 구조
 
-master-agent의 자동 진행, AI 계획 검토, 실패 복구, 재계획, 모의 실행과 Mission 변경 CLI는 LangGraph JS로 실행합니다. 프로젝트 카탈로그·권한 검사·code-agent 통신·파일 검증은 그래프가 호출하는 도메인 서비스입니다.
+master-agent의 자동 진행, AI 계획 검토, 실패 복구, 재계획과 모의 실행은 LangGraph JS로 실행한다. 프로젝트 카탈로그·권한 검사·code-agent 통신·파일 검증은 그래프가 호출하는 도메인 서비스다. 개별 CLI 명령은 해당 서비스를 직접 호출하며 재개할 수 없는 임시 thread를 만들지 않는다.
 
 ## 설치와 실행
 
@@ -26,7 +26,6 @@ npm.cmd start -- mission graph <MISSION_ID>
 | 복구 | inspect-failure → reserve-review → review → authorize → held 또는 reserve-execution → repair / reverify → finish |
 | 재계획 | inspect-settlement → preserve-and-refresh → analyze |
 | 모의 실행 | select → prepare → execute → accept → after → select, 또는 complete |
-| 개별 Mission 명령 | 명령별 이름을 가진 노드에서 동일 도메인 서비스 또는 위 그래프 호출 |
 
 자동 진행의 분기와 반복은 LangGraph가 담당합니다. `drive --control`은 배정 가능한 대기 작업부터 접수합니다. dispatch·continue는 code-agent의 접수와 실행 ID 저장 후 반환하고, reattach는 같은 invocationId의 결과를 한 번 조회합니다. 아직 실행 중이면 다른 작업을 선택하고, 처리할 일이 없고 실행만 남았으면 poll-wait에서 잠시 기다린 뒤 다시 조회합니다. 독립 프로젝트의 외부 실행은 겹치지만 DB 변경·위임 판단·독립 검사는 순차 처리합니다. 같은 프로젝트의 잠금과 의존성 검사는 계속 적용합니다.
 
@@ -63,4 +62,16 @@ SQLite 도메인 트랜잭션과 LangGraph 체크포인트 사이에는 단일 �
 
 회귀 테스트는 기존 권한·검증·재계획 계약과 함께 SQLite 재열기, 대기 재개, 같은 스레드의 동시 실행 차단, 프로세스 강제 종료 후 중복 배정 차단, 체크포인트 저장 실패를 검사합니다. 실제 AI를 호출하는 운영 환경 전체 사이클은 별도 검증 대상입니다.
 
-체크포인트에는 근거·모델 응답·실행 결과가 저장될 수 있습니다. 현재 자동 보존 기간 정리는 없으므로 장기 운영에서는 DB 크기와 보존 정책을 별도로 관리해야 합니다.
+## 기록 보존과 정리
+
+목표가 `succeeded`·`cancelled`·`simulation-complete`로 저장되면 해당 Mission·모의 실행 thread의 checkpoints·writes를 삭제한다. 마지막 체크포인트의 ID·시각만 목표의 `lastCheckpoint`에 남긴다. 종료 이후 도착한 그래프 저장도 같은 thread를 다시 만들지 않는다. 실행 중인 목표의 대기 체크포인트는 재개를 위해 유지한다.
+
+분석 레코드의 `context`에는 프로젝트·관측 버전, 지식 스냅샷 ID, 소스 ID·바이트 수만 저장하고 전체 입력은 `contextHash`로 식별한다. 근거 본문은 지식 스냅샷을 참조하며 재검토 때 실제 파일을 다시 수집하고 전체 해시를 대조한다. 근거나 요청이 달라졌으면 기존 판단을 재사용하지 않는다. 분석 그래프 frame에도 근거 본문을 복제하지 않는다.
+
+실행 회차의 원격 상태는 상태 버전·진행 단계·실행 ID·관측 시각·해시와 진척 표시에 필요한 개수만 보존한다. 권한과 재개 가능 여부는 실행 직전에 다시 관측한다. 전체 원격 state JSON을 회차마다 누적하지 않는다.
+
+이벤트는 자동 삭제하지 않는다. 종료 후 기본 30일이 지난 목표에서 아래 명령을 실행하면 30일보다 오래된 이벤트만 정리하고 삭제 건수·기준 시각을 결정 레코드에 남긴다. 다른 목표와 최근 이벤트, 결정·분석·검증 원본은 보존한다. 기존 목표에 종료 시각이 없으면 종료 이벤트의 시각을 사용하며 시각을 확인하지 못하면 거부한다.
+
+```powershell
+master-agent mission events prune <목표ID> --revision <버전>
+```

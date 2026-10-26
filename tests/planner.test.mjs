@@ -10,6 +10,24 @@ import { analysisSchema, analysisSchemaFor, validateShape } from '../packages/re
 
 const provider = generate => ({ name: 'fixture-not-ai', model: 'fixture', generate });
 
+test('M2: 큰 근거 본문은 분석 레코드와 그래프 frame에 중복 저장하지 않는다', async t => {
+  const f = planningSetup(t), marker = 'unique-evidence-body-';
+  for (const p of f.store.list('project')) {
+    writeFileSync(join(p.path, 'POLICY.md'), marker.repeat(2500));
+    f.knowledge.collect(p.id, { schemaVersion: 1, sources: [{ path: 'POLICY.md', kind: 'policy' }] }, p.revision);
+  }
+  const result = await f.planner.analyze(f.mission.id, provider(async ({ context }) => {
+    assert.ok(context.projects.every(p => p.sources[0].content.length > 40000));
+    return { data: blockedAnswer(context, true) };
+  }), { expectedRevision: f.mission.revision, maxPasses: 1 });
+  const record = JSON.stringify(f.store.need('analysis-run', result.analysis.id));
+  assert.ok(Buffer.byteLength(record) < 16 * 1024, `레코드 ${Buffer.byteLength(record)} bytes`);
+  assert.ok(!record.includes(marker));
+  assert.ok(result.analysis.context.projects.every(p => p.sources.every(s => s.bytes > 40000 && !('content' in s))));
+  const checkpoints = f.store.db.prepare('SELECT checkpoint FROM checkpoints WHERE thread_id=?').all(`master:v1:analysis:${result.analysis.id}`);
+  assert.ok(checkpoints.every(c => !Buffer.from(c.checkpoint).toString().includes(marker)));
+});
+
 test('S1: 분석 중 목표 취소 후 늦은 결과가 취소 상태를 덮어쓰지 않는다', async t => {
   const { planner, engine, store, mission } = planningSetup(t);
   await assert.rejects(planner.analyze(mission.id, provider(async ({ context }) => {

@@ -6,6 +6,7 @@ import { snapshotTree } from '../verification/tree.mjs';
 import { sealOf } from '../verification/seal.mjs';
 import { predecessorContracts } from '../verification/handoff-contracts.mjs';
 import { taskHeld, relevantSource } from './scope.mjs';
+import { remoteStateSummary } from './remote-state.mjs';
 
 const taskState = (m, id) => m.tasks.find(t => t.id === id);
 
@@ -84,7 +85,7 @@ export class LiveExecution {
       });
       const attempt = { id: randomUUID(), token: randomUUID(), missionId: id, taskId, projectId: project.id, planVersion: plan.version,
         ...(m.taskNumber === undefined ? {} : { taskNumber: m.taskNumber }),
-        mode: 'live', state: 'running', invocationId: randomUUID(), codeAgentWorkId, initialState: state, provider: host.name, model: host.model ?? 'cli-default', decisionId: d.id, startedAt: now(), turns: [],
+        mode: 'live', state: 'running', invocationId: randomUUID(), codeAgentWorkId, initialState: remoteStateSummary(state), provider: host.name, model: host.model ?? 'cli-default', decisionId: d.id, startedAt: now(), turns: [],
         ...(recipe ? { recipe: structuredClone(recipe), baseline } : {}) };
       this.store.acquire(project.id, id, attempt.id);
       m.attempts.push(attempt); const t = taskState(m, taskId); t.state = 'running'; t.attemptIds.push(attempt.id);
@@ -157,7 +158,7 @@ export class LiveExecution {
           state.resume?.code === 'unobservable' || state.resume?.code === 'ownership-conflict' ? 'unknown' :
             result.status === 'blocked' || denialsBlock(result) || state.resume?.code !== 'ready' ? 'blocked' : 'awaiting-verification';
       if (state && !ownsLease(state, result?.sessionId)) disposition = 'unknown';
-      const turn = { id: randomUUID(), at: now(), expectedState: ticket.expectedState, state: state ?? null, result: result ?? null, error: error ?? null, disposition };
+      const turn = { id: randomUUID(), at: now(), expectedState: ticket.expectedState, state: remoteStateSummary(state, result?.control?.runId), result: result ?? null, error: error ?? null, disposition };
       attempt.turns.push(turn); attempt.state = disposition; attempt.hostReturnedAt = now();
       if (['claude', 'codex'].includes(result?.control?.hostKind)) attempt.executionHost = result.control.hostKind;
       taskState(m, ticket.taskId).state = disposition;

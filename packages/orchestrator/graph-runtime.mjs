@@ -6,6 +6,7 @@ import { hostname } from 'node:os';
 import { requireThat } from '../domain/contracts.mjs';
 import { Engine } from './engine.mjs';
 import { leaseActive, localProcessAlive, HEARTBEAT_MS } from './lease.mjs';
+import { closedMissionThread } from '../storage/retention.mjs';
 
 // Use the official saver with Node's SQLite driver. No native install scripts are needed.
 export function checkpointer(store) {
@@ -15,7 +16,12 @@ export function checkpointer(store) {
     exec(sql) { return store.db.exec(sql); },
     prepare(sql) {
       const statement = store.db.prepare(sql);
-      return Object.fromEntries(['run', 'get', 'all'].map(method => [method, (...args) => statement[method](...args.map(v => v === undefined ? null : v))]));
+      const checkpointWrite = /\bINSERT\b[\s\S]*?\bINTO\s+(checkpoints|writes)\b/i.test(sql);
+      return Object.fromEntries(['run', 'get', 'all'].map(method => [method, (...args) => {
+        // 직렬화가 끝난 뒤에도 종료 상태를 확인하여 마지막 노드가 삭제한 thread를 다시 만들지 않는다.
+        if (method === 'run' && checkpointWrite && closedMissionThread(store, args[0])) return { changes: 0 };
+        return statement[method](...args.map(v => v === undefined ? null : v));
+      }]));
     },
     transaction(fn) { return (...args) => store.transaction(() => fn(...args)); },
   };
