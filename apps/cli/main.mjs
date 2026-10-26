@@ -99,6 +99,7 @@ code-agent는 설치된 명령에서 자동 탐색합니다. --cli는 별도 빌
                                       영속 호스트 반환·현재 상태 대조 후 재실행 없이 독립 검증으로 복구
   mission replan <ID> <시도ID> --revision <N> --expect-state <버전> [--cli <경로>] [--provider codex|claude]
                                       외부 작업 종료 확인·변경 보존·잠금 정리·근거 재수집 후 재계획
+  mission replan-refresh <ID> --revision <N>  인계 이후 트리 변경 기록·근거 재수집·재분석 준비
   mission recover <ID> <시도ID> --revision <N> --expect-state <버전> [--cli <경로>] --provider codex|claude [--context <추가근거>]
                                       실패 분석·재검토·범위 내 복구 판단 후 실행
   mission advance <ID> [--cli <code-agent경로>] [--provider codex|claude]  가능한 live 단계 자동 판단; provider 지정 시 실패 복구
@@ -152,7 +153,7 @@ async function main() {
   const [category, action, id, file, extra] = args;
   const counts = { demo: 1, 'project add': 3, 'project update': 4, 'project list': 2, 'project observe': 3, 'group save': 3, 'group list': 2,
     'project collect': 4, 'project sources': 3, 'project search': 4, 'mission analyze': 3, 'mission clarify': 4,
-    'mission dispatch': 4, 'mission continue': 4, 'mission recover': 4, 'mission replan': 4, 'mission reconcile': 4,
+    'mission dispatch': 4, 'mission continue': 4, 'mission recover': 4, 'mission replan': 4, 'mission replan-refresh': 3, 'mission reconcile': 4,
     'mission stop-analysis': 4, 'mission reconcile-verification': 4, 'mission verification-template': 4,
     'mission verification': 4, 'mission verify': 4, 'mission handoff': 4, 'mission complete': 3,
     'mission advance': 3, 'mission drive': 3, 'mission progress': 3,
@@ -166,7 +167,7 @@ async function main() {
   requireThat(counts[key] === args.length, 'usage', help);
   const revision = values.revision === undefined ? undefined : Number(values.revision);
   if (values.revision !== undefined) requireThat(Number.isSafeInteger(revision) && revision > 0, 'usage', '--revision은 양의 정수입니다.');
-  if (key === 'mission cancel') requireThat(revision, 'usage', '--revision이 필요합니다.');
+  if (['mission cancel', 'mission replan-refresh'].includes(key)) requireThat(revision, 'usage', '--revision이 필요합니다.');
   if (['project update', 'project collect', 'mission analyze', 'mission clarify', 'mission plan', 'mission pause', 'mission resume', 'mission retry', 'mission unknown', 'mission dispatch', 'mission continue', 'mission verification', 'mission verify', 'mission handoff', 'mission complete'].includes(key)) requireThat(revision, 'usage', '--revision이 필요합니다.');
   if (['mission dispatch', 'mission continue', 'mission verify', 'mission handoff'].includes(key)) requireThat(values['expect-state'] && !values.simulate, 'usage', '--expect-state가 필요합니다. 모의 실행 옵션과 함께 사용할 수 없습니다.');
   if (['mission advance', 'mission drive'].includes(key)) requireThat(!values.simulate, 'usage', '모의 옵션은 사용할 수 없습니다.');
@@ -322,6 +323,7 @@ async function main() {
       }
       case 'mission pause': case 'mission resume': case 'mission retry': result = engine.control(id, action, revision, file); break;
       case 'mission cancel': result = engine.control(id, action, revision, undefined, { reason: values.reason }); break;
+      case 'mission replan-refresh': result = new Replanning(store).refresh(id, revision); break;
       case 'mission unknown': result = engine.markUnknown(id, file, revision); break;
     }
     return result;

@@ -13,7 +13,7 @@
   "scripts": {
     "start": "node apps/cli/main.mjs",
     "demo": "node apps/cli/main.mjs demo",
-    "test": "node --test tests/*.test.mjs",
+    "test": "node --test --test-concurrency=4 tests/*.test.mjs",
     "check": "node scripts/check.mjs"
   },
   "dependencies": {

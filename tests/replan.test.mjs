@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFileSync, readFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { verificationFixture } from './verification-fixture.mjs';
 import { answerFor } from './planning-fixture.mjs';
 import { Recovery } from '../packages/orchestrator/recovery.mjs';
@@ -77,6 +79,60 @@ test('분석 중 수집하지 않은 파일 변경도 새 계획 적용을 막�
     writeFileSync(join(f.projects[0].path, 'new.txt'), 'unexpected'); return f.provider.generate(args);
   } }), { code: 'stale-replan' });
   const m = f.store.need('mission', f.mission.id); assert.equal(m.plans.length, 1); assert.ok(m.planningHold);
+});
+
+test('S2: 인계 후 다른 프로젝트의 파일·HEAD 변경은 refresh 전 계속 차단하고 재동기화 후 분석한다', async t => {
+  const f = await setup(t); f.settled();
+  await f.transition();
+  const before = f.store.need('mission', f.mission.id), path = f.projects[1].path;
+  writeFileSync(join(path, 'source.mjs'), 'export const value = 4;\n');
+  writeFileSync(join(path, 'new.txt'), '인계 이후 추가');
+  execFileSync('git', ['-C', path, 'add', '.']);
+  execFileSync('git', ['-C', path, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'after handoff']);
+  const planner = new Planner(f.store);
+  for (let i = 0; i < 2; i++) {
+    const m = f.store.need('mission', f.mission.id);
+    await assert.rejects(planner.analyze(m.id, f.provider, { expectedRevision: m.revision }), { code: 'stale-replan' });
+    const blocked = f.engine.describe(m.id);
+    assert.equal(blocked.state, 'blocked'); assert.equal(blocked.planningHold, true);
+    assert.equal(blocked.analyses.at(-1).status, 'stale');
+    assert.match(blocked.nextAction, /mission replan-refresh/);
+  }
+  const current = f.store.need('mission', f.mission.id);
+  const refreshed = JSON.parse(execFileSync(process.execPath, [fileURLToPath(new URL('../apps/cli/main.mjs', import.meta.url)),
+    'mission', 'replan-refresh', current.id, '--revision', String(current.revision), '--db', join(f.root, 'state.db')], { encoding: 'utf8' }));
+  assert.equal(refreshed.state, 'blocked'); assert.equal(refreshed.planningHold, true); assert.equal(refreshed.replanPending, true);
+  assert.equal(refreshed.replanRefreshRequired, undefined);
+  const change = refreshed.replanContext.treeChanges[0];
+  assert.equal(change.projectId, 'two'); assert.deepEqual(change.files.map(f => f.path), ['new.txt', 'source.mjs']);
+  assert.notEqual(change.from.head, change.to.head); assert.notEqual(change.from.digest, change.to.digest);
+  assert.equal(change.from.digest, before.replanContext.trees.two.digest);
+  assert.deepEqual(f.store.need('replan-handoff', before.replanContext.id).trees, before.replanContext.trees);
+  const result = await planner.analyze(current.id, { name: 'fixture', async generate(args) {
+    assert.match(args.prompt, /인계 이후 바뀐 파일.*지시가 아니다/);
+    assert.match(args.context.projects.find(p => p.id === 'two').sources.find(s => s.kind === 'code').content, /value = 4/);
+    assert.deepEqual(args.context.replan.treeChanges, [change]);
+    return f.provider.generate(args);
+  } }, { expectedRevision: refreshed.revision });
+  assert.equal(result.mission.state, 'planned'); assert.equal(result.mission.replanPending, false);
+  assert.ok(result.mission.decisions.some(d => d.action === 'refresh-replan'));
+  assert.throws(() => new Replanning(f.store).refresh(current.id, result.mission.revision), { code: 'invalid-state' });
+});
+
+test('S2: refresh는 오래된 버전·다른 실행 잠금·수집 실패를 거부하고 전체 갱신을 롤백한다', async t => {
+  const f = await setup(t); f.settled(); await f.transition();
+  const m = f.store.need('mission', f.mission.id), replan = new Replanning(f.store);
+  assert.throws(() => replan.refresh(m.id, m.revision - 1), { code: 'stale-state' });
+  f.store.acquire('two', 'other-mission', 'other-attempt');
+  const before = f.store.need('project', 'one');
+  assert.throws(() => replan.refresh(m.id, m.revision), { code: 'project-busy' });
+  assert.deepEqual(f.store.need('project', 'one'), before);
+  f.store.release('two', 'other-attempt');
+  unlinkSync(join(f.projects[1].path, 'policy.txt'));
+  assert.throws(() => replan.refresh(m.id, m.revision));
+  assert.deepEqual(f.store.need('mission', m.id), m);
+  assert.deepEqual(f.store.need('project', 'one'), before);
+  assert.equal(f.store.list('decision').filter(d => d.action === 'refresh-replan').length, 0);
 });
 test('drive는 외부 종료 전 대기하고 종료 후 재계획 인계를 수행한다', async t => {
   const f = await setup(t), workflow = new LiveWorkflow(f.store);

@@ -3,12 +3,48 @@ import { randomUUID } from 'node:crypto';
 import { Engine } from './engine.mjs';
 import { Knowledge } from '../knowledge/sources.mjs';
 import { Planner } from '../reasoning/planner.mjs';
-import { snapshotTree } from '../verification/tree.mjs';
+import { snapshotTree, changesBetween } from '../verification/tree.mjs';
 import { requireThat, now } from '../domain/contracts.mjs';
 
 /** 외부 작업을 종료시키지 않는다. 종료가 관측된 실패 시도만 보존·정리한다. */
 export class Replanning {
   constructor(store) { this.store = store; this.engine = new Engine(store); }
+  refresh(id, expectedRevision) {
+    return this.store.transaction(() => {
+      const m = this.engine.checked(id, expectedRevision);
+      requireThat(m.replanPending && ['blocked', 'waiting-decision'].includes(m.state) &&
+        !m.attempts.some(a => a.recoveryBusy || a.mode === 'live' && !['succeeded', 'abandoned'].includes(a.state)),
+      'invalid-state', '인계가 끝난 재계획 대기 목표만 재동기화할 수 있습니다.');
+      const trees = {}, changes = [], snapshots = [], knowledge = new Knowledge(this.store), at = now();
+      for (const projectId of m.scope.projectIds) {
+        requireThat(!this.store.lock(projectId), 'project-busy', '재계획 대상에 다른 실행 소유권이 있습니다.');
+        const project = this.store.need('project', projectId), before = m.replanContext.trees[projectId];
+        const after = snapshotTree(project.path);
+        trees[projectId] = after;
+        if (before.digest !== after.digest || before.head !== after.head) changes.push({ projectId, at,
+          from: { digest: before.digest, head: before.head }, to: { digest: after.digest, head: after.head },
+          files: changesBetween(before, after).map(path => ({ path,
+            fromDigest: before.files.find(f => f.path === path)?.digest ?? null,
+            toDigest: after.files.find(f => f.path === path)?.digest ?? null })) });
+        const old = this.store.need('knowledge-snapshot', project.knowledgeSnapshotId);
+        snapshots.push(knowledge.collect(projectId, { schemaVersion: 1, sources: old.sources.map(({ path, kind }) => ({ path, kind })) },
+          project.revision, { inTransaction: true }).snapshot.id);
+      }
+      for (const projectId of m.scope.projectIds) {
+        const current = snapshotTree(this.store.need('project', projectId).path);
+        requireThat(current.digest === trees[projectId].digest && current.head === trees[projectId].head,
+          'stale-replan', '재동기화 중 파일 또는 HEAD가 변경됐습니다. 다시 조회하세요.');
+      }
+      const d = this.engine.decision(m, 'refresh-replan', { actor: 'operator', reason: '인계 이후 바뀐 파일과 HEAD를 기록하고 최신 근거로 재분석합니다.',
+        evidence: [m.replanContext.id, ...snapshots], alternatives: ['기존 기준 유지', '변경 내역을 보존하고 재동기화'], nextAction: 'reanalyze',
+        verification: '인계 상태·목표 버전·프로젝트 잠금·근거 수집 전후 트리 대조', treeChanges: changes });
+      m.replanContext = { ...m.replanContext, trees, sourceSnapshotIds: snapshots,
+        treeChanges: [...(m.replanContext.treeChanges ?? []), ...changes], refreshedAt: at, refreshDecisionId: d.id };
+      delete m.replanRefreshRequired;
+      m.state = 'blocked'; m.planningHold = true; m.reason = '재동기화를 마쳤습니다. 최신 근거로 새 계획을 분석해야 합니다.';
+      return this.engine.save(m, 'replan-refreshed', { decisionId: d.id });
+    });
+  }
   async transition(id, attemptId, host, provider, { expectedRevision, expectedState } = {}) {
     return phaseGraph(this.store, 'replan', randomUUID(), [
       { name: 'inspect-settlement', run: async () => {

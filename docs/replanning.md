@@ -22,9 +22,21 @@ master-agent mission show <목표ID>
 
 provider를 생략하면 인계·근거 재수집까지만 수행하고 실행 보류 상태를 유지한다. 이후 `mission analyze`로 분석할 수 있다. provider를 지정한 `drive/advance`도 재계획 보류를 발견하면 같은 경로를 사용하며, 외부 종료 전에는 대기한다. 새 계획의 검증 계약은 배정 전에 다시 설정한다. 등록된 [검증 템플릿](autonomous-progress.md)이 정확히 하나 일치하면 자동 연결하고, 그 외에는 작업별 등록이 필요하다. 이전 성공 증거는 재사용하지 않는다.
 
-AI 호출 실패나 정보 부족은 인계된 변경을 보존하고 계획 실행을 보류한다. 최신 revision으로 `mission analyze`를 재호출할 수 있다. 인계 후 파일·HEAD가 달라진 경우에는 자동으로 새 기준을 채택하지 않는다. 이 경우의 기준 재설정, 다른 미정리 시도의 일괄 정리, 취소·중단 복구는 후속 범위다.
+AI 호출 실패나 정보 부족은 인계된 변경을 보존하고 계획 실행을 보류한다. 최신 revision으로 `mission analyze`를 재호출할 수 있다. 인계 후 파일·HEAD가 달라지면 `stale-replan`으로 차단하며 아래 재동기화를 거쳐야 한다.
 
 `mission show`의 `replans`에는 인계 판단, 실패 시도·복구 ID, 이전 계획 버전, 프로젝트별 트리, 원격 종료 상태, 재수집 스냅샷이 표시된다. 계획 분석 기록에도 해당 인계 자료가 연결된다.
+
+## 인계 이후 재동기화
+
+```powershell
+master-agent mission show <목표ID>
+master-agent mission replan-refresh <목표ID> --revision <현재버전>
+master-agent mission analyze <목표ID> --revision <갱신된버전> --provider claude
+```
+
+재동기화는 인계가 끝난 재계획 대기 목표에만 허용한다. 목표 버전과 모든 대상의 잠금을 검사하고 현재 트리·HEAD를 다시 수집한다. 기존 근거 목록도 다시 읽으며 수집 전후 파일이 바뀌면 전체 갱신을 롤백한다. 이전 인계 레코드는 보존하고 `replanContext.treeChanges`에 프로젝트별 이전·새 digest, HEAD와 변경 파일별 해시를 누적 기록한다. 결정 레코드에도 이번 변경 내역을 남긴다.
+
+재동기화 후 상태는 최초 인계와 같은 `blocked`이며 `planningHold`를 유지한다. `mission analyze`로 새 계획을 검증하기 전에는 실행하지 않는다. 분석 프롬프트는 변경 내역을 "인계 이후 바뀐 파일" 데이터로 전달하며 지시 권한을 부여하지 않는다. 재동기화 없이 분석을 반복하거나 재동기화 뒤 파일이 다시 바뀌면 계속 차단한다. `mission show`의 `nextAction`에 최신 revision을 포함한 재동기화 명령을 표시한다.
 
 ## 검증 경계
 
