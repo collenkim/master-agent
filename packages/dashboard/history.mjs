@@ -77,6 +77,8 @@ export function createHistory(store, { cliPath, clientFor = project => new Contr
         const read = await client.result('events', { payload: { after: cursor?.seq ?? 0, limit: 200, ...(cursor?.logId ? { logId: cursor.logId } : {}) } });
         requireThat(Array.isArray(read.events) && typeof read.logId === 'string' && Number.isInteger(read.latestSeq) && read.latestSeq >= 0,
           'invalid-history', '이벤트 응답 형식이 다릅니다.');
+        // code-agent doc/master-control.md와 src/agent/master/store.ts: gap의 events는 빈 배열이다.
+        requireThat(!read.gap || read.events.length === 0, 'invalid-history', 'gap 응답에는 이벤트를 함께 보낼 수 없습니다.');
         let last = cursor?.seq ?? 0;
         for (const event of read.events) {
           requireThat(Number.isInteger(event.seq) && event.seq > last && event.seq <= read.latestSeq && typeof event.type === 'string', 'invalid-history', '이벤트 순번이 올바르지 않습니다.');

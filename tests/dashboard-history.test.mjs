@@ -148,3 +148,25 @@ test('history HTTP paginates, validates input and retains same-origin restrictio
     assert.equal((await fetch(server.url + '/history.mjs')).status, 200);
   } finally { await server.close(); }
 });
+
+
+test('M10: gap+이벤트 동봉은 계약 위반으로 거부하고 정상 재동기화 응답에서 커서가 전진한다', async t => {
+  const { store, fixture } = setup(t), p = fixture.projects[0];
+  store.put('control-binding', { id: p.id });
+  store.put('stage-source', { id: p.id, logId: 'old-ledger', seq: 100, latestSeq: 100 });
+  let malformed = true;
+  const history = createHistory(store, { clientFor: () => ({ async result(_, { payload }) {
+    if (payload.logId !== 'new-ledger') return response(malformed ? [event(1)] : [],
+      { logId: 'new-ledger', gap: true, firstSeq: 1, latestSeq: 2 });
+    return response([event(1), event(2)].filter(e => e.seq > payload.after), { logId: 'new-ledger', latestSeq: 2 });
+  } }) });
+  await history.refreshProject(p);
+  assert.equal(store.need('stage-source', p.id).error, 'invalid-history');
+  assert.equal(store.need('stage-source', p.id).seq, 100);
+  assert.equal(historyPage(store).items.length, 0);
+  malformed = false; await history.refreshProject(p);
+  const cursor = store.need('stage-source', p.id);
+  assert.equal(cursor.logId, 'new-ledger'); assert.equal(cursor.seq, 2); assert.equal(cursor.error, null);
+  assert.equal(historyPage(store).items.filter(i => i.type === 'history.gap').length, 1);
+  assert.equal(historyPage(store).items.filter(i => i.type === 'phase.changed').length, 2);
+});
