@@ -6,11 +6,13 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { hostname } from 'node:os';
 import { setup, cleanup } from './helpers.mjs';
 import { Store } from '../packages/storage/store.mjs';
 import { Engine } from '../packages/orchestrator/engine.mjs';
 import { SimulationRunner } from '../packages/runner/simulation.mjs';
-import { checkpointer, graphStatus } from '../packages/orchestrator/graph-runtime.mjs';
+import { checkpointer, graphStatus, unlockMission } from '../packages/orchestrator/graph-runtime.mjs';
+import { LEASE_TTL_MS } from '../packages/orchestrator/lease.mjs';
 import { LiveWorkflow } from '../packages/orchestrator/drive.mjs';
 
 const exec = promisify(execFile);
@@ -64,11 +66,45 @@ await new Engine(store).step(${JSON.stringify(id)}, { mode: 'simulation', execut
   await assert.rejects(exec(process.execPath, ['--input-type=module', '-e', script]), e => e.code === 17);
   const store = new Store(f.db); cleanup(t, () => store.close());
   const old = store.need('mission', id).attempts[0];
+  await assert.rejects(new Engine(store).run(id, new SimulationRunner()), { code: 'graph-busy' });
+  unlockMission(store, id, store.need('mission', id).revision, { confirm: true });
   let calls = [];
   await new Engine(store).run(id, { mode: 'simulation', execute(ticket) { calls.push(ticket.taskId); return new SimulationRunner().execute(ticket); } });
   assert.ok(!calls.includes(old.taskId));
   assert.equal(store.need('mission', id).attempts.filter(a => a.taskId === old.taskId).length, 1);
   assert.equal(store.lock(old.projectId).attempt_id, old.id);
+});
+
+function foreignLease(f, { host = 'different-host', pid = 999999999, at = new Date(Date.now() - LEASE_TTL_MS - 1000).toISOString() } = {}) {
+  const thread = `master:v1:simulation:${f.mission.id}`;
+  f.store.db.prepare('INSERT INTO graph_runs(id,thread_id,graph,status,started_at) VALUES(?,?,?,?,?)').run('old-run', thread, 'simulation', 'running', at);
+  f.store.db.prepare('INSERT INTO graph_leases(thread_id,owner,pid,host,started_at,heartbeat_at) VALUES(?,?,?,?,?,?)').run(thread, 'old-run', pid, host, at, at);
+  return thread;
+}
+
+test('M1: 다른 호스트의 만료 임대는 회수하고 이전 실행을 interrupted로 기록한다', async t => {
+  const f = setup(t); foreignLease(f);
+  const result = await f.engine.run(f.mission.id, new SimulationRunner());
+  assert.equal(result.state, 'simulation-complete');
+  assert.equal(f.store.db.prepare('SELECT status FROM graph_runs WHERE id=?').get('old-run').status, 'interrupted');
+  assert.ok(f.store.events(f.mission.id).some(e => e.type === 'graph-lease-reclaimed' && e.reason === 'expired'));
+});
+
+test('M1: 다른 호스트의 최근 heartbeat는 busy이며 명시적 unlock은 revision과 confirm을 요구한다', async t => {
+  const f = setup(t); foreignLease(f, { at: new Date().toISOString() });
+  await assert.rejects(f.engine.run(f.mission.id, new SimulationRunner()), { code: 'graph-busy' });
+  assert.throws(() => unlockMission(f.store, f.mission.id, f.mission.revision), { code: 'invalid-input' });
+  assert.throws(() => unlockMission(f.store, f.mission.id, f.mission.revision - 1, { confirm: true }), { code: 'stale-state' });
+  unlockMission(f.store, f.mission.id, f.mission.revision, { confirm: true });
+  assert.equal(f.store.db.prepare('SELECT count(*) AS n FROM graph_leases').get().n, 0);
+  assert.ok(f.store.list('decision').some(d => d.action === 'unlock-graph'));
+});
+
+test('M1: 같은 호스트의 살아 있는 pid 임대는 TTL이 지나도 실행과 unlock을 거부한다', async t => {
+  const f = setup(t); foreignLease(f, { host: hostname(), pid: process.pid });
+  await assert.rejects(f.engine.run(f.mission.id, new SimulationRunner()), { code: 'graph-busy' });
+  assert.throws(() => unlockMission(f.store, f.mission.id, f.mission.revision, { confirm: true }), { code: 'graph-busy' });
+  assert.equal(f.store.db.prepare('SELECT status FROM graph_runs WHERE id=?').get('old-run').status, 'running');
 });
 
 test('checkpoint failure after an effect does not allow replay on the next graph invocation', async t => {

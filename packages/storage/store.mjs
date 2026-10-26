@@ -3,6 +3,28 @@ import { mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { requireThat, now } from '../domain/contracts.mjs';
 
+const migrations = [
+  db => db.exec(`
+    CREATE TABLE records (kind TEXT NOT NULL, id TEXT NOT NULL, revision INTEGER NOT NULL, body TEXT NOT NULL, PRIMARY KEY(kind,id));
+    CREATE TABLE events (sequence INTEGER PRIMARY KEY AUTOINCREMENT, mission_id TEXT NOT NULL, type TEXT NOT NULL, at TEXT NOT NULL, body TEXT NOT NULL);
+    CREATE TABLE locks (project_id TEXT PRIMARY KEY, mission_id TEXT NOT NULL, attempt_id TEXT NOT NULL);
+    CREATE TABLE requests (key TEXT PRIMARY KEY, hash TEXT NOT NULL, mission_id TEXT NOT NULL);
+    CREATE TABLE paths (path TEXT PRIMARY KEY, project_id TEXT NOT NULL UNIQUE);
+  `),
+  db => db.exec(`
+    CREATE TABLE IF NOT EXISTS graph_leases (thread_id TEXT PRIMARY KEY, owner TEXT NOT NULL, pid INTEGER NOT NULL, host TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS graph_runs (id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, graph TEXT NOT NULL, status TEXT NOT NULL, started_at TEXT NOT NULL, finished_at TEXT, error TEXT);
+    ALTER TABLE graph_leases ADD COLUMN started_at TEXT;
+    ALTER TABLE graph_leases ADD COLUMN heartbeat_at TEXT;
+    UPDATE graph_leases SET started_at=COALESCE((SELECT started_at FROM graph_runs WHERE id=owner),'1970-01-01T00:00:00.000Z');
+    UPDATE graph_leases SET heartbeat_at=started_at;
+    ALTER TABLE records ADD COLUMN mission_id TEXT GENERATED ALWAYS AS (json_extract(body,'$.missionId')) VIRTUAL;
+    CREATE INDEX records_mission ON records(kind,mission_id);
+    CREATE INDEX events_mission ON events(mission_id,sequence);
+    CREATE INDEX graph_runs_thread ON graph_runs(thread_id);
+  `),
+];
+
 /** 트랜잭션에는 동기 DB 작업만 넣는다. 모델·프로세스 호출은 커밋 이후에 수행한다. */
 export class Store {
   constructor(path) {
@@ -11,22 +33,24 @@ export class Store {
     try {
       // drive 가 실행을 따라가는 동안 다른 CLI(정지·답 전달·조회)가 같은 DB 를 쓴다 — 잠금이 풀릴 때까지 잠시 기다린다
       this.db.exec('PRAGMA busy_timeout = 5000');
-      const version = this.db.prepare('PRAGMA user_version').get().user_version;
-      requireThat(version === 0 || version === 1, 'unsupported-version', `저장소 버전 ${version}은 지원하지 않습니다.`);
-      if (version === 0) {
-        const tables = this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").all();
-        requireThat(!tables.length, 'unknown-database', '기존 데이터베이스를 새 저장소로 초기화하지 않습니다.');
-        this.db.exec(`BEGIN IMMEDIATE;
-          CREATE TABLE records (kind TEXT NOT NULL, id TEXT NOT NULL, revision INTEGER NOT NULL, body TEXT NOT NULL, PRIMARY KEY(kind,id));
-          CREATE TABLE events (sequence INTEGER PRIMARY KEY AUTOINCREMENT, mission_id TEXT NOT NULL, type TEXT NOT NULL, at TEXT NOT NULL, body TEXT NOT NULL);
-          CREATE TABLE locks (project_id TEXT PRIMARY KEY, mission_id TEXT NOT NULL, attempt_id TEXT NOT NULL);
-          CREATE TABLE requests (key TEXT PRIMARY KEY, hash TEXT NOT NULL, mission_id TEXT NOT NULL);
-          CREATE TABLE paths (path TEXT PRIMARY KEY, project_id TEXT NOT NULL UNIQUE);
-          PRAGMA user_version=1;
-          COMMIT;`);
+      let version = this.db.prepare('PRAGMA user_version').get().user_version;
+      requireThat(version >= 0 && version <= migrations.length, 'unsupported-version', `저장소 버전 ${version}은 지원하지 않습니다.`);
+      if (version < migrations.length) {
+        this.transaction(() => {
+          version = this.db.prepare('PRAGMA user_version').get().user_version;
+          requireThat(version <= migrations.length, 'unsupported-version', `저장소 버전 ${version}은 지원하지 않습니다.`);
+          if (version === 0) {
+            const tables = this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").all();
+            requireThat(!tables.length, 'unknown-database', '기존 데이터베이스를 새 저장소로 초기화하지 않습니다.');
+          }
+          while (version < migrations.length) {
+            migrations[version](this.db);
+            this.db.exec(`PRAGMA user_version=${++version}`);
+          }
+        });
       }
       // 동일 버전이라도 손상/누락된 테이블은 새 상태로 만들지 않는다.
-      for (const name of ['records', 'events', 'locks', 'requests', 'paths']) this.db.prepare(`SELECT * FROM ${name} LIMIT 0`).all();
+      for (const name of ['records', 'events', 'locks', 'requests', 'paths', 'graph_leases', 'graph_runs']) this.db.prepare(`SELECT * FROM ${name} LIMIT 0`).all();
     } catch (error) { this.db.close(); throw error; }
   }
   close() { this.db.close(); }
@@ -49,7 +73,7 @@ export class Store {
     const body = { ...value }; delete body.revision;
     if (expected === 0) {
       requireThat(!this.get(kind, value.id), 'already-exists', `${kind} ${value.id}가 이미 있습니다.`);
-      this.db.prepare('INSERT INTO records VALUES (?,?,1,?)').run(kind, value.id, JSON.stringify(body));
+      this.db.prepare('INSERT INTO records(kind,id,revision,body) VALUES (?,?,1,?)').run(kind, value.id, JSON.stringify(body));
     } else {
       const result = this.db.prepare('UPDATE records SET revision=revision+1, body=? WHERE kind=? AND id=? AND revision=?').run(JSON.stringify(body), kind, value.id, expected);
       requireThat(result.changes === 1, 'stale-state', '상태가 변경되었습니다. 다시 조회하세요.');

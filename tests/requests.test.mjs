@@ -1,14 +1,47 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
+import { hostname } from 'node:os';
 import { readFileSync } from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
 import { setup } from './helpers.mjs';
-import { acceptRequest, continueRequest, runRequest, launchRequest, requestStatus } from '../packages/orchestrator/requests.mjs';
+import { acceptRequest, continueRequest, runRequest, launchRequest, requestStatus, resetRequest } from '../packages/orchestrator/requests.mjs';
+import { LEASE_TTL_MS } from '../packages/orchestrator/lease.mjs';
 import { verificationFixture } from './verification-fixture.mjs';
 import { startDashboard } from '../packages/dashboard/server.mjs';
 import { answerFor, planningSetup } from './planning-fixture.mjs';
 import { hostPrompt } from '../packages/runner/claude-host.mjs';
+
+test('M1: request reset은 확인·버전·로컬 생존을 검사하고 같은 요청을 대기로 돌린다', t => {
+  const f = setup(t), id = acceptRequest(f.store, { targetType: 'project', targetId: f.fixture.projects[0].id, goal: '복구할 요청' }).request.id;
+  let r = f.store.need('target-request', id);
+  r = f.store.put('target-request', { ...r, state: 'running', owner: 'lost', host: 'another-host', pid: 123,
+    heartbeatAt: new Date().toISOString() }, r.revision);
+  assert.throws(() => resetRequest(f.store, id, r.revision), { code: 'invalid-input' });
+  assert.throws(() => resetRequest(f.store, id, r.revision - 1, { confirm: true }), { code: 'stale-state' });
+  assert.throws(() => continueRequest(f.store, id, r.revision), { code: 'request-busy' });
+  r = resetRequest(f.store, id, r.revision, { confirm: true });
+  assert.equal(r.state, 'queued'); assert.equal(r.pid, null); assert.equal(r.owner, null);
+  assert.ok(f.store.list('decision').some(d => d.action === 'reset-request' && d.actor === 'operator'));
+  r = f.store.put('target-request', { ...r, state: 'running', host: hostname(), pid: process.pid }, r.revision);
+  assert.throws(() => resetRequest(f.store, id, r.revision, { confirm: true }), { code: 'request-busy' });
+});
+
+test('M1: 다른 호스트의 오래된 요청 실행은 회수하고 최근 heartbeat는 계속 차단한다', async t => {
+  const f = setup(t), id = acceptRequest(f.store, { targetType: 'project', targetId: f.fixture.projects[0].id, goal: '임대 만료' }).request.id;
+  let r = f.store.need('target-request', id);
+  r = f.store.put('target-request', { ...r, state: 'running', host: 'another-host', pid: 123, owner: 'lost', heartbeatAt: new Date().toISOString() }, r.revision);
+  await assert.rejects(runRequest(f.store, id, { host: {}, provider: {}, workflow: {} }), { code: 'request-busy' });
+  r = f.store.put('target-request', { ...r, heartbeatAt: new Date(Date.now() - LEASE_TTL_MS - 1).toISOString() }, r.revision);
+  assert.equal(requestStatus(r).state, 'interrupted');
+  const result = await runRequest(f.store, id, { host: {}, provider: {}, workflow: { async run() {
+    const active = f.store.need('target-request', id);
+    assert.equal(active.pid, process.pid); assert.ok(Date.parse(active.heartbeatAt) > Date.parse(r.heartbeatAt));
+    return { blockers: ['fixture-wait'] };
+  } } });
+  assert.equal(result.state, 'waiting');
+  assert.ok(f.store.events(id).some(e => e.type === 'request-lease-reclaimed' && e.reason === 'expired'));
+});
 
 test('service group membership is versioned; accepted requests keep their original scope and are idempotent', t => {
   const { store, engine, fixture } = setup(t);

@@ -32,7 +32,7 @@ npm.cmd start -- mission graph <MISSION_ID>
 
 ## 상태 저장
 
-기존 SQLite v1의 records·events·locks는 보존합니다. 최초 그래프 실행 때 checkpoints·writes·graph_runs·graph_leases 테이블을 추가합니다.
+SQLite 저장소는 migrations 배열을 버전 순서대로 적용하며 현재 user_version은 2다. v1의 records·events·locks와 기존 graph_runs·graph_leases를 보존하고 임대 시각 열을 추가한다. 그래프 테이블 생성도 버전 마이그레이션에서 처리한다. 알 수 없는 상위 버전은 거부한다. checkpoints·writes는 최초 체크포인터 사용 때 생성한다. v2에는 목표별 레코드·이벤트 조회용 생성 열과 인덱스도 포함한다.
 
 - 그래프 체크포인트: 실행 경로, 다음 단계에 필요한 값, 대기 정보.
 - 도메인 저장소: Mission·Attempt·계획·증거·권한·프로젝트 잠금의 기준 상태.
@@ -42,6 +42,10 @@ npm.cmd start -- mission graph <MISSION_ID>
 현재 상태는 도메인 저장소에서 읽습니다. 그래프에 저장된 오래된 사본으로 권한·계획 버전·외부 상태를 덮어쓰지 않습니다. 체크포인트에서 모델·호스트 객체나 인증 토큰을 재구성하지 않으며 재개 명령이 해당 어댑터를 다시 제공합니다.
 
 ## 대기와 재시작
+
+그래프 임대는 started_at·heartbeat_at을 저장하며 노드 완료와 30초 주기로 heartbeat를 갱신한다. 같은 호스트에서 pid가 살아 있으면 계속 유효하다. 그 밖에는 마지막 heartbeat의 기본 TTL 10분이 지나야 자동 회수한다. 회수한 graph_runs는 `interrupted`로 마감하고 이벤트를 남긴다. 프로세스가 죽어도 최근 heartbeat가 남아 있으면 TTL 동안 중복 실행을 차단한다.
+
+`master-agent mission unlock <목표ID> --revision <버전> --confirm`으로 TTL 전에 목표 그래프 임대를 회수할 수 있다. 같은 호스트의 살아 있는 pid는 거부하며 결정과 이벤트를 기록한다. 프로젝트 실행 잠금과 미확인 시도의 상태는 유지한다. 임대 해제가 개발 작업의 종료나 재실행 승인은 아니다.
 
 진행할 수 없는 Mission은 wait 노드의 interrupt로 중단합니다. 다시 advance/drive를 실행하면 Command.resume으로 wait를 깨운 뒤 최신 도메인·외부 상태를 재검사합니다. 이 신호 자체는 질문 답변이나 승인이 아닙니다. 실제 답변·동의·grant는 기존 검증 경로를 거쳐야 합니다. 한 프로젝트의 판단 대기가 독립 프로젝트의 진행을 즉시 차단하지 않도록 선택 가능한 작업을 먼저 확인합니다.
 

@@ -158,6 +158,8 @@ master-agent mission graph <목표ID>
 
 `npm test`는 프로세스·파일 검증의 경합을 줄이기 위해 테스트 파일을 최대 4개씩 실행한다. 모든 테스트 항목과 각 검증 조건은 그대로 실행한다.
 
+다른 호스트나 중단된 실행기가 남긴 임대는 기본 10분 TTL 이후 회수한다. 운영자용 `mission unlock`·`request reset`의 확인 조건은 [실행 임대 복구](docs/recovery.md)를 따른다.
+
 `progress.tasks`에는 `status`, `phase`, `reason`, `runId`, `lastProgressAt`, `nextAction`이 있습니다. `approval-pending`은 위임 판단 전, `approval-processing`은 판단·전송 중, `human-input`은 사람 응답 필요, `blocked`는 실패·미확인 등 점검 필요 상태입니다. 여러 작업이 병행되므로 목표의 요약 상태와 함께 `counts`와 작업별 상태를 확인하세요. 이 조회는 마지막 저장 관측을 표시하며 원격 조회를 새로 수행하지 않습니다.
 
 두 격리 프로젝트의 실제 전체 흐름은 `scripts/smoke-full-flow.mjs`, 앞선 답의 판단 회귀는 `scripts/smoke-answer-context.mjs`로 재현합니다. 실제 모델 호출과 임시 Git 커밋을 수행하므로 일반 `npm test`에 포함하지 않습니다. 로컬 CLI 경로와 실행 방법은 [검증 기록](docs/verification.md)에 정리했습니다.

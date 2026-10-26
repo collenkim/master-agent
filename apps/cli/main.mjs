@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { runCommand } from '../../packages/orchestrator/operation-graph.mjs';
-import { graphStatus } from '../../packages/orchestrator/graph-runtime.mjs';
+import { graphStatus, unlockMission } from '../../packages/orchestrator/graph-runtime.mjs';
 import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
@@ -29,7 +29,7 @@ import { pairControl, pairingPreview, pairingReceipt } from '../../packages/runn
 import { DASHBOARD_CONTROLLER } from '../../packages/code-agent-adapter/pairing.mjs';
 import { DecisionDelegation } from '../../packages/orchestrator/decisions.mjs';
 import { findCodeAgent } from '../../packages/code-agent-adapter/discovery.mjs';
-import { acceptRequest, launchRequest, runRequest, continueRequest, requestStatus } from '../../packages/orchestrator/requests.mjs';
+import { acceptRequest, launchRequest, runRequest, continueRequest, requestStatus, resetRequest } from '../../packages/orchestrator/requests.mjs';
 
 const help = `master-agent — 근거 수집·AI 계획 생성·개발 호스트 배정
 
@@ -69,9 +69,11 @@ code-agent는 설치된 명령에서 자동 탐색합니다. --cli는 별도 빌
   request list                        접수한 요청·실행 상태 조회
   request show <ID>                    요청 상태·대기·실패 사유 조회
   request continue <ID> --revision <N> 설정·응답 보완 후 기존 목표 이어 실행
+  request reset <ID> --revision <N> --confirm  요청 실행 임대 초기화(살아 있는 로컬 프로세스는 거부)
   mission create <JSON>                목표 접수 (mode: live|simulation)
   mission list                        목표 목록
   mission graph <ID>                   LangGraph checkpoint and last execution
+  mission unlock <ID> --revision <N> --confirm  중단된 그래프 임대 회수(프로젝트 실행 잠금은 유지)
   mission show <ID>                    계획·판단·상태·증거·이벤트
   mission progress <ID>                작업별 실행·승인 처리·사람 답·장애와 마지막 진척
   mission plan <ID> <JSON> --revision <N>  검증 후 계획 활성화
@@ -133,7 +135,7 @@ async function main() {
     control: { type: 'boolean' }, controller: { type: 'string' }, 'token-file': { type: 'string' }, to: { type: 'string' }, mode: { type: 'string' },
     force: { type: 'boolean' }, 'wait-ms': { type: 'string' }, 'poll-ms': { type: 'string' }, 'follow-timeout-ms': { type: 'string' },
     port: { type: 'string' }, 'refresh-ms': { type: 'string' },
-    saved: { type: 'boolean' }, description: { type: 'string' }, input: { type: 'string' }, reason: { type: 'string' },
+    saved: { type: 'boolean' }, description: { type: 'string' }, input: { type: 'string' }, reason: { type: 'string' }, confirm: { type: 'boolean' },
     criterion: { type: 'string', multiple: true }, 'request-key': { type: 'string' }, 'task-number': { type: 'string' }, host: { type: 'string' }, main: { type: 'string' },
   } });
   if (values.help || !args.length || args[0] === 'help') { console.log(help); return; }
@@ -156,18 +158,19 @@ async function main() {
     'mission dispatch': 4, 'mission continue': 4, 'mission recover': 4, 'mission replan': 4, 'mission replan-refresh': 3, 'mission reconcile': 4,
     'mission stop-analysis': 4, 'mission reconcile-verification': 4, 'mission verification-template': 4,
     'mission verification': 4, 'mission verify': 4, 'mission handoff': 4, 'mission complete': 3,
-    'mission advance': 3, 'mission drive': 3, 'mission progress': 3,
+    'mission advance': 3, 'mission drive': 3, 'mission progress': 3, 'mission unlock': 3,
     'project control': 3, 'project pair': 3, 'project snapshot': 3, 'project handover': 3, 'project accept': 3,
     'mission reattach': 4, 'mission stop': 4, 'mission delegate': 4, 'mission escalations': 3, 'mission relay': 5,
     'mission create': 3, 'mission list': 2, 'mission show': 3, 'mission graph': 3, 'mission plan': 4, 'mission step': 3, 'mission run': 3,
     'mission pause': 3, 'mission resume': 3, 'mission retry': 4, 'mission unknown': 4, 'mission cancel': 3,
     'group create': 4, 'group show': 3, 'group delete': 3, 'group add': 4, 'group remove': 4, 'group request': 4, 'project request': 4,
-    'request list': 2, 'request show': 3, 'request run': 3, 'request continue': 3 };
+    'request list': 2, 'request show': 3, 'request run': 3, 'request continue': 3, 'request reset': 3 };
   const key = category === 'demo' ? 'demo' : `${category} ${action}`;
   requireThat(counts[key] === args.length, 'usage', help);
   const revision = values.revision === undefined ? undefined : Number(values.revision);
   if (values.revision !== undefined) requireThat(Number.isSafeInteger(revision) && revision > 0, 'usage', '--revision은 양의 정수입니다.');
   if (['mission cancel', 'mission replan-refresh'].includes(key)) requireThat(revision, 'usage', '--revision이 필요합니다.');
+  if (['mission unlock', 'request reset'].includes(key)) requireThat(revision && values.confirm === true, 'usage', '--revision과 --confirm이 필요합니다.');
   if (['project update', 'project collect', 'mission analyze', 'mission clarify', 'mission plan', 'mission pause', 'mission resume', 'mission retry', 'mission unknown', 'mission dispatch', 'mission continue', 'mission verification', 'mission verify', 'mission handoff', 'mission complete'].includes(key)) requireThat(revision, 'usage', '--revision이 필요합니다.');
   if (['mission dispatch', 'mission continue', 'mission verify', 'mission handoff'].includes(key)) requireThat(values['expect-state'] && !values.simulate, 'usage', '--expect-state가 필요합니다. 모의 실행 옵션과 함께 사용할 수 없습니다.');
   if (['mission advance', 'mission drive'].includes(key)) requireThat(!values.simulate, 'usage', '모의 옵션은 사용할 수 없습니다.');
@@ -324,6 +327,8 @@ async function main() {
       case 'mission pause': case 'mission resume': case 'mission retry': result = engine.control(id, action, revision, file); break;
       case 'mission cancel': result = engine.control(id, action, revision, undefined, { reason: values.reason }); break;
       case 'mission replan-refresh': result = new Replanning(store).refresh(id, revision); break;
+      case 'mission unlock': result = unlockMission(store, id, revision, { confirm: values.confirm }); break;
+      case 'request reset': result = resetRequest(store, id, revision, { confirm: values.confirm }); break;
       case 'mission unknown': result = engine.markUnknown(id, file, revision); break;
     }
     return result;

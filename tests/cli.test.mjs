@@ -32,6 +32,17 @@ test('CLI 데모가 영속 DB를 만들고 다른 프로세스에서 판단·근
   assert.equal(run(root, 'mission', 'list')[0].id, result.id);
 });
 
+test('M1: CLI는 확인된 mission unlock과 request reset을 실행한다', t => {
+  const { store, root, db, mission, fixture } = setup(t);
+  const thread = `master:v1:simulation:${mission.id}`, at = '2026-01-01T00:00:00.000Z';
+  store.db.prepare('INSERT INTO graph_runs(id,thread_id,graph,status,started_at) VALUES(?,?,?,?,?)').run('lost', thread, 'simulation', 'running', at);
+  store.db.prepare('INSERT INTO graph_leases(thread_id,owner,pid,host,started_at,heartbeat_at) VALUES(?,?,?,?,?,?)').run(thread, 'lost', 999999999, 'old-host', at, at);
+  assert.equal(run(root, 'mission', 'unlock', mission.id, '--revision', String(mission.revision), '--confirm', '--db', db).revision, mission.revision + 1);
+  const { request } = acceptRequest(store, { targetType: 'project', targetId: fixture.projects[0].id, goal: '실행기 복구' });
+  const pending = store.put('target-request', { ...request, state: 'running', pid: 999999999, host: 'old-host', heartbeatAt: at }, request.revision);
+  assert.equal(run(root, 'request', 'reset', pending.id, '--revision', String(pending.revision), '--confirm', '--db', db).state, 'queued');
+});
+
 test('CLI 잘못된 명령과 명시되지 않은 모의 실행은 DB 생성 전에 거부한다', t => {
   const root = temporary(t);
   for (const args of [['nonsense'], ['mission', 'run', 'id'], ['mission', 'pause', 'id', '--revision', 'bad'], ['mission', 'dispatch', 'id', 'task', '--revision', '1']]) {

@@ -14,15 +14,35 @@ import { VerificationTemplates } from '../verification/templates.mjs';
 import { findCodeAgent } from '../code-agent-adapter/discovery.mjs';
 import { prepareRequest, preparationCodes } from './preparation.mjs';
 import { requireThat, string, now } from '../domain/contracts.mjs';
+import { leaseActive, localProcessAlive, HEARTBEAT_MS } from './lease.mjs';
 
-function alive(pid, host) {
-  if (!pid) return false;
-  if (host !== hostname()) return true;
-  try { process.kill(pid, 0); return true; } catch (error) { return error.code !== 'ESRCH'; }
+const requestLeased = record => ['running', 'launching'].includes(record.state) || record.state === 'queued' && Boolean(record.pid);
+const requestActive = record => requestLeased(record) && leaseActive({ ...record, heartbeatAt: record.heartbeatAt ?? record.updatedAt });
+
+function reclaimRequest(store, record, reason) {
+  const engine = new Engine(store), mission = store.need('mission', record.id);
+  const d = engine.decision(mission, 'reset-request', { actor: reason === 'expired' ? 'rule-engine' : 'operator',
+    reason: reason === 'expired' ? '만료된 요청 실행 임대를 회수합니다.' : '운영자가 요청 실행 임대를 초기화했습니다.',
+    evidence: [`request:${record.id}@${record.revision}`], alternatives: ['현재 임대 유지', '임대 회수 후 같은 요청 재개'], nextAction: 'run-request',
+    verification: '요청 버전·heartbeat TTL·같은 호스트의 프로세스 생존 대조', previousOwner: record.owner ?? null });
+  store.event(record.id, 'request-lease-reclaimed', { decisionId: d.id, reason });
+}
+
+export function resetRequest(store, id, expectedRevision, { confirm = false } = {}) {
+  requireThat(confirm === true, 'invalid-input', '--confirm이 필요합니다.');
+  return store.transaction(() => {
+    const record = store.need('target-request', id);
+    requireThat(record.revision === expectedRevision, 'stale-state', '요청 상태가 변경되었습니다. 다시 조회하세요.');
+    requireThat(!['succeeded', 'simulation-complete', 'cancelled'].includes(store.need('mission', id).state), 'invalid-state', '종료된 목표입니다.');
+    requireThat(!localProcessAlive(record.pid, record.host), 'request-busy', '같은 호스트에서 살아 있는 요청 실행기는 초기화할 수 없습니다.');
+    reclaimRequest(store, record, 'operator-reset');
+    return store.put('target-request', { ...record, state: 'queued', owner: null, pid: null, host: null,
+      heartbeatAt: null, startedAt: null, error: null, updatedAt: now() }, record.revision);
+  });
 }
 
 export function requestStatus(record) {
-  if (['running', 'queued'].includes(record.state) && record.pid && !alive(record.pid, record.host)) return { ...record, state: 'interrupted' };
+  if (requestLeased(record) && !requestActive(record)) return { ...record, state: 'interrupted' };
   return record;
 }
 
@@ -65,8 +85,9 @@ export function continueRequest(store, id, expectedRevision, { inTransaction = f
     requireThat(record.revision === expectedRevision, 'stale-state', '요청 상태가 변경되었습니다. 다시 조회하세요.');
     requireThat(!store.list('interaction-command').some(c => c.missionId === id && c.resume?.state === 'launching'), 'request-busy', '답변 제출에서 기존 요청의 재개를 접수 중입니다. 중복 재개할 수 없습니다.');
     requireThat(!['succeeded', 'cancelled'].includes(store.need('mission', id).state), 'invalid-state', '종료된 목표입니다.');
-    requireThat(!['queued', 'running'].includes(record.state) || !alive(record.pid, record.host), 'request-busy', '요청 실행기가 이미 실행 중입니다.');
-    return store.put('target-request', { ...record, state: 'queued', pid: null, host: null, owner: null, error: null, updatedAt: now() }, record.revision);
+    requireThat(!requestActive(record), 'request-busy', '요청 실행기 임대가 아직 유효합니다.');
+    if (requestLeased(record)) reclaimRequest(store, record, 'expired');
+    return store.put('target-request', { ...record, state: 'queued', pid: null, host: null, owner: null, heartbeatAt: null, startedAt: null, error: null, updatedAt: now() }, record.revision);
   };
   return inTransaction ? apply() : store.transaction(apply);
 }
@@ -76,14 +97,30 @@ export async function runRequest(store, id, { cliPath, host, provider, workflow,
   const owner = randomUUID();
   const record = store.transaction(() => {
     const current = store.need('target-request', id);
-    requireThat(current.state === 'queued', 'request-busy', '대기 중인 요청만 실행할 수 있습니다.');
-    return store.put('target-request', { ...current, state: 'running', owner, pid: process.pid, host: hostname(), updatedAt: now() }, current.revision);
+    const expired = requestLeased(current) && !requestActive(current);
+    requireThat(current.state === 'queued' || current.state === 'running' && expired, 'request-busy', '대기 중이거나 임대가 만료된 요청만 실행할 수 있습니다.');
+    requireThat(!requestActive(current) || current.state === 'queued' && current.pid === process.pid && current.host === hostname(), 'request-busy', '요청 실행기 임대가 아직 유효합니다.');
+    requireThat(!['succeeded', 'simulation-complete', 'cancelled'].includes(store.need('mission', id).state), 'invalid-state', '종료된 목표입니다.');
+    if (expired) reclaimRequest(store, current, 'expired');
+    return store.put('target-request', { ...current, state: 'running', owner, pid: process.pid, host: hostname(), startedAt: now(), heartbeatAt: now(), updatedAt: now() }, current.revision);
   });
+  let heartbeatError;
+  const timer = setInterval(() => {
+    try {
+      store.transaction(() => {
+        const current = store.need('target-request', id);
+        requireThat(current.owner === owner, 'request-busy', '요청 실행 소유자가 변경되었습니다.');
+        if (current.state === 'running') store.put('target-request', { ...current, heartbeatAt: now() }, current.revision);
+      });
+    } catch (error) { heartbeatError = error; }
+  }, HEARTBEAT_MS);
+  timer.unref();
   const finish = patch => store.transaction(() => {
     const current = store.need('target-request', id);
     requireThat(current.owner === owner, 'request-busy', '요청 실행 소유자가 변경되었습니다.');
     if (current.state === 'cancelled') return current;
-    return store.put('target-request', { ...current, ...patch, updatedAt: now() }, current.revision);
+    requireThat(!heartbeatError, 'request-busy', '요청 실행 임대 갱신에 실패했습니다.');
+    return store.put('target-request', { ...current, ...patch, heartbeatAt: now(), updatedAt: now() }, current.revision);
   });
   const recordPreparation = preparation => {
     store.transaction(() => {
@@ -162,13 +199,14 @@ export async function runRequest(store, id, { cliPath, host, provider, workflow,
     if (!host && preparationCodes.has(error.code)) return recordPreparation({ checkedAt: now(), state: 'waiting', checks: [], issues: [{
       projectId: record.projectIds[0], code: error.code, message: error.message, guidance: '설치·근거·제어 연결을 확인한 뒤 같은 요청에서 준비 상태를 다시 확인하세요.' }] });
     return finish({ state: 'failed', error: { code: error.code ?? 'internal-error', message: error.message }, blockers: [error.code ?? 'internal-error'] });
-  }
+  } finally { clearInterval(timer); }
 }
 
 export async function launchRequest(store, id, { dbPath, cliPath } = {}) {
-  const record = store.need('target-request', id);
+  let record = store.need('target-request', id);
+  if (record.state === 'running' && !requestActive(record)) record = continueRequest(store, id, record.revision);
   requireThat(record.state === 'queued', 'request-busy', '대기 중인 요청만 시작할 수 있습니다.');
-  requireThat(!alive(record.pid, record.host), 'request-busy', '요청 실행기가 이미 시작되었습니다.');
+  requireThat(!requestActive(record), 'request-busy', '요청 실행기가 이미 시작되었습니다.');
   const args = [fileURLToPath(new URL('../../apps/cli/main.mjs', import.meta.url)), 'request', 'run', id, '--db', resolve(dbPath)];
   if (cliPath) args.push('--cli', cliPath);
   const logDir = join(dirname(resolve(dbPath)), 'request-logs');
@@ -182,7 +220,7 @@ export async function launchRequest(store, id, { dbPath, cliPath } = {}) {
     child.unref();
     store.transaction(() => {
       const current = store.need('target-request', id);
-      if (current.state === 'queued') store.put('target-request', { ...current, pid: child.pid, host: hostname(), updatedAt: now() }, current.revision);
+      if (current.state === 'queued') store.put('target-request', { ...current, pid: child.pid, host: hostname(), startedAt: now(), heartbeatAt: now(), updatedAt: now() }, current.revision);
     });
     return requestStatus(store.need('target-request', id));
   } catch (error) {
