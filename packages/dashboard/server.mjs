@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { once } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import { Store } from '../storage/store.mjs';
-import { requireThat } from '../domain/contracts.mjs';
+import { DomainError, requireThat } from '../domain/contracts.mjs';
 import { findCodeAgent } from '../code-agent-adapter/discovery.mjs';
 import { Catalog } from '../catalog/catalog.mjs';
 import { acceptRequest, launchRequest, continueRequest } from '../orchestrator/requests.mjs';
@@ -143,8 +143,12 @@ export async function startDashboard({ dbPath, port = 4310, cliPath, intervalMs 
       if (asset) return send(200, asset.body, asset.type);
       send(404, '{"error":"not-found"}');
     } catch (error) {
-      const status = error.code === 'forbidden' ? 403 : ['stale-state', 'stale-question', 'request-busy', 'request-conflict', 'project-busy', 'project-in-use', 'already-exists', 'duplicate-path'].includes(error.code) ? 409 : error.code === 'not-found' ? 404 : error.code ? 400 : 500;
-      send(status, JSON.stringify({ error: error.code ?? 'internal-error', message: error.code ? error.message : '요청 처리 중 오류가 발생했습니다.' }));
+      if (!(error instanceof DomainError)) {
+        console.error(error?.code ?? 'internal-error', String(error?.stack ?? error?.name ?? 'Error').split('\n')[0]);
+        return send(500, JSON.stringify({ error: 'internal-error', message: '요청 처리 중 오류가 발생했습니다.' }));
+      }
+      const status = error.code === 'forbidden' ? 403 : ['stale-state', 'stale-question', 'request-busy', 'request-conflict', 'project-busy', 'project-in-use', 'already-exists', 'duplicate-path'].includes(error.code) ? 409 : error.code === 'not-found' ? 404 : 400;
+      send(status, JSON.stringify({ error: error.code, message: error.message }));
     }
   });
   server.requestTimeout = 10000;

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { get } from 'node:http';
 import { join } from 'node:path';
 import { Store } from '../packages/storage/store.mjs';
@@ -171,4 +171,22 @@ test('M6: 저장 관측 모드는 다른 연결의 DB 변경을 수집하고 동
     await monitor.refresh();
     assert.equal(observed, fixture.projects.length * 2);
   } finally { await monitor.stop(); writer.close(); }
+});
+
+
+test('M8: 내부 파일 오류는 경로를 노출하지 않고 500 고정 응답을 반환한다', async t => {
+  const { db, root } = setup(t), dashboard = await startDashboard({ dbPath: db, port: 0, observe: false });
+  const list = Store.prototype.list, logs = [];
+  t.mock.method(console, 'error', (...args) => logs.push(args));
+  t.mock.method(Store.prototype, 'list', function (kind, ...args) {
+    if (kind === 'agent-update') readFileSync(join(root, 'private-internal-missing-file'));
+    return list.call(this, kind, ...args);
+  });
+  try {
+    const response = await fetch(dashboard.url + '/api/overview');
+    assert.equal(response.status, 500);
+    assert.deepEqual(await response.json(), { error: 'internal-error', message: '요청 처리 중 오류가 발생했습니다.' });
+    assert.equal(logs.length, 1); assert.equal(logs[0][0], 'ENOENT');
+    assert.equal(logs[0][1].includes('\n'), false);
+  } finally { t.mock.restoreAll(); await dashboard.close(); }
 });

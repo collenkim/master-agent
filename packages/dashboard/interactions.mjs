@@ -16,6 +16,18 @@ const key = (source, instance, requestId) => hash([source, instance, requestId])
 const options = items => items.map((label, i) => ({ id: String(i + 1), label }));
 const recommendation = (items, label) => items.find(o => o.label === label)?.id ?? null;
 
+const integerIn = (value, min, max) => Number.isInteger(value) && value >= min && value <= max;
+function validateRemoteNumbers(record) {
+  const input = value => value == null || integerIn(value.minLength, 0, 8000) &&
+    integerIn(value.maxLength, 1, 8000) && value.minLength <= value.maxLength;
+  requireThat(record.questions.every(q => integerIn(q.minSelections, 0, 16) && integerIn(q.maxSelections, 0, 16) &&
+    q.minSelections <= q.maxSelections && input(q.input) && q.options.every(o => o && input(o.input))),
+  'invalid-remote-question', '질문의 입력 길이·선택 개수는 허용 범위의 정수여야 합니다.');
+  requireThat(!record.consent || Array.isArray(record.consent.choices) && record.consent.choices.length <= 10000 &&
+    record.consent.choices.every(c => c && integerIn(c.index, 0, 10000)),
+  'invalid-remote-question', '승인 선택 번호는 0~10000 정수여야 합니다.');
+}
+
 /** Read the interaction feed when supported; older APIs remain observation-only. */
 async function readRemoteInteractions(store, project, cliPath, resolveKey = findHumanKey) {
   const hello = await callOnce(cliPath, project.path, { protocol: PROTOCOL, version: PROTOCOL_VERSION, type: 'hello' }, { timeoutMs: 5000 });
@@ -76,6 +88,7 @@ export function createInteractions(store, { cliPath, readRemote, resolveHumanKey
       Array.isArray(record.questions) && record.context && Number.isInteger(record.revision), 'interaction-unavailable', '요청 스키마가 다릅니다.');
     requireThat(record.questions.every(q => q && typeof q.questionId === 'string' && ['single', 'multiple', 'text'].includes(q.mode) &&
       [q.options, q.recommendedOptionIds, q.defaultOptionIds, q.evidence].every(Array.isArray)), 'interaction-unavailable', '질문 선택 계약이 다릅니다.');
+    validateRemoteNumbers(record);
     // Setup requests have no code-agent work ID yet. Match their recorded execution, never null work IDs.
     const run = store.get('control-run', record.context.runId ?? record.recoveredRunId ?? '');
     const owners = store.list('mission').filter(m => !['succeeded', 'cancelled'].includes(m.state));

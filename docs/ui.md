@@ -156,6 +156,8 @@ PC 신뢰 기록이 없으면 `PC 신뢰` 버튼에서 code-agent의 문구를 �
 
 서버는 loopback에만 바인딩하고 Host·Origin을 검사한다. 후보 조회를 포함한 POST는 정확한 Origin·화면 토큰·JSON 형식·256KiB 한도를 대조한다. code-agent 제어 토큰과 원본 모델 입력은 노출하지 않는다. 프로젝트 잠금·검증 계약·grant·승인 규칙은 기존 실행 경로와 같다.
 
+HTTP 오류는 `DomainError`만 공개 코드·메시지와 400·403·404·409로 반환한다. 파일·DB 등 내부 오류는 500과 고정 문구로 응답하며, 서버 로그에는 오류 코드와 스택 첫 줄만 남긴다.
+
 CLI 전용 `POST /api/dashboard-control`은 별도 제어 토큰과 서버 ID로 status·stop을 처리한다. 화면 토큰으로는 호출할 수 없다. restart는 이 종료 경로를 확인한 뒤 새 CLI 프로세스가 서버를 시작하는 동작이다.
 
 `GET /api/interactions`는 저장된 관측을 읽기만 한다. master 요청 동기화는 서버 시작·관측 변경·응답 제출 뒤에 수행한다. `itemId`를 함께 보내면 열린 항목의 `openedItem`과 같은 분석의 다음 질문 `nextItem`·`remainingCount`를 반환해 페이지 밖으로 이동한 답변 이력을 유지한다. 원격 요청의 화면 필드만 투영하며 `challenge`·`humanChannel`·서명 envelope는 보내지 않는다.

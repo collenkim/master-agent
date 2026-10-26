@@ -132,6 +132,23 @@ try {
   assert.equal(f.store.need('target-request', preparation.id).state, 'queued');
   assert.equal(f.store.need('target-request', preparation.id).taskNumber, 'SETUP-1');
   await evaluate(`document.getElementById('interaction-close').click()`);
+  // Structured remote numeric constraints are validated on the server and escaped in HTML attributes.
+  const numericQuestion = { questionId: 'NUMERIC', title: '속성 검증', mode: 'multiple', required: true,
+    minSelections: 0, maxSelections: 2, recommendedOptionIds: [], defaultOptionIds: [], evidence: [], background: '',
+    recommendationReason: '명시적으로 선택한다', input: { required: false, minLength: 1, maxLength: 50, description: '직접 입력' },
+    options: [{ optionId: 'one', label: '입력 포함', description: '', consequence: '', input: { required: false, minLength: 2, maxLength: 20, description: '옵션 입력' } },
+      { optionId: 'two', label: '두 번째', description: '', consequence: '' }] };
+  await createInteractions(f.store, { readRemote: async () => ({ capability: { sourceInstanceId: 'numeric-browser' }, records: [{
+    schemaVersion: 1, source: 'code-agent', sourceInstanceId: 'numeric-browser', requestId: 'numeric', revision: 1,
+    context: { workId: null }, questions: [numericQuestion], title: '속성 검증', stage: 'planning', kind: 'question', status: 'pending', canRespond: false,
+  }] }) }).refreshProject(project);
+  await evaluate(`document.getElementById('interaction-source').value='code-agent'; document.getElementById('interaction-search').value='속성 검증'; document.getElementById('refresh').click()`);
+  await waitFor(`document.getElementById('interaction-items').textContent.includes('속성 검증')`);
+  await waitList(); await evaluate(`document.querySelector('[data-interaction]').click()`);
+  assert.deepEqual(await evaluate(`[...document.querySelectorAll('#interaction-remote-questions [minlength]')].map(e => [e.getAttribute('minlength'),e.getAttribute('maxlength')])`),
+    [['2', '20'], ['1', '50']]);
+  assert.equal(await evaluate(`document.getElementById('interaction-remote-questions').textContent.includes('0~2개 선택')`), true);
+  await evaluate(`document.getElementById('interaction-close').click()`);
   // Archive browsing must preserve every receipt and active request while keeping large histories bounded.
   const archivedBase = f.store.list('interaction').find(i => i.source === 'code-agent' && i.kind === 'question');
   for (let index = 0; index < 55; index++) f.store.put('interaction', { ...archivedBase,
@@ -177,7 +194,7 @@ try {
   await waitFor(`document.getElementById('connection').textContent === '연결 끊김'`);
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ passed: true, producer: 'synthetic', actualCodeAgentResponses: false,
-    checks: ['recommendation-no-auto-submit', 'draft-poll-reopen', 'defer', 'explicit-submit', 'poll-submit-race', 'success-not-stale', 'live-response-history', 'answered-reopen', 'next-question', 'wait-other-answers', 'single-launch', 'stale-view-preserves-input', 'full-approval-unchecked', 'unsupported-disabled', 'XSS', 'mobile', 'preparation-legacy-failure', 'preparation-default-no-auto-submit', 'preparation-same-task-recheck', 'archive-pagination', 'server-pagination', 'GET-read-only', 'public-projection', 'archive-search', 'archive-read-only', 'disconnect'], artifacts }));
+    checks: ['recommendation-no-auto-submit', 'draft-poll-reopen', 'defer', 'explicit-submit', 'poll-submit-race', 'success-not-stale', 'live-response-history', 'answered-reopen', 'next-question', 'wait-other-answers', 'single-launch', 'stale-view-preserves-input', 'full-approval-unchecked', 'unsupported-disabled', 'XSS', 'remote-number-attributes', 'mobile', 'preparation-legacy-failure', 'preparation-default-no-auto-submit', 'preparation-same-task-recheck', 'archive-pagination', 'server-pagination', 'GET-read-only', 'public-projection', 'archive-search', 'archive-read-only', 'disconnect'], artifacts }));
 } finally {
   await browser?.close();
   await dashboard.close();

@@ -163,13 +163,13 @@ function remoteQuestions(item, draft) {
     // Host questions repeat one note for every choice; show it once below the choices instead.
     const shared = q.options.length > 1 && q.options.every(o => note(o) === note(q.options[0])) ? note(q.options[0]) : null;
     // The dialog heading already shows a question that repeats it, so the fieldset keeps only its id.
-    return `<fieldset data-question-index="${index}"><legend>${esc(same(q.title, item.title) ? q.questionId : q.title)}${q.required ? ' (필수)' : ''}</legend><p>${esc(q.background)}</p>
+    return `<fieldset data-question-index="${esc(index)}"><legend>${esc(same(q.title, item.title) ? q.questionId : q.title)}${q.required ? ' (필수)' : ''}</legend><p>${esc(q.background)}</p>
       <p class="muted">추천 이유: ${esc(q.recommendationReason)}</p>${q.evidence.map(e => `<p class="muted">${esc(e.path)} ${esc(e.summary)}</p>`).join('')}
-      ${[...q.options].sort((a, b) => Number(q.recommendedOptionIds.includes(b.optionId)) - Number(q.recommendedOptionIds.includes(a.optionId))).map(o => `<label class="interaction-option"><input data-option type="${q.mode === 'multiple' ? 'checkbox' : 'radio'}" name="remote-question-${index}" value="${esc(o.optionId)}" ${selected.includes(o.optionId) ? 'checked' : ''}><span class="option-text"><span>${esc(o.label)}${q.recommendedOptionIds.includes(o.optionId) ? ' (추천)' : ''}</span>${shared === null && note(o) ? `<small>${esc(note(o))}</small>` : ''}</span></label>
-        ${o.input ? `<label class="option-input">${esc(o.input.description)}<input data-option-input="${esc(o.optionId)}" value="${esc(answer?.optionInputs?.[o.optionId] ?? '')}" ${o.input.required ? 'required' : ''} minlength="${o.input.minLength}" maxlength="${o.input.maxLength}"></label>` : ''}`).join('')}
+      ${[...q.options].sort((a, b) => Number(q.recommendedOptionIds.includes(b.optionId)) - Number(q.recommendedOptionIds.includes(a.optionId))).map(o => `<label class="interaction-option"><input data-option type="${q.mode === 'multiple' ? 'checkbox' : 'radio'}" name="remote-question-${esc(index)}" value="${esc(o.optionId)}" ${selected.includes(o.optionId) ? 'checked' : ''}><span class="option-text"><span>${esc(o.label)}${q.recommendedOptionIds.includes(o.optionId) ? ' (추천)' : ''}</span>${shared === null && note(o) ? `<small>${esc(note(o))}</small>` : ''}</span></label>
+        ${o.input ? `<label class="option-input">${esc(o.input.description)}<input data-option-input="${esc(o.optionId)}" value="${esc(answer?.optionInputs?.[o.optionId] ?? '')}" ${o.input.required ? 'required' : ''} minlength="${esc(o.input.minLength)}" maxlength="${esc(o.input.maxLength)}"></label>` : ''}`).join('')}
       ${shared ? `<p class="muted">${esc(shared)}</p>` : ''}
-      ${q.input ? `<label>${esc(q.input.description)}<textarea data-question-text rows="3" minlength="${q.input.minLength}" maxlength="${q.input.maxLength}" ${q.mode === 'text' && q.required ? 'required' : ''}>${esc(answer?.text ?? '')}</textarea></label>` : ''}
-      ${q.mode === 'multiple' ? `<p class="muted">${q.minSelections}~${q.maxSelections}개 선택</p>` : ''}</fieldset>`;
+      ${q.input ? `<label>${esc(q.input.description)}<textarea data-question-text rows="3" minlength="${esc(q.input.minLength)}" maxlength="${esc(q.input.maxLength)}" ${q.mode === 'text' && q.required ? 'required' : ''}>${esc(answer?.text ?? '')}</textarea></label>` : ''}
+      ${q.mode === 'multiple' ? `<p class="muted">${esc(q.minSelections)}~${esc(q.maxSelections)}개 선택</p>` : ''}</fieldset>`;
   }).join(''); enableOptionInputs();
 }
 function selectItems(id, items) {
@@ -227,7 +227,7 @@ function open(id) {
   if (opened.kind === 'approval') {
     $('approval-title').textContent = opened.title; $('approval-context').textContent = context(opened);
     $('approval-body').textContent = opened.body;
-    $('approval-changes').innerHTML = `<h3>변경 대상</h3>${opened.consent ? opened.consent.choices.map(c => `<label>${esc(c.shown)}<select data-approval-choice="${c.index}"><option value="">명시적으로 선택하세요</option><option value="유지">유지</option><option value="적용">적용</option></select></label>`).join('') : (opened.changes ?? []).map(c => `<p>${esc(c)}</p>`).join('') || '<p>제공된 변경 목록 없음</p>'}`;
+    $('approval-changes').innerHTML = `<h3>변경 대상</h3>${opened.consent ? opened.consent.choices.map(c => `<label>${esc(c.shown)}<select data-approval-choice="${esc(c.index)}"><option value="">명시적으로 선택하세요</option><option value="유지">유지</option><option value="적용">적용</option></select></label>`).join('') : (opened.changes ?? []).map(c => `<p>${esc(c)}</p>`).join('') || '<p>제공된 변경 목록 없음</p>'}`;
     $('approval-reviewed').checked = false; $('approval-limit').textContent = opened.unavailableReason;
     $('approval-verdict').value = ''; $('approval-submit').disabled = true;
     $('approval-submit').textContent = opened.respondSupported ? '선택한 판단 제출' : '명시적 승인 제출 (연동 미지원)';

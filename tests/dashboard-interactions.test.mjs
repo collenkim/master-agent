@@ -321,3 +321,30 @@ test('M6: 질문 응답에는 원격 challenge·humanChannel과 기타 내부 �
   assert.ok(!/"(?:challenge|humanChannel)"/.test(JSON.stringify(result)));
   assert.equal(f.store.need('interaction', result.items[0].id).remote.challenge, record.challenge);
 });
+
+
+test('M9: 원격 질문의 숫자 속성·선택 개수·승인 번호를 검증한다', async t => {
+  const f = await pending(t), project = f.fixture.projects[0];
+  const question = { questionId: 'Q1', title: '입력 확인', mode: 'text', options: [], recommendedOptionIds: [], defaultOptionIds: [], evidence: [],
+    minSelections: 0, maxSelections: 0, input: { minLength: 1, maxLength: 8000, required: true, description: '답변' } };
+  const base = { schemaVersion: 1, source: 'code-agent', sourceInstanceId: 'numbers', requestId: 'numeric-question', revision: 1,
+    context: { workId: null }, title: '숫자 계약', kind: 'question', stage: 'planning', status: 'pending', canRespond: false, questions: [question] };
+  let record = base;
+  const inbox = createInteractions(f.store, { readRemote: async () => ({ capability: { sourceInstanceId: 'numbers' }, records: [record] }) });
+  for (const q of [
+    { ...question, input: { ...question.input, maxLength: '8000" autofocus' } },
+    { ...question, input: { ...question.input, minLength: -1 } },
+    { ...question, input: { ...question.input, maxLength: 8001 } },
+    { ...question, maxSelections: 1.5 },
+    { ...question, minSelections: 17, maxSelections: 17 },
+    { ...question, options: [{ optionId: 'one', input: { minLength: 1, maxLength: '5' } }] },
+  ]) {
+    record = { ...base, questions: [q] };
+    await assert.rejects(inbox.refreshProject(project), { code: 'invalid-remote-question' });
+  }
+  record = { ...base, kind: 'consent', questions: [], consent: { summary: '동의', choices: [{ index: '1', shown: '파일' }] } };
+  await assert.rejects(inbox.refreshProject(project), { code: 'invalid-remote-question' });
+  assert.equal(inbox.snapshot().items.filter(i => i.source === 'code-agent').length, 0);
+  record = base; await inbox.refreshProject(project);
+  assert.equal(inbox.snapshot().items.find(i => i.source === 'code-agent').questions[0].input.maxLength, 8000);
+});
