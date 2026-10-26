@@ -25,20 +25,20 @@ function fixture(t) {
   return { ...f, projects, cliPath, file, read, set, calls, installer: createSourceInstaller(), updates: createUpdates(f.store, { cliPath }) };
 }
 async function installed(f) {
-  const plan = await f.updates.preview(); f.updates.install(plan.id); await f.updates.idle(); return plan;
+  const plan = await f.updates.preview(); await f.updates.install(plan.id); await f.updates.idle(); return plan;
 }
 
 test('public CLI installation and per-project confirmations are separate, exact and idempotent', async t => {
   const f = fixture(t), plan = await f.updates.preview();
   assert.equal(plan.stage, 'install'); assert.equal(f.read().installed, undefined);
-  assert.throws(() => f.updates.apply(plan.id), { code: 'stale-state' });
-  f.updates.install(plan.id); f.updates.install(plan.id); await f.updates.idle();
+  await assert.rejects(async () => await f.updates.apply(plan.id), { code: 'stale-state' });
+  await f.updates.install(plan.id); await f.updates.install(plan.id); await f.updates.idle();
   assert.equal(f.updates.snapshot().batches[0].state, 'awaiting-confirmation');
   assert.equal(f.read().applied, undefined);
-  assert.throws(() => f.updates.apply(plan.id), { code: 'stale-state' });
+  await assert.rejects(async () => await f.updates.apply(plan.id), { code: 'stale-state' });
   const apply = await f.updates.previewApply(plan.id);
   assert.equal(f.read().applied, undefined);
-  f.updates.apply(apply.id, apply.previewId); f.updates.apply(apply.id, apply.previewId); await f.updates.idle();
+  await f.updates.apply(apply.id, apply.previewId); await f.updates.apply(apply.id, apply.previewId); await f.updates.idle();
   const result = f.updates.snapshot().batches[0]; assert.equal(result.state, 'completed');
   assert.ok(result.projects.every(p => p.current === result.release.id));
   const calls = f.calls(); assert.ok(calls.every(c => c.marked.length === 0));
@@ -49,20 +49,20 @@ test('public CLI installation and per-project confirmations are separate, exact 
 
 test('stale installation hash fails before install; unsupported, blocked and malformed previews are explicit', async t => {
   const f = fixture(t), plan = await f.updates.preview(); f.set({ revision: 2 });
-  f.updates.install(plan.id); await f.updates.idle();
+  await f.updates.install(plan.id); await f.updates.idle();
   assert.equal(f.read().installed, undefined); assert.match(f.updates.snapshot().batches[0].error, /바뀌었습니다/);
   f.set({ legacy: true }); await assert.rejects(f.updates.preview(), { code: 'source-update-unsupported' });
   f.set({ legacy: false, malformed: true }); await assert.rejects(f.updates.preview(), { code: 'source-update-failed' });
   f.set({ malformed: false, blocked: 'npm distribution' }); const blocked = await f.updates.preview();
-  assert.equal(blocked.installation.canInstall, false); assert.throws(() => f.updates.install(blocked.id), { code: 'source-update-unavailable' });
+  assert.equal(blocked.installation.canInstall, false); await assert.rejects(async () => await f.updates.install(blocked.id), { code: 'source-update-unavailable' });
   f.set({ refusal: 'policy-forbids: denied' }); await assert.rejects(f.updates.preview(), { code: 'policy-forbids' });
 });
 
 test('application previews cannot be replaced by a second tab; stale project hashes fail independently', async t => {
   const f = fixture(t), plan = await installed(f), first = await f.updates.previewApply(plan.id), second = await f.updates.previewApply(plan.id);
-  assert.throws(() => f.updates.apply(first.id, first.previewId), { code: 'stale-state' });
+  await assert.rejects(async () => await f.updates.apply(first.id, first.previewId), { code: 'stale-state' });
   f.set({ revisions: { [second.projects[0].path]: 2 }, failures: { [second.projects[1].path]: 3 } });
-  f.updates.apply(second.id, second.previewId); await f.updates.idle();
+  await f.updates.apply(second.id, second.previewId); await f.updates.idle();
   assert.deepEqual(f.updates.snapshot().batches[0].projects.map(p => p.state), ['failed', 'skipped', 'completed']);
   assert.equal(f.updates.snapshot().maintenance.length, 0);
 });
@@ -70,16 +70,16 @@ test('application previews cannot be replaced by a second tab; stale project has
 test('restart requires fresh application preview, rechecks busy roots, and verifies release ID after apply', async t => {
   const f = fixture(t), plan = await installed(f); await f.updates.previewApply(plan.id);
   const restarted = createUpdates(f.store, { cliPath: f.cliPath });
-  assert.throws(() => restarted.apply(plan.id), { code: 'stale-state' });
+  await assert.rejects(async () => await restarted.apply(plan.id), { code: 'stale-state' });
   f.set({ busy: { [f.projects[0].path]: ['work'] }, wrongVersion: true });
-  const apply = await restarted.previewApply(plan.id); restarted.apply(plan.id, apply.previewId); await restarted.idle();
+  const apply = await restarted.previewApply(plan.id); await restarted.apply(plan.id, apply.previewId); await restarted.idle();
   assert.deepEqual(restarted.snapshot().batches[0].projects.map(p => p.state), ['skipped', 'failed', 'failed']);
 });
 
 test('changed catalogs invalidate apply confirmation; wrong preview roots are never applied', async t => {
   const f = fixture(t), plan = await installed(f), apply = await f.updates.previewApply(plan.id), project = f.projects[0];
   f.store.put('project', { ...project, name: 'changed' }, project.revision);
-  assert.throws(() => f.updates.apply(plan.id, apply.previewId), { code: 'stale-state' });
+  await assert.rejects(async () => await f.updates.apply(plan.id, apply.previewId), { code: 'stale-state' });
   f.set({ wrongRoot: true }); const next = await f.updates.previewApply(plan.id);
   assert.ok(next.projects.every(p => p.state === 'skipped'));
   assert.equal(f.read().applied, undefined);

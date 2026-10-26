@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
+import fs from 'node:fs/promises';
+import { setTimeout as delay } from 'node:timers/promises';
+import { installationFingerprint } from '../packages/dashboard/installation.mjs';
 import { hostname } from 'node:os';
 import { setup } from './helpers.mjs';
 import { createUpdates, runUpdateCli } from '../packages/dashboard/updates.mjs';
@@ -35,8 +38,8 @@ test('bulk updates use only registered installed idle roots and persist independ
   const plan = await f.updates.preview({ mode: 'installed' });
   assert.deepEqual(plan.target.args, ['update', '--bundled']); assert.equal(plan.target.resetsPin, true);
   assert.equal(plan.projects.find(p => p.id === two.id).state, 'skipped');
-  const batch = f.updates.apply(plan.id);
-  assert.equal(f.updates.apply(plan.id).id, batch.id);
+  const batch = await f.updates.apply(plan.id);
+  assert.equal((await f.updates.apply(plan.id)).id, batch.id);
   await f.updates.idle();
   const result = f.updates.snapshot().batches[0];
   assert.equal(result.projects.find(p => p.id === one.id).state, 'completed');
@@ -50,10 +53,10 @@ test('bulk updates use only registered installed idle roots and persist independ
 test('preview binds the exact install and catalog, rejecting changed builds and new registrations', async t => {
   const f = fixture(t), plan = await f.updates.preview({ mode: 'installed' });
   writeFileSync(join(f.pkg, 'template/SKILL.md'), 'changed since preview');
-  assert.throws(() => f.updates.apply(plan.id), { code: 'stale-state' });
+  await assert.rejects(async () => await f.updates.apply(plan.id), { code: 'stale-state' });
   const next = await f.updates.preview({ mode: 'installed' }), project = f.store.need('project', f.fixture.projects[0].id);
   f.store.put('project', { ...project, name: 'changed' }, project.revision);
-  assert.throws(() => f.updates.apply(next.id), { code: 'stale-state' });
+  await assert.rejects(async () => await f.updates.apply(next.id), { code: 'stale-state' });
   assert.equal(f.calls.some(c => c.args[0] === 'update'), false);
 });
 
@@ -62,11 +65,11 @@ test('deleting a project invalidates old update previews and excludes its path f
   await f.engine.run(f.mission.id, new SimulationRunner());
   const plan = await f.updates.preview({ mode: 'installed' }), project = f.store.need('project', plan.projects[0].id);
   f.engine.catalog.remove(project.id, project.revision);
-  assert.throws(() => f.updates.apply(plan.id), { code: 'stale-state' });
+  await assert.rejects(async () => await f.updates.apply(plan.id), { code: 'stale-state' });
   f.calls.length = 0;
   const next = await f.updates.preview({ mode: 'installed' });
   assert.equal(next.projects.length, 2);
-  f.updates.apply(next.id); await f.updates.idle();
+  await f.updates.apply(next.id); await f.updates.idle();
   assert.equal(f.calls.some(c => c.cwd === project.path), false);
   assert.equal(f.updates.snapshot().batches[0].state, 'completed');
 });
@@ -78,9 +81,9 @@ test('master execution and maintenance mutually exclude each other; shutdown can
   let unblock, started;
   const gate = new Promise(resolve => { unblock = resolve; }), signal = new Promise(resolve => { started = resolve; });
   f.outcomes.set(first.path, async () => { started(); await gate; return { code: 0, stdout: 'done' }; });
-  f.updates.apply(plan.id); await signal;
+  await f.updates.apply(plan.id); await signal;
   assert.throws(() => f.store.acquire(first.id, 'other', 'attempt'), { code: 'project-busy' });
-  assert.throws(() => f.updates.apply('other-plan'), { code: 'request-busy' });
+  await assert.rejects(async () => await f.updates.apply('other-plan'), { code: 'request-busy' });
   const closing = f.updates.stop(); unblock(); await closing;
   const result = f.updates.snapshot().batches[0];
   assert.equal(result.projects.find(p => p.id === first.id).state, 'completed');
@@ -94,14 +97,14 @@ test('apply rechecks master locks after preview and continues past template warn
   f.store.acquire(one.id, f.mission.id, 'new-work');
   f.outcomes.set(two.path, async () => ({ code: 0, stdout: '!! template-conflicts: user changes preserved' }));
   f.outcomes.set(three.path, async () => ({ code: 3, stdout: 'pending next work' }));
-  f.updates.apply(plan.id); await f.updates.idle();
+  await f.updates.apply(plan.id); await f.updates.idle();
   assert.deepEqual(f.updates.snapshot().batches[0].projects.map(p => p.state), ['skipped', 'needs-attention', 'skipped']);
 });
 
 test('unconfirmed process exit blocks development until explicit idle recovery; interrupted runs are never replayed', async t => {
   const f = fixture(t), plan = await f.updates.preview({ mode: 'installed' }), one = plan.projects[0];
   f.outcomes.set(one.path, async () => ({ code: 'TIMEOUT', uncertain: true }));
-  f.updates.apply(plan.id); await f.updates.idle();
+  await f.updates.apply(plan.id); await f.updates.idle();
   assert.equal(f.updates.snapshot().batches[0].projects[0].state, 'interrupted');
   assert.throws(() => f.store.acquire(one.id, 'm', 'a'), { code: 'project-busy' });
   const record = f.store.need('project-maintenance', one.id);
@@ -111,7 +114,7 @@ test('unconfirmed process exit blocks development until explicit idle recovery; 
   assert.equal((await restarted.recover(one.id)).state, 'released');
   f.store.acquire(one.id, 'm', 'a');
   const count = f.calls.length;
-  restarted.apply(plan.id); await restarted.idle(); assert.equal(f.calls.length, count);
+  await restarted.apply(plan.id); await restarted.idle(); assert.equal(f.calls.length, count);
 });
 
 test('wrong project roots and malformed version responses are skipped without mutation', async t => {
@@ -119,7 +122,7 @@ test('wrong project roots and malformed version responses are skipped without mu
   f.views.set(one.path, { project: { root: f.root, busy: [] } });
   f.views.set(two.path, { schema: 'unsupported' });
   f.views.set(three.path, { project: { root: three.path, busy: null } });
-  const plan = await f.updates.preview({ mode: 'installed' }); f.updates.apply(plan.id); await f.updates.idle();
+  const plan = await f.updates.preview({ mode: 'installed' }); await f.updates.apply(plan.id); await f.updates.idle();
   assert.ok(plan.projects.every(p => p.state === 'skipped'));
   assert.equal(f.calls.some(c => c.args[0] === 'update'), false);
 });
@@ -133,7 +136,7 @@ test('npm entry selects public templates-only update and verifies the applied pa
       project: { root: cwd, busy: [], applied: applied.has(cwd) ? 'package-new' : null, pending: null } }) };
   };
   const updates = createUpdates(f.store, { cliPath: f.cliPath, run }), plan = await updates.preview({ mode: 'installed' });
-  updates.apply(plan.id); await updates.idle();
+  await updates.apply(plan.id); await updates.idle();
   assert.equal(updates.snapshot().batches[0].state, 'completed');
 });
 
@@ -171,7 +174,7 @@ test('installed code-agent updates isolated projects, restores missing templates
     assert.equal(init.code, 0, init.stderr || init.stdout);
   }
   const updates = createUpdates(f.store, { cliPath });
-  const baseline = await updates.preview({ mode: 'installed' }); updates.apply(baseline.id); await updates.idle();
+  const baseline = await updates.preview({ mode: 'installed' }); await updates.apply(baseline.id); await updates.idle();
   assert.ok(updates.snapshot().batches[0].projects.every(p => ['completed', 'needs-attention'].includes(p.state)), JSON.stringify(updates.snapshot()));
   const skill = '.claude/skills/ca-request/SKILL.md';
   const original = readFileSync(join(projects[0].path, skill), 'utf8');
@@ -179,11 +182,51 @@ test('installed code-agent updates isolated projects, restores missing templates
   const custom = readFileSync(join(projects[1].path, skill), 'utf8') + '\n사용자 추가 규칙을 보존한다.\n';
   writeFileSync(join(projects[1].path, skill), custom);
   writeFileSync(join(projects[2].path, '.code-agent/request-session.json'), '{}');
-  const plan = await updates.preview({ mode: 'installed' }); updates.apply(plan.id); await updates.idle();
+  const plan = await updates.preview({ mode: 'installed' }); await updates.apply(plan.id); await updates.idle();
   const result = updates.snapshot().batches.find(b => b.id === plan.id);
   assert.ok(['completed', 'needs-attention'].includes(result.projects[0].state), JSON.stringify(result));
   assert.equal(result.projects[1].state, 'needs-attention');
   assert.equal(result.projects[2].state, 'skipped');
   assert.equal(readFileSync(join(projects[0].path, skill), 'utf8'), original);
   assert.equal(readFileSync(join(projects[1].path, skill), 'utf8'), custom);
+});
+
+
+
+test('M7: N개 프로젝트를 적용해도 설치본 지문 호출은 시작·끝 두 번이다', async t => {
+  const f = fixture(t); let count = 0;
+  const updates = createUpdates(f.store, { cliPath: f.cliPath, run: f.run, fingerprint: async cli => { count++; return installationFingerprint(cli); } });
+  const plan = await updates.preview({ mode: 'installed' }); count = 0;
+  const first = updates.apply(plan.id), replay = updates.apply(plan.id);
+  await assert.rejects(updates.apply('another-plan'), { code: 'request-busy' });
+  assert.equal((await first).id, (await replay).id);
+  await updates.idle();
+  assert.equal(count, 2); assert.equal(f.calls.filter(c => c.args[0] === 'update').length, plan.projects.length);
+  assert.equal(updates.snapshot().batches[0].state, 'completed');
+});
+
+test('M7: 설치본 파일 집합·크기·시각이 같으면 본문 스트림을 다시 열지 않는다', async t => {
+  const f = fixture(t), open = fs.open; let reads = 0;
+  t.mock.method(fs, 'open', (...args) => { reads++; return open(...args); });
+  const first = await installationFingerprint(f.cliPath), initialReads = reads;
+  assert.ok(initialReads > 0);
+  assert.equal(await installationFingerprint(f.cliPath), first);
+  assert.equal(reads, initialReads);
+  writeFileSync(join(f.pkg, 'template/SKILL.md'), 'changed template bytes');
+  assert.notEqual(await installationFingerprint(f.cliPath), first);
+  assert.ok(reads > initialReads);
+});
+
+test('M7: 적용 중 설치본 변경은 남은 프로젝트를 취소하고 성공으로 기록하지 않는다', async t => {
+  const f = fixture(t), plan = await f.updates.preview({ mode: 'installed' });
+  f.outcomes.set(plan.projects[0].path, async () => {
+    writeFileSync(join(f.pkg, 'template/SKILL.md'), 'install changed while applying');
+    await delay(30);
+    return { code: 0, stdout: 'applied' };
+  });
+  await f.updates.apply(plan.id); await f.updates.idle();
+  const result = f.updates.snapshot().batches[0];
+  assert.equal(f.calls.filter(c => c.args[0] === 'update').length, 1);
+  assert.deepEqual(result.projects.map(p => p.state), ['failed', 'cancelled', 'cancelled']);
+  assert.equal(result.state, 'failed'); assert.equal(f.updates.snapshot().maintenance.length, 0);
 });

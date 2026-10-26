@@ -109,9 +109,9 @@ export async function startDashboard({ dbPath, port = 4310, cliPath, intervalMs 
         if (path === '/api/projects/delete') return send(200, JSON.stringify(catalog.remove(input.id, input.revision)));
         if (path === '/api/groups/delete') return send(200, JSON.stringify(catalog.removeGroup(input.id, input.revision)));
         if (path === '/api/updates/preview') return send(200, JSON.stringify(await updates.preview(input)));
-        if (path === '/api/updates/install') return send(202, JSON.stringify(updates.install(input.id)));
+        if (path === '/api/updates/install') return send(202, JSON.stringify(await updates.install(input.id)));
         if (path === '/api/updates/apply-preview') return send(200, JSON.stringify(await updates.previewApply(input.id)));
-        if (path === '/api/updates/apply') return send(202, JSON.stringify(updates.apply(input.id, input.previewId)));
+        if (path === '/api/updates/apply') return send(202, JSON.stringify(await updates.apply(input.id, input.previewId)));
         if (path === '/api/updates/recover') return send(200, JSON.stringify(await updates.recover(input.id)));
         if (path === '/api/groups') return send(200, JSON.stringify(catalog.group(input.group, input.revision ?? 0, { newProjects: input.newProjects })));
         if (path === '/api/requests') {
