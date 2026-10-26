@@ -16,9 +16,9 @@ function processing(activity) {
 
 /** Presentation only: never replaces the persisted states used by safety gates. */
 export function missionProgress(store, mission, tasks, events) {
-  const escalations = store.list('escalation').filter(e => e.missionId === mission.id && e.state === 'open');
-  const delegations = store.list('delegation').filter(d => d.missionId === mission.id);
-  const runs = store.list('control-run').filter(r => r.missionId === mission.id);
+  const escalations = store.list('escalation', { missionId: mission.id }).filter(e => e.state === 'open');
+  const delegations = store.list('delegation', { missionId: mission.id });
+  const runs = store.list('control-run', { missionId: mission.id });
   const details = tasks.map(task => {
     const attempt = mission.attempts.find(a => a.id === task.attemptIds.at(-1));
     const turn = attempt?.turns?.at(-1), remote = turn?.state;

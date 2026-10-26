@@ -68,7 +68,12 @@ export class Store {
     return { ...JSON.parse(row.body), revision: row.revision };
   }
   need(kind, id) { const item = this.get(kind, id); requireThat(item, 'not-found', `${kind} ${id}를 찾을 수 없습니다.`); return item; }
-  list(kind) { return this.db.prepare('SELECT id FROM records WHERE kind=? ORDER BY id').all(kind).map(row => this.get(kind, row.id)); }
+  list(kind, { missionId } = {}) {
+    const rows = missionId === undefined
+      ? this.db.prepare('SELECT body,revision FROM records WHERE kind=? ORDER BY id').all(kind)
+      : this.db.prepare('SELECT body,revision FROM records WHERE kind=? AND mission_id=? ORDER BY rowid').all(kind, missionId);
+    return rows.map(row => ({ ...JSON.parse(row.body), revision: row.revision }));
+  }
   put(kind, value, expected = 0) {
     const body = { ...value }; delete body.revision;
     if (expected === 0) {

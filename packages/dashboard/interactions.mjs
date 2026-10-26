@@ -104,7 +104,7 @@ export function createInteractions(store, { cliPath, readRemote, resolveHumanKey
     }
     if (owner && record.status === 'applied') {
       const targets = new Set(record.kind === 'consent' ? [record.origin.id] : record.questions.map(q => q.questionId));
-      for (const escalation of store.list('escalation').filter(e => e.missionId === owner.id && e.attemptId === attempt.id && e.state === 'open' && targets.has(e.target))) {
+      for (const escalation of store.list('escalation', { missionId: owner.id }).filter(e => e.attemptId === attempt.id && e.state === 'open' && targets.has(e.target))) {
         store.put('escalation', { ...escalation, state: 'resolved', resolvedBy: 'observed-code-agent-interaction', resolvedAt: now() }, escalation.revision);
       }
     }
@@ -186,10 +186,10 @@ export function createInteractions(store, { cliPath, readRemote, resolveHumanKey
           recommendedOptionIds: [recommendation(choices, proposal.recommendation)].filter(Boolean), recommendation: proposal.recommendation,
           producerState: 'open', originAt: recovery.decidedAt ?? recovery.startedAt });
       }
-      for (const escalation of store.list('escalation').filter(e => e.missionId === m.id && e.state === 'open')) {
+      for (const escalation of store.list('escalation', { missionId: m.id }).filter(e => e.state === 'open')) {
         const a = m.attempts.find(a => a.id === escalation.attemptId);
         const id = key('master', m.id, escalation.id); active.add(id);
-        const original = store.list('interaction').find(i => i.handler === 'code-agent' && i.missionId === m.id && i.taskId === escalation.taskId &&
+        const original = store.list('interaction', { missionId: m.id }).find(i => i.handler === 'code-agent' && i.taskId === escalation.taskId &&
           i.projectIds.includes(escalation.projectId) && ['open', 'deferred', 'received'].includes(i.producerState) &&
           (i.remote?.origin?.id === escalation.target || i.questions?.some(q => q.questionId === escalation.target)));
         save({ ...common, id, requestId: escalation.id, handler: 'escalation', taskId: escalation.taskId,

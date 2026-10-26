@@ -14,7 +14,7 @@ const remoteHash = ({ observedAt, ...state }) => hash(state);
 /** 복구 판단을 먼저 저장하고 기존 작업·검증 계약 안에서만 실행한다. */
 export class Recovery {
   constructor(store) { this.store = store; this.engine = new Engine(store); this.verifier = new LiveVerification(store); }
-  history(id, attemptId) { return this.store.list('recovery-run').filter(r => r.missionId === id && r.attemptId === attemptId); }
+  history(id, attemptId) { return this.store.list('recovery-run', { missionId: id }).filter(r => r.attemptId === attemptId); }
   assertInputs(m, attempt, project, tree) {
     this.verifier.inputsCurrent(m, project.id, attempt.taskId);
     const current = snapshotTree(project.path);

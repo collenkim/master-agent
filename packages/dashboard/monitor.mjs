@@ -6,19 +6,28 @@ import { stageDetails } from './history.mjs';
 import { preparationIssues } from '../orchestrator/preparation.mjs';
 import { DASHBOARD_CONTROLLER, connectionState, findTrustKey } from '../code-agent-adapter/pairing.mjs';
 import { pairingReceipt } from '../runner/control-pairing.mjs';
+import { terminalMission } from '../storage/retention.mjs';
 
 const text = value => typeof value === 'string' ? value.slice(0, 2000) : '';
 const list = value => Array.isArray(value) ? value : [];
+const completedDetails = new WeakMap();
 
 /** A projection only: never expose raw records, controller credentials or model inputs. */
 export function dashboardSnapshot(store, { live = false, refreshing = false, intervalMs = 5000, errors = new Map(), now = Date.now(), trustKey = findTrustKey } = {}) {
   const engine = new Engine(store);
+  if (!completedDetails.has(store)) completedDetails.set(store, new Map());
+  const completed = completedDetails.get(store);
+  const allMissions = store.list('mission'), savedRequests = store.list('target-request');
+  const requestsById = new Map(savedRequests.map(r => [r.id, r])), missionsById = new Map(allMissions.map(m => [m.id, m]));
+  for (const id of completed.keys()) if (!missionsById.has(id)) completed.delete(id);
   const keyAvailable = Boolean(trustKey(DASHBOARD_CONTROLLER)), pairings = store.list('control-pairing');
-  const missions = store.list('mission').map(mission => {
+  const missions = allMissions.map(mission => {
     try {
-      const detail = engine.describe(mission.id);
+      const cached = completed.get(mission.id);
+      const detail = terminalMission(mission) && cached?.revision === mission.revision ? cached : engine.describe(mission.id);
+      if (terminalMission(mission)) completed.set(mission.id, detail); else completed.delete(mission.id);
       return { id: mission.id, goal: text(mission.goal), mode: mission.mode, state: mission.state, ...detail.progress,
-        reason: text(store.get('target-request', mission.id)?.error?.message ?? mission.reason),
+        reason: text(requestsById.get(mission.id)?.error?.message ?? mission.reason),
         tasks: detail.progress.tasks.map(task => ({ ...task, goal: text(detail.taskDetails.find(t => t.id === task.taskId)?.goal) })),
         events: detail.events.slice(-12).reverse().map(e => ({ sequence: e.sequence, at: e.at, type: e.eventType ?? e.type, taskId: e.taskId ?? null })) };
     } catch (error) {
@@ -41,7 +50,7 @@ export function dashboardSnapshot(store, { live = false, refreshing = false, int
       installed: observation?.status !== 'not-installed' });
     const pairing = pairings.filter(p => p.projectId === project.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
     const tasks = missions.flatMap(m => m.tasks.filter(t => t.projectId === project.id).map(t => ({ ...t, missionId: m.id, missionGoal: m.goal, mode: m.mode })));
-    const pendingRequests = store.list('target-request').filter(r => r.projectIds.includes(project.id) && !['completed', 'cancelled'].includes(r.state))
+    const pendingRequests = savedRequests.filter(r => r.projectIds.includes(project.id) && !['completed', 'cancelled'].includes(r.state))
       .map(r => ({ id: r.id, taskNumber: r.taskNumber ?? null, state: r.state, progress: missions.find(m => m.id === r.id)?.status,
         error: text(r.error?.message), issues: preparationIssues(r).filter(i => i.projectId === project.id) }));
     return { id: project.id, revision: project.revision, name: text(project.name), path: project.path, domains: project.domains,
@@ -73,9 +82,9 @@ export function dashboardSnapshot(store, { live = false, refreshing = false, int
         pendingRequests.some(r => r.state === 'failed' || r.issues.length)) };
   });
   const groups = new Catalog(store).groups();
-  const requests = store.list('target-request').map(requestStatus).map(r => ({ id: r.id, revision: r.revision, targetType: r.targetType, targetId: r.targetId,
+  const requests = savedRequests.map(requestStatus).map(r => ({ id: r.id, revision: r.revision, targetType: r.targetType, targetId: r.targetId,
     goal: text(r.goal), taskNumber: r.taskNumber ?? null, projectIds: r.projectIds, groupRevision: r.groupRevision, state: r.state, provider: r.provider, execution: r.execution ?? null,
-    progress: missions.find(m => m.id === r.id)?.status ?? null, reason: text(r.error?.message ?? store.get('mission', r.id)?.reason),
+    progress: missions.find(m => m.id === r.id)?.status ?? null, reason: text(r.error?.message ?? missionsById.get(r.id)?.reason),
     createdAt: r.createdAt, updatedAt: r.updatedAt, blockers: r.blockers, error: r.error, preparation: r.preparation ?? null }));
   return { generatedAt: new Date(now).toISOString(), live, refreshing, intervalMs, projects, missions, groups, requests,
     counts: { projects: projects.length, activeMissions: missions.filter(m => !['completed', 'cancelled'].includes(m.status)).length,

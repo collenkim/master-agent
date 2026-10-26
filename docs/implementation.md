@@ -13,6 +13,18 @@
 
 `npm.cmd test`는 306건 통과, 실패·건너뜀 0건이다. `npm.cmd run check`는 소스 118개와 문서 20개를 통과했다. lint는 B2에서 도입하므로 아직 실행 명령이 없다. 검증은 임시 프로젝트와 모의 모델을 사용했다. 외부 code-agent 설치본이 시험 중 바뀌는 문제가 있어 공개 빌드·템플릿·의존성을 임시 고정본으로 복사하고 `CODE_AGENT_CLI`·`CODE_AGENT_DIST`로 지정했다. 승인된 샌드박스 밖 검증 프로세스에서 상속된 샌드박스 표지 2개만 제거했다. 테스트 파일의 동시 실행 수는 4로 제한했다.
 
+## 2026-10-26 보완 — Phase 2 완료
+
+| 항목 | 커밋 | 처리 내용 |
+| --- | --- | --- |
+| M1·M4 | `074d526` | v2 순차 마이그레이션, 그래프·요청 heartbeat와 TTL, unlock·reset 운영자 복구 |
+| M2 | `21bad3b` | 종료 체크포인트 삭제, 임시 command thread 제거, 분석·회차 저장 축소, 30일 이벤트 정리 |
+| M3 | `b7edf05` | relay 전송 실패 마감, 오류 코드만 보존, 사람 판단 요청 유지 |
+
+신규 회귀 테스트는 `tests/store.test.mjs` 2건, `tests/langgraph.test.mjs` 4건, `tests/requests.test.mjs` 2건, `tests/cli.test.mjs` 2건, `tests/engine.test.mjs`·`tests/planner.test.mjs`·`tests/live.test.mjs` 각 1건, `tests/relay.test.mjs` 2건으로 총 15건이다. 기존 그래프 종료·재시작 단언도 새 보존·임대 계약에 맞췄다. M4는 지시서에서 허용한 대로 M1과 함께 먼저 적용했으며 건너뛴 항목은 없다.
+
+각 커밋 전 전체 테스트와 check를 통과했다. 최종 `npm.cmd test`는 321건 통과, 실패·건너뜀 0건이며 `npm.cmd run check`는 소스 123개와 문서 20개를 통과했다. lint는 B2에서 도입하므로 아직 실행 명령이 없다. Phase 1과 같은 임시 고정 code-agent 빌드·모의 호스트를 사용했으며 실제 모델을 호출하지 않았다.
+
 ## 현재 제공 범위
 
 | 영역 | 구현 |

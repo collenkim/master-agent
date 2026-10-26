@@ -59,6 +59,23 @@ export function allowedChange(recipe, workId, path) {
   return recipe.allowedPaths.includes(path) || (recipe.codeAgentRecords === true && codeAgentRecord(path, workId));
 }
 
+const cleanTrees = new Map();
+const TREE_CACHE_LIMIT = 512;
 export function checkpointsCurrent(mission, exceptProjectId) {
-  return Object.entries(mission.liveCheckpoints ?? {}).filter(([id]) => id !== exceptProjectId).every(([, checkpoint]) => snapshotTree(checkpoint.root).digest === checkpoint.digest);
+  return Object.entries(mission.liveCheckpoints ?? {}).filter(([id]) => id !== exceptProjectId).every(([projectId, checkpoint]) => {
+    const key = typeof mission.id === 'string' && Number.isInteger(mission.revision) ? JSON.stringify([mission.id, projectId]) : null;
+    const cached = key && cleanTrees.get(key);
+    const head = () => git(checkpoint.root, ['rev-parse', '--verify', 'HEAD']).trim();
+    const clean = () => !git(checkpoint.root, ['status', '--porcelain', '--untracked-files=all']).trim();
+    if (cached && cached.revision === mission.revision && cached.root === checkpoint.root && head() === cached.head && clean()) {
+      return cached.digest === checkpoint.digest;
+    }
+    const current = snapshotTree(checkpoint.root);
+    if (key && head() === current.head && clean()) {
+      cleanTrees.delete(key);
+      cleanTrees.set(key, { root: checkpoint.root, revision: mission.revision, head: current.head, digest: current.digest });
+      if (cleanTrees.size > TREE_CACHE_LIMIT) cleanTrees.delete(cleanTrees.keys().next().value);
+    }
+    return current.digest === checkpoint.digest;
+  });
 }

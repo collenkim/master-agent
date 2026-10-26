@@ -64,6 +64,10 @@ SQLite 도메인 트랜잭션과 LangGraph 체크포인트 사이에는 단일 �
 
 ## 기록 보존과 정리
 
+목표별 레코드는 v2의 `(kind, mission_id)` 인덱스로 조회하며 `list()`는 본문과 revision을 SQL 한 번으로 읽는다. 이벤트는 `(mission_id, sequence)` 인덱스를 사용한다. 대시보드는 종료 목표의 마지막 상세 조회를 캐시하고 목표 revision이 바뀌면 다시 계산한다.
+
+인계 트리는 프로젝트별 목표 revision·HEAD를 기준으로 최근 결과를 캐시한다. 같은 HEAD이고 `git status --porcelain` 결과가 비어 있을 때만 파일 해시를 재사용한다. 작업 트리 변경·새 커밋·목표 revision 변경은 다시 스냅샷하며 캐시에는 최근 512개 프로젝트 항목만 보존한다. 실행 전 정책·출처·잠금 검사는 계속 수행한다.
+
 목표가 `succeeded`·`cancelled`·`simulation-complete`로 저장되면 해당 Mission·모의 실행 thread의 checkpoints·writes를 삭제한다. 마지막 체크포인트의 ID·시각만 목표의 `lastCheckpoint`에 남긴다. 종료 이후 도착한 그래프 저장도 같은 thread를 다시 만들지 않는다. 실행 중인 목표의 대기 체크포인트는 재개를 위해 유지한다.
 
 분석 레코드의 `context`에는 프로젝트·관측 버전, 지식 스냅샷 ID, 소스 ID·바이트 수만 저장하고 전체 입력은 `contextHash`로 식별한다. 근거 본문은 지식 스냅샷을 참조하며 재검토 때 실제 파일을 다시 수집하고 전체 해시를 대조한다. 근거나 요청이 달라졌으면 기존 판단을 재사용하지 않는다. 분석 그래프 frame에도 근거 본문을 복제하지 않는다.

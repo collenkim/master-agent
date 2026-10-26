@@ -166,10 +166,9 @@ export class Engine {
     }) : [];
     const events = this.store.events(id);
     // 이벤트 보존 기간과 결정·검증 원본의 수명은 독립적이다.
-    const records = kind => this.store.db.prepare('SELECT body,revision FROM records WHERE kind=? AND mission_id=? ORDER BY rowid')
-      .all(kind, id).map(r => ({ ...JSON.parse(r.body), revision: r.revision }));
+    const records = kind => this.store.list(kind, { missionId: id });
     const decisions = records('decision');
-    const evidence = this.store.list('evidence').filter(e => e.missionId === id);
+    const evidence = records('evidence');
     const analyses = records('analysis-run').map(r => ({ id: r.id, status: r.status, provider: r.provider, model: r.model, promptVersion: r.promptVersion, contextHash: r.contextHash, passes: r.passes?.length ?? 0, result: r.result ?? null, error: r.error ?? null }));
     const verifications = records('verification-run').map(r => ({
       id: r.id, attemptId: r.attemptId, state: r.state, decisionId: r.decisionId, changedPaths: r.changedPaths,
@@ -180,7 +179,7 @@ export class Engine {
     const replans = records('replan-handoff');
     const deliveries = records('delivery-run');
     const reconciliations = records('reconciliation');
-    const commands = this.store.list('command-run').filter(c => c.missionId === id);
+    const commands = records('command-run');
     const progress = missionProgress(this.store, m, tasks, events);
     return { ...m, recoveryHolds: activeHolds(this.store, m).map(r => ({ runId: r.id, attemptId: r.attemptId, action: r.proposal?.action, category: r.proposal?.category })), taskDetails: tasks, decisions, evidence, analyses, verifications, recoveries, replans, deliveries, reconciliations, commands, events,
       progress, nextAction: finished.has(m.state) ? 'none' : m.state === 'paused' ? 'resume' :
@@ -342,7 +341,7 @@ export class Engine {
           ['analysis-run', 'status', ['running']],
           ['recovery-run', 'state', ['analyzing', 'authorized', 'held', 'executing']],
         ]) {
-          for (const run of this.store.list(kind).filter(r => r.missionId === id && states.includes(r[field]))) {
+          for (const run of this.store.list(kind, { missionId: id }).filter(r => states.includes(r[field]))) {
             this.store.put(kind, { ...run, [field]: 'cancelled', finishedAt: m.finishedAt, cancellationDecisionId: d.id }, run.revision);
           }
         }

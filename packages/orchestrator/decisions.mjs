@@ -69,8 +69,8 @@ const usable = (grant, action, workId, missionId) => !grant.revoked && !grant.ex
 
 export class DecisionDelegation {
   constructor(store) { this.store = store; this.engine = new Engine(store); }
-  escalations(id) { return this.store.list('escalation').filter(e => e.missionId === id); }
-  delegations(id) { return this.store.list('delegation').filter(d => d.missionId === id); }
+  escalations(id) { return this.store.list('escalation', { missionId: id }); }
+  delegations(id) { return this.store.list('delegation', { missionId: id }); }
 
   /** 기다리는 동의·질문을 한 번 판단한다. 보낸 것이 있으면 progressed. 사람에게 넘긴 것은 blockers 에 남는다 */
   async resolve(id, attemptId, host, provider) {
