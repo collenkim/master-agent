@@ -17,7 +17,8 @@
     <section id="interaction-inbox" aria-label="공통 요청함"></section>
     <div class="toolbar"><div><h2>서비스 그룹</h2><p class="muted">함께 유지보수할 프로젝트를 묶고 서비스 범위에 요청을 보냅니다.</p></div><div class="filters"><button id="new-group" type="button">그룹 만들기</button><button id="new-request" type="button">요청 보내기</button></div></div>
     <section id="groups" class="projects" aria-label="서비스 그룹"></section>
-    <div class="toolbar"><h2>보낸 요청</h2><span class="muted">접수 시 확정한 대상에서 실행</span></div>
+    <div class="toolbar"><h2>보낸 master 요청</h2><span class="muted">접수 시 확정한 대상에서 실행</span></div>
+    <p class="muted">master 요청의 대기·오류와 독립 실행 중인 code-agent의 현재 작업은 별도 상태입니다.</p>
     <section id="requests" aria-label="보낸 요청"></section>
     <div class="toolbar"><h2>code-agent 업데이트</h2><div class="filters"><label>업데이트 방식<select id="update-mode"><option value="remote">원격 최신 버전 받아 적용</option><option value="installed">현재 설치본만 적용</option></select></label><button id="preview-updates" type="button">전체 프로젝트 업데이트 확인</button></div></div>
     <p class="muted">설치 내용 확인 → code-agent 릴리스 설치 → 프로젝트별 적용 내용 확인 → 적용 및 버전 확인. 작업·승인 진행 중인 프로젝트는 건너뜁니다.</p>
@@ -25,14 +26,17 @@
     <section id="updates" aria-label="업데이트 결과"></section>
     <div class="toolbar"><h2>프로젝트 <span id="project-count" class="muted"></span></h2><div class="filters"><button id="new-project" type="button">프로젝트 수동 등록</button><label>검색 <input id="search" type="search" placeholder="프로젝트·작업·경로"></label><label>표시 <select id="filter"><option value="all">전체</option><option value="attention">판단·점검 필요</option><option value="unavailable">조회 오류·오래된 관측</option><option value="working">현재 작업 있음</option></select></label></div></div>
     <section id="projects" class="projects" aria-label="등록 프로젝트"></section>
+    <div class="toolbar"><h2>목표별 진행</h2><span class="muted">저장된 master 실행 기록</span></div>
+    <section id="missions" aria-label="목표별 작업"></section>
+    <details id="history-archive" class="history-archive">
+    <summary><strong>보관함 · 단계별 이력</strong><span class="muted">지난 상태 변화·질문·승인 기록 검색</span></summary>
     <div class="toolbar"><h2>단계별 타임라인</h2><button id="history-latest" type="button">최신 이력</button></div>
     <p class="muted">상태 관측·code-agent 이벤트·요청함 변화를 최신 수집 순으로 표시합니다. 제어 연결이 없는 프로젝트는 상태 관측만 수집하며, 조회 사이에 지나간 단계는 복원할 수 없습니다. 브랜치 전환은 이전 작업의 완료를 뜻하지 않습니다.</p>
     <form id="history-filter" class="filters"><label>프로젝트<select id="history-project"><option value="">전체</option></select></label><label>그룹<select id="history-group"><option value="">전체</option></select></label><label>TASK·작업·실행<input id="history-task" type="search" placeholder="TASK 번호·작업·실행 ID"></label><button type="submit">이력 검색</button></form>
     <p id="history-status" role="status" class="muted"></p>
     <section id="history-list" aria-label="단계별 이력"></section>
     <button id="history-older" type="button" disabled>이전 이력</button>
-    <div class="toolbar"><h2>목표별 진행</h2><span class="muted">저장된 master 실행 기록</span></div>
-    <section id="missions" aria-label="목표별 작업"></section>
+    </details>
     <footer>현재 DB에 등록된 로컬 프로젝트를 표시합니다. code-agent 상태 조회는 프로세스 생존 확인을 보장하지 않습니다.</footer>
   </main>
   <dialog id="install-dialog">

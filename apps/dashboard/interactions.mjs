@@ -8,6 +8,10 @@ const labels = { open: '응답 대기', pending: '응답 미접수·대기', def
   requested: '재개 실행기 요청됨', resumed: '기존 처리기 재개 확인', 'waiting-answers': '다른 답변 대기', manual: 'CLI 재개 필요', failed: '실패',
   sending: '전송 중', unknown: '수신 여부 미확인', reopened: '다시 열림', 'waiting-host': '원래 세션 소비 대기', queued: '재개 대기', started: '원래 세션 재개됨', blocked: '재개 후 추가 조치 필요', completed: '요청 완료', cancelled: '취소' };
 let data, post, refresh, actions = {}, opened, pending = false, lastSubmission;
+let listPage = 1;
+const pageSize = 25;
+const waitingStates = ['open', 'deferred', 'received'];
+const archivedStates = ['answered', 'closed', 'expired', 'failed', 'cancelled'];
 const seen = new Set();
 function stored(id) { try { return JSON.parse(sessionStorage.getItem(`interaction-draft:${id}`) ?? 'null'); } catch { return null; } }
 function saveDraft() {
@@ -18,17 +22,63 @@ function saveDraft() {
   try { sessionStorage.setItem(`interaction-draft:${opened.id}`, JSON.stringify(draft)); } catch { /* Draft still lives in the form. */ }
   lastSubmission = null;
 }
+function renderSources() {
+  const sources = data.interactions?.sources ?? [];
+  $('interaction-capabilities').textContent = sources.length ? sources.map(s => `${data.projects.find(p => p.id === s.id)?.name ?? s.id}: ${s.error ? `요청 조회 실패 (${s.error}) · 마지막 관측 유지` : `code-agent ${s.version ?? '?'} · ${s.responseSupported ? '요청 API 연결됨 (사람 채널 권한은 요청별 확인)' : s.reason ?? '프로젝트 연결 상태 확인 필요'}`}`).join(' / ') : 'code-agent 전체 단계 요청 API와 사람 응답 연동을 확인하기 전에는 외부 질문을 제출할 수 없습니다.';
+}
+let pageData = { items: [], counts: { waiting: 0, archive: 0 }, total: 0, page: 1, sources: [], stages: [] };
+let listRequest = 0, listAbort;
+function currentItem(id) {
+  return [...pageData.items, pageData.openedItem, pageData.nextItem].find(i => i?.id === id);
+}
+function pageQuery(itemId) {
+  const state = $('interaction-state').value;
+  const box = state === 'pending' || waitingStates.includes(state) ? 'waiting' : state === 'archive' || archivedStates.includes(state) ? 'archive' : 'all';
+  return new URLSearchParams({ box, page: String(listPage), pageSize: String(pageSize), state,
+    source: $('interaction-source').value, groupId: $('interaction-group').value, projectId: $('interaction-project').value,
+    stage: $('interaction-stage').value, search: $('interaction-search').value, itemId: itemId ?? '' });
+}
+async function loadPage({ itemId = opened?.id, openAfter = false } = {}) {
+  const request = ++listRequest;
+  listAbort?.abort(); listAbort = new AbortController();
+  const signal = AbortSignal.any([listAbort.signal, AbortSignal.timeout(10000)]);
+  $('interaction-items').setAttribute('aria-busy', 'true');
+  $('interaction-items').querySelectorAll('button').forEach(b => { b.disabled = true; });
+  try {
+    const response = await fetch('/api/interactions?' + pageQuery(itemId), { signal });
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    const result = await response.json();
+    if (request !== listRequest) return;
+    pageData = result; data.interactions = result; listPage = result.page;
+    selectItems('interaction-stage', result.stages.map(id => ({ id })));
+    renderSources(); renderList(); checkOpen();
+    if (openAfter) {
+      if (result.openedItem) open(itemId);
+      else $('interaction-list-status').textContent = '원본 요청을 찾을 수 없습니다. 최신 목록을 확인하세요.';
+    }
+  } catch (error) {
+    if (request === listRequest && error.name !== 'AbortError') $('interaction-list-status').textContent = '요청함 조회 실패: ' + error.message;
+  } finally {
+    if (request === listRequest) {
+      $('interaction-items').setAttribute('aria-busy', 'false');
+      $('interaction-items').querySelectorAll('button').forEach(b => { b.disabled = false; });
+    }
+  }
+}
 function init() {
   $('interaction-inbox').innerHTML = `<div class="toolbar"><div><h2>공통 요청함 <span id="interaction-count" class="muted"></span></h2>
     <p class="muted">추천안은 실제 제출 전까지 답변되지 않습니다. 질문의 발행 주체가 답을 적용하며 수신·적용·재개는 구분해 표시합니다.</p></div></div>
+    <div class="card-actions inbox-views" aria-label="요청함 보기"><button id="interaction-waiting" type="button" aria-pressed="true">대기함</button><button id="interaction-archive" type="button" aria-pressed="false">보관함</button></div>
     <div class="filters inbox-filters">
     <label>발행 주체<select id="interaction-source"><option value="">전체</option><option value="master">master</option><option value="code-agent">code-agent</option></select></label>
-    <label>상태<select id="interaction-state"><option value="pending">대기·보류</option><option value="">전체·이력</option><option value="open">응답 대기</option><option value="deferred">보류</option><option value="answered">답변 적용</option><option value="closed">대기 종료</option><option value="expired">만료</option></select></label>
+    <label>상태<select id="interaction-state"><option value="pending">대기·보류</option><option value="archive">보관함·처리 이력</option><option value="">전체·이력</option><option value="open">응답 대기</option><option value="deferred">보류</option><option value="received">접수·적용 대기</option><option value="answered">답변 적용</option><option value="closed">대기 종료</option><option value="expired">만료</option><option value="failed">실패</option><option value="cancelled">취소</option></select></label>
     <label>그룹<select id="interaction-group"><option value="">전체</option></select></label>
     <label>프로젝트<select id="interaction-project"><option value="">전체</option></select></label>
     <label>단계<select id="interaction-stage"><option value="">전체</option></select></label>
     <label>작업·TASK·질문<input id="interaction-search" type="search" placeholder="TASK 번호 또는 질문"></label></div>
-    <p id="interaction-capabilities" class="muted"></p><div id="interaction-items" class="projects"></div>`;
+    <details class="inbox-connection"><summary>요청 API 연결 상세</summary><p id="interaction-capabilities" class="muted"></p></details>
+    <p id="interaction-list-status" class="muted" role="status"></p><div id="interaction-items" class="projects"></div>
+    <div class="card-actions"><button id="interaction-prev" type="button">이전 페이지</button><button id="interaction-next-page" type="button">다음 페이지</button></div>`;
   const dialog = document.createElement('dialog'); dialog.id = 'interaction-dialog';
   dialog.setAttribute('aria-labelledby', 'interaction-title');
   dialog.innerHTML = `<form id="interaction-form"><h2 id="interaction-title" tabindex="-1" autofocus></h2><p id="interaction-context" class="muted"></p>
@@ -50,7 +100,12 @@ function init() {
     <p id="approval-limit" class="error"></p><div id="approval-history"></div>
     <div class="dialog-actions"><button type="button" id="approval-close">닫기</button><button type="button" id="approval-defer">보류</button><button id="approval-submit" type="button" disabled>선택한 판단 제출</button></div>`;
   document.body.append(approval);
-  for (const id of ['source', 'state', 'group', 'project', 'stage', 'search']) $(`interaction-${id}`).addEventListener('input', renderList);
+for (const id of ['source', 'state', 'group', 'project', 'stage', 'search']) $(`interaction-${id}`).addEventListener('input', () => { listPage = 1; void loadPage(); });
+  for (const [id, state] of [['waiting', 'pending'], ['archive', 'archive']]) $(`interaction-${id}`).onclick = () => {
+    $('interaction-state').value = state; listPage = 1; void loadPage();
+  };
+  $('interaction-prev').onclick = () => { listPage--; void loadPage(); };
+  $('interaction-next-page').onclick = () => { listPage++; void loadPage(); };
   $('interaction-items').addEventListener('click', event => {
     const connection = event.target.closest('[data-connect-project]');
     if (connection) { void actions.pair?.(connection.dataset.connectProject); return; }
@@ -129,14 +184,13 @@ function history(item) {
     ${item.remote ? `<p>원래 요청 상태: ${esc([labels[item.remote.status] ?? item.remote.status, labels[item.remote.continuation?.state]].filter(Boolean).join(' · '))}</p>${(error => error ? `<p class="error">${esc(error)}</p>` : '')(item.remote.application?.error ?? item.remote.continuation?.detail)}` : ''}`;
 }
 function remainingQuestions() {
-  return opened?.handler === 'analysis' ? (data.interactions?.items ?? []).filter(i => i.id !== opened.id &&
-    i.handler === 'analysis' && i.missionId === opened.missionId && i.runId === opened.runId &&
-    ['open', 'deferred'].includes(i.state) && i.respondSupported) : [];
+  return pageData.openedItem?.id === opened?.id && pageData.nextItem ? [pageData.nextItem] : [];
 }
+function remainingCount() { return pageData.openedItem?.id === opened?.id ? pageData.remainingCount : 0; }
 function responseMessage(response, remaining) {
   const applied = response?.state === 'applied', resume = response?.resume;
   const prefix = applied ? '답변이 적용되었습니다.' : '답변이 접수되었습니다. 원래 처리기의 적용을 기다립니다.';
-  if (resume?.state === 'waiting-answers') return `${prefix} 남은 질문 ${remaining.length}개에 답하면 같은 요청을 이어갑니다.`;
+  if (resume?.state === 'waiting-answers') return `${prefix} 남은 질문 ${remaining}개에 답하면 같은 요청을 이어갑니다.`;
   const progress = labels[resume?.state];
   return `${prefix}${progress ? ` ${progress}.` : ''}${resume?.reason || resume?.error ? ` ${resume.reason ?? resume.error}` : ''}`;
 }
@@ -144,25 +198,32 @@ function context(item) {
   return `${item.source} · ${item.projectIds.join(', ')} · ${item.taskNumber ?? item.workId ?? item.missionId ?? '작업 ID 없음'} · ${item.stage}${item.context.branch ? ` · ${item.context.branch}` : ''}${item.context.sessionId ? ` · 세션 ${item.context.sessionId}` : ''}`;
 }
 function renderList() {
-  const items = (data.interactions?.items ?? []).filter(i => !i.relatedInteractionId || $('interaction-source').value === 'master');
-  const waiting = items.filter(i => ['open', 'deferred', 'received'].includes(i.state));
-  $('interaction-count').textContent = `${waiting.length}건 대기 · 새 요청 ${waiting.filter(i => !seen.has(i.id)).length}건`;
-  const source = $('interaction-source').value, state = $('interaction-state').value, group = $('interaction-group').value,
-    project = $('interaction-project').value, stage = $('interaction-stage').value, query = $('interaction-search').value.toLowerCase();
-  const visible = items.filter(i => (!source || i.source === source) && (!state || (state === 'pending' ? ['open', 'deferred', 'received'].includes(i.state) : i.state === state)) &&
-    (!group || i.groupIds.includes(group)) && (!project || i.projectIds.includes(project)) && (!stage || i.stage === stage) &&
-    `${i.title} ${i.taskNumber ?? ''} ${i.workId ?? ''} ${i.taskId ?? ''} ${i.missionId ?? ''}`.toLowerCase().includes(query));
-  $('interaction-items').innerHTML = visible.sort((a, b) => a.firstSeenAt.localeCompare(b.firstSeenAt)).map(i => `<article class="project">
+  const items = pageData.items, { waiting, archive } = pageData.counts, total = pageData.total;
+  $('interaction-count').textContent = waiting + '건 대기 · 보관 ' + archive + '건';
+  $('interaction-waiting').textContent = '대기함 ' + waiting;
+  $('interaction-archive').textContent = '보관함 ' + archive;
+  const state = $('interaction-state').value;
+  const isArchive = state === 'archive' || archivedStates.includes(state);
+  $('interaction-waiting').setAttribute('aria-pressed', String(state === 'pending' || waitingStates.includes(state)));
+  $('interaction-archive').setAttribute('aria-pressed', String(isArchive));
+  $('interaction-prev').disabled = listPage <= 1;
+  $('interaction-next-page').disabled = listPage * pageSize >= total;
+  $('interaction-prev').parentElement.hidden = total <= pageSize;
+  $('interaction-list-status').textContent = total + '건' + (total ? ' · ' + ((listPage - 1) * pageSize + 1) + '–' + Math.min(listPage * pageSize, total) + ' 표시' : '') +
+    ' · ' + (isArchive || !state ? '최근 변경 순' : '오래 기다린 순') + (isArchive ? ' · 기록을 보존하며 실패·만료는 완료를 뜻하지 않습니다.' : '');
+  $('interaction-items').classList.toggle('archive-items', isArchive);
+  $('interaction-items').innerHTML = items.map(i => `<article class="project">
     <div class="card-head"><h3>${esc(i.title)}</h3><span class="badge">${esc(labels[i.state])}</span></div>
-    <p class="muted">${esc(context(i))}</p><p>${i.kind === 'approval' ? '별도 승인 확인 필요' : '질문'} · ${!seen.has(i.id) ? '새 요청 · ' : ''}${['open', 'deferred'].includes(i.state) ? `${Math.max(0, Math.floor((Date.now() - Date.parse(i.originAt ?? i.firstSeenAt)) / 60000))}분 대기` : esc(date(i.updatedAt))}</p>
-    <p class="muted">차단 대상: ${esc(i.taskId ?? i.missionId ?? i.workId ?? '독립 설정·운영 세션')}</p>
-    ${!i.respondSupported ? `<p class="muted">${esc(i.unavailableReason)}</p>` : ''}
-    <button type="button" data-interaction="${esc(i.relatedInteractionId ?? i.id)}">${i.relatedInteractionId ? '원본 요청 열기' : i.kind === 'approval' ? '승인 전문 검토' : '질문·응답 열기'}</button>
+    <p class="muted">${esc(i.projectIds.map(id => data.projects.find(p => p.id === id)?.name ?? id).join(' · '))} · ${esc(i.taskNumber ?? i.workId ?? '프로젝트')} · ${esc(i.source)} · ${esc(i.stage)}</p><p>${i.kind === 'approval' ? '승인' : '질문'} · ${waitingStates.includes(i.state) && !seen.has(i.id) ? '새 요청 · ' : ''}${['open', 'deferred'].includes(i.state) ? `${Math.max(0, Math.floor((Date.now() - Date.parse(i.originAt ?? i.firstSeenAt)) / 60000))}분 대기` : esc(date(i.updatedAt))}</p>
+    ${!archivedStates.includes(i.state) ? `<p class="muted">차단 대상: ${esc(i.taskId ?? i.missionId ?? i.workId ?? '독립 설정·운영 세션')}</p>${!i.respondSupported ? `<p class="muted">${esc(i.unavailableReason)}</p>` : ''}` : ''}
+    <button type="button" data-interaction="${esc(i.relatedInteractionId ?? i.id)}">${i.relatedInteractionId ? '원본 요청 열기' : archivedStates.includes(i.state) ? '내용·처리 이력 보기' : i.kind === 'approval' ? '승인 전문 검토' : '질문·응답 열기'}</button>
     ${i.connectionRequired ? `<button type="button" data-connect-project="${esc(i.projectIds[0])}">프로젝트 연결 확인</button>` : ''}</article>`).join('') || '<p class="empty">조건에 맞는 요청이 없습니다.</p>';
 }
 function open(id) {
-  opened = (data.interactions?.items ?? []).find(i => i.id === id); if (!opened) return;
-  seen.add(id); lastSubmission = null; renderList();
+  const item = currentItem(id);
+  if (!item) { void loadPage({ itemId: id, openAfter: true }); return; }
+  opened = item;
+  seen.add(id); lastSubmission = null; renderList(); void loadPage();
   if (opened.kind === 'approval') {
     $('approval-title').textContent = opened.title; $('approval-context').textContent = context(opened);
     $('approval-body').textContent = opened.body;
@@ -248,7 +309,7 @@ async function submit(action) {
 }
 function checkOpen() {
   if (!opened || pending) return;
-  const current = data.interactions?.items.find(i => i.id === opened.id);
+  const current = currentItem(opened.id);
   // Poll history without replacing the form's original version/context or the user's draft.
   if (current) $(opened.kind === 'approval' ? 'approval-history' : 'interaction-history').innerHTML = history(current);
   const receipt = lastSubmission?.receipt;
@@ -262,28 +323,25 @@ function checkOpen() {
     $('approval-submit').disabled = stale || processed || !opened.respondSupported || opened.state === 'deferred' || !$('approval-reviewed').checked || !$('approval-verdict').value ||
       $('approval-verdict').value === 'approve' && [...document.querySelectorAll('[data-approval-choice]')].some(e => !e.value);
     if (stale) $('approval-limit').textContent = '요청이 변경되었습니다. 최신 승인 전문을 다시 열어 확인하세요.';
-    else if (processed) { $('approval-limit').textContent = responseMessage(response, []); $('approval-limit').className = response?.resume?.state === 'failed' ? 'error' : 'response-status'; }
+    else if (processed) { $('approval-limit').textContent = responseMessage(response, 0); $('approval-limit').className = response?.resume?.state === 'failed' ? 'error' : 'response-status'; }
   } else {
     if (stale) $('interaction-stale').textContent = '질문 내용이나 대상 상태가 변경되었습니다. 입력은 유지되며 최신 질문을 다시 열어 확인해야 제출할 수 있습니다.';
     if (processed) {
       $('interaction-stale').textContent = '';
-      $('interaction-error').textContent = responseMessage(response, remainingQuestions());
+      $('interaction-error').textContent = responseMessage(response, remainingCount());
       $('interaction-error').className = response?.resume?.state === 'failed' ? 'error' : 'response-status';
     }
     $('interaction-next').hidden = !processed || !remainingQuestions().length;
-    $('interaction-next').textContent = `다음 질문 열기 · ${remainingQuestions().length}개 남음`;
+    $('interaction-next').textContent = `다음 질문 열기 · ${remainingCount()}개 남음`;
     $('interaction-submit').disabled = stale || processed || !opened.respondSupported || opened.handler === 'code-agent' && opened.state === 'deferred' || opened.handler === 'verification' && !verificationReviewed();
     $('interaction-defer').disabled = stale || processed;
     if (processed) document.querySelectorAll('#interaction-options input, #interaction-custom, #interaction-remote-questions input, #interaction-remote-questions textarea, #interaction-verification input, #interaction-verification select, #interaction-verification textarea, #interaction-verification button').forEach(e => { e.disabled = true; });
   }
 }
 export function renderInteractions(latest, send, reload, extra = {}) {
-  data = latest; post = send; refresh = reload; actions = extra;
+  data = latest; data.interactions = pageData; post = send; refresh = reload; actions = extra;
   if (!$('interaction-items')) init();
   selectItems('interaction-project', data.projects);
   selectItems('interaction-group', data.groups);
-  selectItems('interaction-stage', [...new Set((data.interactions?.items ?? []).map(i => i.stage))].sort().map(id => ({ id })));
-  const sources = data.interactions?.sources ?? [];
-  $('interaction-capabilities').textContent = sources.length ? sources.map(s => `${data.projects.find(p => p.id === s.id)?.name ?? s.id}: ${s.error ? `요청 조회 실패 (${s.error}) · 마지막 관측 유지` : `code-agent ${s.version ?? '?'} · ${s.responseSupported ? '요청 API 연결됨 (사람 채널 권한은 요청별 확인)' : s.reason ?? '프로젝트 연결 상태 확인 필요'}`}`).join(' / ') : 'code-agent 전체 단계 요청 API와 사람 응답 연동을 확인하기 전에는 외부 질문을 제출할 수 없습니다.';
-  renderList(); checkOpen();
+  return loadPage();
 }

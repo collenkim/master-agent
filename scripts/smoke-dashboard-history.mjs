@@ -7,8 +7,9 @@ import { recordObservation, createHistory } from '../packages/dashboard/history.
 import { startDashboard } from '../packages/dashboard/server.mjs';
 import { openBrowser } from './browser.mjs';
 
-mkdirSync(resolve('.master-agent'), { recursive: true });
-const artifacts = mkdtempSync(resolve('.master-agent/stage-history-browser-')), cleanup = [];
+const artifactRoot = resolve(process.env.MASTER_AGENT_SMOKE_ROOT ?? '.master-agent');
+mkdirSync(artifactRoot, { recursive: true });
+const artifacts = mkdtempSync(join(artifactRoot, 'stage-history-browser-')), cleanup = [];
 const f = setup({ after(fn) { cleanup.push(fn); } });
 const project = f.fixture.projects[0];
 const unsafe = '<img src=x onerror="window.injected=true">';
@@ -30,6 +31,10 @@ try {
   const { send, evaluate, waitFor, errors } = browser;
   const click = selector => evaluate(`document.querySelector(${JSON.stringify(selector)}).click()`);
   const submitTask = task => evaluate(`document.getElementById('history-task').value=${JSON.stringify(task)}; document.getElementById('history-filter').requestSubmit()`);
+  await waitFor('document.getElementById("connection").textContent.includes("연결됨")');
+  assert.equal(await evaluate('document.getElementById("history-archive").open'), false);
+  assert.equal(await evaluate('document.querySelectorAll(".history-entry").length'), 0);
+  await click('#history-archive > summary');
   await waitFor('document.querySelectorAll(".history-entry").length === 50');
   assert.ok((await evaluate('document.getElementById("projects").textContent')).includes('implement / test / module-a'));
   await click(`#projects details[data-id="${project.id}"] summary`);
@@ -42,6 +47,9 @@ try {
   await click('#refresh');
   await waitFor('!document.getElementById("refresh").disabled');
   assert.equal(await evaluate('document.querySelectorAll(".history-entry").length'), 4);
+  await click('#history-archive > summary');
+  await click('#history-archive > summary');
+  await waitFor('document.querySelectorAll(".history-entry").length === 4');
   await click('#history-latest');
   await waitFor('document.querySelectorAll(".history-entry").length === 50');
   await submitTask('OTHER-TASK');
@@ -65,9 +73,12 @@ try {
     writeFileSync(join(artifacts, `timeline-${width}.png`), Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
   }
   await send('Page.reload');
+  await waitFor('document.getElementById("connection").textContent.includes("연결됨")');
+  assert.equal(await evaluate('document.getElementById("history-archive").open'), false);
+  await click('#history-archive > summary');
   await waitFor('document.querySelectorAll(".history-entry").length === 50');
   assert.deepEqual(errors, []);
-  const result = { passed: true, artifacts, checks: ['stage-task-verification', 'event-transition', 'pagination', 'older-page-preserved', 'project-group-task-filters', 'reload', '1440-390-320', 'XSS'] };
+  const result = { passed: true, artifacts, checks: ['stage-task-verification', 'event-transition', 'pagination', 'older-page-preserved', 'archive-collapsed', 'archive-reopen', 'project-group-task-filters', 'reload', '1440-390-320', 'XSS'] };
   writeFileSync(join(artifacts, 'result.json'), JSON.stringify(result, null, 2));
   console.log(JSON.stringify(result));
 } finally {

@@ -20,21 +20,23 @@ mission = f.engine.plan(mission.id, { schemaVersion: 1, summary: '검증 계약 
 f.store.put('target-request', { id: mission.id, state: 'waiting', targetType: 'project', targetId: 'one', taskNumber: 'BROWSER-1',
   goal: mission.goal, blockers: ['edit-one:missing-verification-recipe'], provider: 'fixture',
   projectIds: ['one'], templatesRegistered: true, templates: [], createdAt: new Date().toISOString() });
-mkdirSync(resolve('.master-agent'), { recursive: true });
-const artifacts = mkdtempSync(resolve('.master-agent/verification-browser-'));
+const artifactRoot = resolve(process.env.MASTER_AGENT_SMOKE_ROOT ?? '.master-agent');
+mkdirSync(artifactRoot, { recursive: true });
+const artifacts = mkdtempSync(join(artifactRoot, 'verification-browser-'));
 let launches = 0, browser;
 const dashboard = await startDashboard({ dbPath: join(f.root, 'state.db'), port: 0, observe: false,
   launch: async (store, id) => { launches++; return store.need('target-request', id); } });
 try {
   const response = await fetch(`${dashboard.url}/api/overview`), overview = await response.json();
   assert.equal(response.status, 200, JSON.stringify(overview));
-  assert.equal(overview.interactions.items.filter(i => i.handler === 'verification').length, 1);
+  const inbox = await (await fetch(`${dashboard.url}/api/interactions`)).json();
+  assert.equal(inbox.items.filter(i => i.handler === 'verification').length, 1);
   browser = await openBrowser(dashboard.url, artifacts);
   const { evaluate, waitFor, send, errors } = browser;
   await waitFor(`document.querySelector('[data-interaction]')`);
   await evaluate(`document.querySelector('[data-interaction]').click()`);
   assert.equal(await evaluate(`document.querySelectorAll('[data-verification-task]').length`), 2);
-  const recommendations = overview.interactions.items.find(i => i.handler === 'verification').verificationSetup.tasks.map(t => t.presets.find(p => p.recommended));
+  const recommendations = inbox.items.find(i => i.handler === 'verification').verificationSetup.tasks.map(t => t.presets.find(p => p.recommended));
   assert.equal(await evaluate(`document.querySelectorAll('[data-verification-recommendation]').length`), 2);
   assert.ok((await evaluate(`document.querySelector('[data-verification-recommendation]').textContent`)).includes('Gradle test'));
   assert.equal(await evaluate(`document.getElementById('interaction-recommendation').hidden`), true);

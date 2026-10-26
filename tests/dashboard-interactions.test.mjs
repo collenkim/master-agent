@@ -202,7 +202,8 @@ test('independent legacy requests/approval are visible across stages but human-o
 test('HTTP answer requires same-origin token and changed payload cannot reuse a command', async t => {
   const f = await pending(t), dashboard = await startDashboard({ dbPath: f.db, port: 0, observe: false });
   try {
-    const data = await (await fetch(dashboard.url + '/api/overview')).json(), item = data.interactions.items[0], body = input(item);
+    const data = await (await fetch(dashboard.url + '/api/overview')).json();
+    const inbox = await (await fetch(dashboard.url + '/api/interactions')).json(), item = inbox.items[0], body = input(item);
     const send = (payload, token = data.token) => fetch(dashboard.url + '/api/interactions/respond', { method: 'POST',
       headers: { Origin: dashboard.url, 'Content-Type': 'application/json', 'X-Master-Token': token }, body: JSON.stringify(payload) });
     assert.equal((await send(body, 'wrong')).status, 403);
@@ -232,14 +233,91 @@ test('recovery answer reuses the original attempt/session and rechecks actual fa
     } }, workflow: { async run() { return { blockers: [] }; } } }) });
   const held = f.store.list('recovery-run').find(r => r.state === 'held');
   f.store.put('recovery-run', { ...held, proposal: { ...held.proposal, action: 'replan' } }, held.revision);
+  inbox.observeMaster();
   const replan = inbox.snapshot().items.find(i => i.handler === 'recovery');
   assert.equal(replan.respondSupported, false);
   await assert.rejects(inbox.respond(input(replan)), { code: 'interaction-unsupported' });
   f.store.put('recovery-run', held, held.revision + 1);
+  inbox.observeMaster();
   const item = inbox.snapshot().items.find(i => i.handler === 'recovery'); assert.ok(item);
   const body = input(item, { resume: true }); await inbox.respond(body); await inbox.respond(body);
   const m = f.store.need('mission', f.mission.id);
   assert.equal(executions, 1); assert.equal(m.attempts.length, 1); assert.equal(m.attempts[0].id, attempt.id);
   assert.equal(m.recoveryAnswers[0].state, 'reviewed');
   assert.equal((await f.verify(attempt)).attempts[0].state, 'verified');
+});
+
+
+
+test('M6: 요청함 snapshot은 쓰지 않고 관측 갱신 뒤에만 master revision을 반영한다', async t => {
+  const f = await pending(t), inbox = createInteractions(f.store), before = inbox.snapshot().items[0];
+  const m = f.store.need('mission', f.mission.id);
+  f.store.put('mission', { ...m, reason: '외부 실행기 변경' }, m.revision);
+  let transactions = 0; const transaction = f.store.transaction;
+  t.mock.method(f.store, 'transaction', function (...args) { transactions++; return transaction.apply(this, args); });
+  const current = inbox.snapshot({ box: 'waiting', page: 1, pageSize: 10 }).items[0];
+  assert.equal(transactions, 0); assert.equal(current.revision, before.revision);
+  inbox.observeMaster();
+  assert.equal(transactions, 1);
+  assert.ok(inbox.snapshot().items[0].revision > before.revision);
+});
+
+test('M6: HTTP 요청함은 상자·필터·페이지를 서버에서 적용하고 GET은 revision을 바꾸지 않는다', async t => {
+  const f = await pending(t), project = f.fixture.projects[0];
+  const records = Array.from({ length: 120 }, (_, i) => ({ schemaVersion: 1, source: 'code-agent', sourceInstanceId: 'paged',
+    requestId: 'page-' + i, revision: 1, contentHash: 'hash-' + i, context: { workId: null }, questions: [],
+    title: '원격 페이지 ' + i, stage: i % 2 ? 'planning' : 'review', kind: 'question',
+    status: i < 60 ? 'pending' : 'applied', canRespond: false, createdAt: new Date().toISOString() }));
+  const inbox = createInteractions(f.store, { readRemote: async () => ({ capability: { sourceInstanceId: 'paged' }, records }) });
+  await inbox.refreshProject(project);
+  const dashboard = await startDashboard({ dbPath: f.db, port: 0, observe: false });
+  try {
+    await dashboard.monitor.refresh();
+    const saved = () => f.store.db.prepare('SELECT kind,id,revision FROM records ORDER BY kind,id').all();
+    const before = saved(), events = f.store.db.prepare('SELECT count(*) AS n FROM events').get().n;
+    const get = async query => (await fetch(dashboard.url + '/api/interactions?source=code-agent&' + query)).json();
+    const first = await get('box=waiting&page=1&pageSize=10'), second = await get('box=waiting&page=2&pageSize=10');
+    assert.equal(first.total, 60); assert.equal(second.page, 2);
+    assert.equal(first.items.length, 10); assert.equal(second.items.length, 10);
+    assert.equal(new Set([...first.items, ...second.items].map(i => i.id)).size, 20);
+    const archived = await get('box=archive&page=999&pageSize=10');
+    assert.equal(archived.total, 60); assert.equal(archived.page, 6);
+    assert.ok(archived.items.every(i => i.state === 'answered'));
+    assert.equal((await get('box=waiting&stage=review')).total, 30);
+    assert.equal((await get('box=waiting&projectId=not-a-project')).total, 0);
+    assert.equal((await get('box=archive&search=' + encodeURIComponent('원격 페이지 119'))).total, 1);
+    assert.equal((await fetch(dashboard.url + '/api/interactions?pageSize=101')).status, 400);
+    const overview = await (await fetch(dashboard.url + '/api/overview')).json();
+    assert.equal(overview.interactions, undefined);
+    assert.deepEqual(saved(), before);
+    assert.equal(f.store.db.prepare('SELECT count(*) AS n FROM events').get().n, events);
+  } finally { await dashboard.close(); }
+});
+
+test('M6: 관측 전에 질문 원본만 변경돼도 오래된 답변은 기록하지 않는다', async t => {
+  const f = await pending(t), inbox = createInteractions(f.store), item = inbox.snapshot().items[0];
+  const before = f.store.need('mission', f.mission.id), run = f.store.need('analysis-run', item.runId);
+  f.store.put('analysis-run', { ...run, result: { ...run.result, issues: run.result.issues.map(i => ({ ...i, question: '변경된 질문' })) } }, run.revision);
+  assert.equal(f.store.need('mission', f.mission.id).revision, before.revision);
+  await assert.rejects(inbox.respond(input(item)), { code: 'stale-question' });
+  assert.equal(f.store.list('interaction-command').length, 0);
+  assert.equal(f.store.need('mission', f.mission.id).clarifications, undefined);
+});
+
+test('M6: 질문 응답에는 원격 challenge·humanChannel과 기타 내부 필드를 노출하지 않는다', async t => {
+  const f = await pending(t), project = f.fixture.projects[0];
+  const record = { schemaVersion: 1, source: 'code-agent', sourceInstanceId: 'projection', requestId: 'projected',
+    revision: 1, contentHash: 'hash', context: { workId: null }, questions: [], title: '표시할 질문', stage: 'planning',
+    kind: 'question', status: 'pending', canRespond: false, challenge: 'private-challenge',
+    humanChannel: { channelId: 'private-channel' }, privateExtension: 'private-extension',
+    application: { state: 'pending', privateExtension: 'private-application' },
+    continuation: { state: 'not-requested', privateExtension: 'private-continuation' } };
+  const inbox = createInteractions(f.store, { readRemote: async () => ({
+    capability: { sourceInstanceId: 'projection', humanChannel: 'private-capability' }, records: [record] }) });
+  await inbox.refreshProject(project);
+  const result = inbox.snapshot({ box: 'waiting', source: 'code-agent', page: 1, pageSize: 10 });
+  assert.equal(result.items[0].title, '표시할 질문'); assert.equal(result.items[0].remote.status, 'pending');
+  assert.ok(!JSON.stringify(result).includes('private-'));
+  assert.ok(!/"(?:challenge|humanChannel)"/.test(JSON.stringify(result)));
+  assert.equal(f.store.need('interaction', result.items[0].id).remote.challenge, record.challenge);
 });

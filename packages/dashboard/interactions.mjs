@@ -8,6 +8,7 @@ import { controlProbe } from '../code-agent-adapter/pairing.mjs';
 import { recordInteraction } from './history.mjs';
 import { preparationIssues } from '../orchestrator/preparation.mjs';
 import { verificationSetup, configureVerification } from './verification.mjs';
+import { interactionPage } from './interaction-view.mjs';
 
 const remoteUnavailable = '현재 code-agent 연동에는 전체 단계 요청 및 인증된 사람 응답 계약이 없습니다. 원래 code-agent 콘솔에서 처리하세요.';
 const values = v => Array.isArray(v) ? v : [];
@@ -116,7 +117,8 @@ export function createInteractions(store, { cliPath, readRemote, resolveHumanKey
       if (['succeeded', 'cancelled'].includes(m.state)) continue;
       const common = { source: 'master', sourceInstanceId: m.id, missionId: m.id, projectIds: m.scope.projectIds,
         groupIds: m.scope.groups.map(g => g.id), taskNumber: m.taskNumber ?? null, workId: null,
-        context: { missionRevision: m.revision, scope: m.scope }, kind: 'question', allowCustom: true, multiple: false,
+        context: { missionRevision: m.revision, scope: m.scope,
+          sourceVersions: [{ kind: 'target-request', id: m.id, revision: store.get('target-request', m.id)?.revision ?? 0 }] }, kind: 'question', allowCustom: true, multiple: false,
         respondSupported: true, unavailableReason: null };
       const request = store.get('target-request', m.id), setup = verificationSetup(store, m);
       const issues = request ? preparationIssues(request).filter(i => !setup || i.code !== 'missing-verification-recipe') : [];
@@ -148,6 +150,7 @@ export function createInteractions(store, { cliPath, readRemote, resolveHumanKey
           producerState: 'open', originAt: request.updatedAt });
       }
       const run = m.analysisRunId ? store.get('analysis-run', m.analysisRunId) : null;
+      if (run) common.context.sourceVersions.push({ kind: 'analysis-run', id: run.id, revision: run.revision });
       if (run && m.planningHold && ['blocked', 'waiting-decision'].includes(m.state) && ['invalid', 'error', 'stale', 'interrupted'].includes(run.status)) {
         const id = key('master', m.id, `${run.id}:analysis-error`); active.add(id);
         save({ ...common, id, requestId: `${run.id}:analysis-error`, runId: run.id, handler: 'analysis-error', taskId: null, stage: 'planning',
@@ -178,7 +181,8 @@ export function createInteractions(store, { cliPath, readRemote, resolveHumanKey
         active.add(id);
         save({ ...common, id, requestId: recovery.id, runId: recovery.id, handler: 'recovery', taskId: a.taskId,
           projectIds: [a.projectId], workId: a.codeAgentWorkId, stage: 'recovery',
-          context: { ...common.context, attemptId: a.id, verificationRunId: a.verificationRunId, sessionId: a.turns.at(-1)?.result?.sessionId ?? null },
+          context: { ...common.context, sourceVersions: [...common.context.sourceVersions, { kind: 'recovery-run', id: recovery.id, revision: recovery.revision }],
+            attemptId: a.id, verificationRunId: a.verificationRunId, sessionId: a.turns.at(-1)?.result?.sessionId ?? null },
           title: proposal.question || proposal.summary, body: proposal.question || proposal.summary,
           reason: proposal.cause, references: proposal.references, options: choices,
           respondSupported: ['needs-context', 'needs-human'].includes(proposal.action),
@@ -193,6 +197,7 @@ export function createInteractions(store, { cliPath, readRemote, resolveHumanKey
           i.projectIds.includes(escalation.projectId) && ['open', 'deferred', 'received'].includes(i.producerState) &&
           (i.remote?.origin?.id === escalation.target || i.questions?.some(q => q.questionId === escalation.target)));
         save({ ...common, id, requestId: escalation.id, handler: 'escalation', taskId: escalation.taskId,
+          context: { ...common.context, sourceVersions: [...common.context.sourceVersions, { kind: 'escalation', id: escalation.id, revision: escalation.revision }] },
           projectIds: [escalation.projectId], workId: a?.codeAgentWorkId ?? null, stage: 'decision',
           kind: escalation.kind === 'consent' ? 'approval' : 'question', title: `사람 판단 필요: ${escalation.target}`,
           body: escalation.reason, reason: escalation.judgment?.reason ?? escalation.reason, references: escalation.judgment?.evidence ?? [],
@@ -207,7 +212,7 @@ export function createInteractions(store, { cliPath, readRemote, resolveHumanKey
       save({ ...old, producerState: store.list('interaction-command').some(c => c.interactionId === item.id && c.action === 'answer') ? 'answered' : 'expired' });
     }
   }
-  async function refreshProject(project) {
+  async function readProject(project) {
     let remote, error;
     try { remote = await readRemote(store, project, cliPath); } catch (e) { error = e.code ?? 'interaction-unavailable'; }
     store.transaction(() => {
@@ -265,32 +270,11 @@ export function createInteractions(store, { cliPath, readRemote, resolveHumanKey
       }
     });
   }
-  function snapshot() {
-    store.transaction(syncMaster);
-    const projects = new Set(store.list('project').filter(p => !p.deletedAt).map(p => p.id));
-    const commands = store.list('interaction-command');
-    return { sources: store.list('interaction-source').filter(s => projects.has(s.id)),
-      items: store.list('interaction').filter(i => i.projectIds.some(id => projects.has(id))).map(item => {
-        const history = commands.filter(c => c.interactionId === item.id).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-        const last = history.at(-1);
-        return { ...item, state: item.producerState === 'open' && last?.action === 'defer' && last.contentHash === item.contentHash ? 'deferred' : item.producerState,
-          history: history.map(({ id, action, state, answer, createdAt, appliedAt, resume, error, errorMessage }) => {
-            const requestId = resume?.requestId ?? item.missionId;
-            const request = requestId ? store.get('target-request', requestId) : null;
-            const m = item.missionId ? store.get('mission', item.missionId) : null;
-            const recoveryAnswer = m?.recoveryAnswers?.find(a => a.commandId === id);
-            const pendingAnswers = item.handler === 'analysis' && m?.analysisRunId === item.runId &&
-              store.get('analysis-run', item.runId)?.result?.issues.some(i => !values(m.clarifications).some(a => a.analysisId === item.runId && a.issueId === i.id));
-            const observedResume = ['requested', 'waiting-answers'].includes(resume?.state) && request ? { ...resume,
-              state: ['failed', 'completed', 'cancelled'].includes(request.state) ? request.state :
-                resume.state === 'waiting-answers' && pendingAnswers ? 'waiting-answers' :
-                request.state === 'waiting' ? 'blocked' : recoveryAnswer?.state === 'reviewed' || item.handler === 'analysis' && m?.analysisRunId !== item.runId ? 'resumed' : 'requested',
-              reason: request.state === 'waiting' && !pendingAnswers ? request.preparation?.issues?.map(i => i.message).join('\n') || m?.reason : pendingAnswers ? resume.reason : null,
-              workerState: requestStatus(request).state, error: request.error?.code ?? null } : resume;
-            return { id, action, state, answer, createdAt, appliedAt, resume: observedResume, error, errorMessage };
-          }) };
-      }) };
+  function observeMaster() { return store.transaction(syncMaster); }
+  async function refreshProject(project) {
+    try { return await readProject(project); } finally { observeMaster(); }
   }
+  function snapshot(query) { return interactionPage(store, query); }
   async function respond(input) {
     string(input.commandId, 'commandId');
     string(input.id, 'id'); string(input.contentHash, 'contentHash');
@@ -311,8 +295,10 @@ export function createInteractions(store, { cliPath, readRemote, resolveHumanKey
         requireThat(previous.inputHash === inputHash, 'request-conflict', '같은 commandId에 다른 답변을 보낼 수 없습니다.');
         return previous;
       }
-      syncMaster();
       const item = store.need('interaction', input.id);
+      if (item.source === 'master') requireThat(store.need('mission', item.missionId).revision === item.context.missionRevision &&
+        (item.context.sourceVersions ?? []).every(source => (store.get(source.kind, source.id)?.revision ?? 0) === source.revision),
+        'stale-question', '목표 상태가 변경되었습니다. 최신 관측을 확인하세요.');
       requireThat(item.revision === input.revision && item.contentHash === input.contentHash && hash(item.context) === hash(input.context), 'stale-question', '질문 또는 대상 문맥이 변경됐습니다. 최신 질문을 다시 열어 확인하세요.');
       requireThat(item.producerState === 'open', 'stale-question', '이미 처리되거나 만료된 질문입니다.');
       for (const id of item.projectIds) {
@@ -471,7 +457,8 @@ export function createInteractions(store, { cliPath, readRemote, resolveHumanKey
     return transmit(commandId);
   }
   const tracked = action => (...args) => {
-    const task = action(...args).finally(() => active.delete(task)); active.add(task); return task;
+    const task = action(...args).finally(() => { active.delete(task); observeMaster(); }); active.add(task); return task;
   };
-  return { snapshot, respond: tracked(respond), refreshProject, retry: tracked(retry), async stop() { await Promise.allSettled([...active, ...sending.values()]); } };
+  observeMaster();
+  return { snapshot, observeMaster, respond: tracked(respond), refreshProject, retry: tracked(retry), async stop() { await Promise.allSettled([...active, ...sending.values()]); } };
 }

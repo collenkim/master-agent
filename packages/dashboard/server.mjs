@@ -39,8 +39,10 @@ export async function startDashboard({ dbPath, port = 4310, cliPath, intervalMs 
   const pairing = { cliPath: pairingOptions.cliPath ?? cliPath, ...(pairingOptions.resolveKey ? { resolveKey: pairingOptions.resolveKey } : {}) };
   const pairingCli = () => { requireThat(pairing.cliPath, 'code-agent-unavailable', '설치된 code-agent를 찾아야 제어 연결을 할 수 있습니다.'); return pairing; };
   const monitor = createMonitor(store, { cliPath, intervalMs, trustKey: pairingOptions.resolveKey, onObserved: async project => {
-    await history.refreshProject(project);
-    await interactions.refreshProject(project);
+    if (cliPath) {
+      await history.refreshProject(project);
+      await interactions.refreshProject(project);
+    } else interactions.observeMaster();
   } });
   const updates = createUpdates(store, { cliPath: updateCliPath ?? cliPath,
     ...updateOptions });
@@ -129,7 +131,13 @@ export async function startDashboard({ dbPath, port = 4310, cliPath, intervalMs 
         return send(200, JSON.stringify(historyPage(store, { projectId: query.get('projectId') ?? '', groupId: query.get('groupId') ?? '',
           task: query.get('task') ?? '', before: query.get('before') ?? '', limit: Number(query.get('limit') ?? 50) })));
       }
-      if (path === '/api/overview') return send(200, JSON.stringify({ ...monitor.snapshot(), interactions: interactions.snapshot(), updates: updates.snapshot(), token, codeAgent: cliPath,
+      if (path === '/api/interactions') {
+        const query = new URL(request.url, origin).searchParams;
+        return send(200, JSON.stringify(interactions.snapshot({ box: query.get('box') ?? 'waiting', page: Number(query.get('page') ?? 1),
+          pageSize: Number(query.get('pageSize') ?? 25), source: query.get('source') ?? '', state: query.get('state') ?? '',
+          groupId: query.get('groupId') ?? '', projectId: query.get('projectId') ?? '', stage: query.get('stage') ?? '', search: query.get('search') ?? '', itemId: query.get('itemId') ?? '' })));
+      }
+      if (path === '/api/overview') return send(200, JSON.stringify({ ...monitor.snapshot(), updates: updates.snapshot(), token, codeAgent: cliPath,
         discovery: cliPath ? 'installed' : observe ? 'not-found' : 'saved' }));
       const asset = assets.get(path);
       if (asset) return send(200, asset.body, asset.type);

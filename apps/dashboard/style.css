@@ -57,3 +57,13 @@ dialog{width:min(650px,94vw);max-height:90vh;overflow:auto;background:#171f2c;co
 .host-choice { display: grid; gap: 12px; }
 .host-choice label[hidden] { display: none; }
 .host-projects p { margin: 4px 0; overflow-wrap: anywhere; }
+.inbox-views { margin: 0 0 16px; }
+.inbox-views button[aria-pressed="true"] { border-color: #7be2bf; color: #9bedca; background: #143b34; }
+.inbox-connection { margin-bottom: 12px; }
+.card-actions[hidden] { display: none; }
+.archive-items { grid-template-columns: 1fr; gap: 8px; }
+.archive-items .project { padding: 14px 18px; }
+.archive-items .project p { margin: 7px 0; }
+.history-archive { margin-top: 28px; padding: 16px 20px; border: 1px solid #43516a; border-radius: 8px; background: #121a26; }
+.history-archive > summary { font-size: 16px; }
+.history-archive > summary span { display: block; margin-top: 6px; font-size: 12px; }

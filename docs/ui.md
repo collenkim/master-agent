@@ -89,6 +89,10 @@ PC 신뢰 기록이 없으면 `PC 신뢰` 버튼에서 code-agent의 문구를 �
 | 단계별 타임라인 | 프로젝트·그룹·TASK/작업/실행 ID 필터, 상태 변화·code-agent 이벤트·요청함 발행 상태 변화, 이전 이력 조회 |
 | 목표별 진행 | 작업별 실행·승인 처리·사람 응답·장애 상태, 최근 12개 이벤트; 모의 실행 별도 표시 |
 
+공통 요청함은 **대기함**과 **보관함**으로 나눈다. 응답 대기·보류·접수 후 적용 대기는 대기함에서 오래 기다린 순으로, 답변 적용·대기 종료·만료·실패·취소는 보관함에서 최근 변경 순으로 25건씩 조회한다. 프로젝트·그룹·TASK 검색과 상태 필터로 범위를 좁히고 `내용·처리 이력 보기`에서 원문과 응답 결과를 확인한다. 보관함 표시는 기록 삭제나 작업 완료 처리가 아니며, 실패·만료의 원래 상태를 유지한다. master 요청의 대기·오류는 독립 code-agent 작업의 현재 상태와 별도로 표시한다.
+
+**보관함 · 단계별 이력**은 기본으로 접혀 있으며, 열면 타임라인을 조회한다. 접은 동안에도 서버의 이력 수집은 계속된다. 다시 열 때 검색 조건과 과거 페이지를 유지한다. 이 화면 정리는 원본 기록·현재 실행·승인·잠금을 변경하지 않는다.
+
 목표가 없는 독립 code-agent 작업도 등록 프로젝트라면 조회한다. 상태는 `status --json`, 연결된 프로젝트의 이벤트는 `master call events`, 질문·승인은 공통 요청함 API로 읽으며 모든 브라우저가 수집 결과를 공유한다. 최대 4개 프로젝트씩 조회하고 읽기 호출당 5초로 제한하며, 전체 조회 완료 후 다음 조회를 예약한다. 마지막 상태 관측이 30초 또는 조회 간격의 3배 중 큰 값을 넘으면 오래된 상태로 표시한다. 조회 실패 뒤 보존한 이전 작업도 구별한다. 상태 조회만으로 OS 프로세스 생존이나 제어권의 현재 유효성을 확정하지 않는다.
 
 ### 단계별 이력 수집과 조회
@@ -125,7 +129,8 @@ PC 신뢰 기록이 없으면 `PC 신뢰` 버튼에서 code-agent의 문구를 �
 
 | 경로 | 역할 |
 | --- | --- |
-| `GET /api/overview` | 프로젝트·그룹·요청·목표·업데이트·공통 요청함과 현재 화면의 요청 토큰 |
+| `GET /api/overview` | 프로젝트·그룹·요청·목표·업데이트와 현재 화면의 요청 토큰 |
+| `GET /api/interactions` | `box=waiting\|archive\|all`(기본 waiting), `page`(1부터), `pageSize`(기본 25, 최대 100), `source`, `state`, `projectId`, `groupId`, `stage`, `search` 필터. 서버에서 자른 `items`, `total`, `page`, `pageSize`, 상자별 `counts` 반환 |
 | `GET /api/history` | `projectId`, `groupId`, `task` 필터, `before` 수집 순번 커서, `limit` 1~100(기본 50). `items`, `nextBefore`, 프로젝트별 이벤트 수집 상태를 반환 |
 | `POST /api/interactions/respond` | 요청 ID·revision·contentHash·context·commandId와 명시적 답변/보류/재열기/승인. 상세는 아래 공통 요청함 계약 |
 | `POST /api/interactions/retry` | `{commandId}`로 미확인 전송을 같은 영속 envelope로 재전송하거나 중단된 master 재개를 대조. 임의 명령·경로·서명 키 입력은 받지 않음 |
@@ -150,6 +155,8 @@ PC 신뢰 기록이 없으면 `PC 신뢰` 버튼에서 code-agent의 문구를 �
 서버는 loopback에만 바인딩하고 Host·Origin을 검사한다. 후보 조회를 포함한 POST는 정확한 Origin·화면 토큰·JSON 형식·256KiB 한도를 대조한다. code-agent 제어 토큰과 원본 모델 입력은 노출하지 않는다. 프로젝트 잠금·검증 계약·grant·승인 규칙은 기존 실행 경로와 같다.
 
 CLI 전용 `POST /api/dashboard-control`은 별도 제어 토큰과 서버 ID로 status·stop을 처리한다. 화면 토큰으로는 호출할 수 없다. restart는 이 종료 경로를 확인한 뒤 새 CLI 프로세스가 서버를 시작하는 동작이다.
+
+`GET /api/interactions`는 저장된 관측을 읽기만 한다. master 요청 동기화는 서버 시작·관측 변경·응답 제출 뒤에 수행한다. `itemId`를 함께 보내면 열린 항목의 `openedItem`과 같은 분석의 다음 질문 `nextItem`·`remainingCount`를 반환해 페이지 밖으로 이동한 답변 이력을 유지한다. 원격 요청의 화면 필드만 투영하며 `challenge`·`humanChannel`·서명 envelope는 보내지 않는다.
 
 ## 공통 요청함
 

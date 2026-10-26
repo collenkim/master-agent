@@ -95,17 +95,19 @@ export function dashboardSnapshot(store, { live = false, refreshing = false, int
 /** One bounded sweep, shared by every browser; failures are isolated per project. */
 export function createMonitor(store, { cliPath, intervalMs = 5000, timeoutMs = 5000, observe = observeProject, onObserved, trustKey } = {}) {
   const errors = new Map();
-  let pending = null, timer = null, stopped = false;
+  let pending = null, timer = null, stopped = false, observedVersion, observedChanges;
   function refresh() {
     if (pending) return pending;
-    if (stopped || !cliPath) return Promise.resolve();
-    const queue = new Catalog(store).projects();
+    if (stopped || !cliPath && !onObserved) return Promise.resolve();
+    const version = store.db.prepare('PRAGMA data_version').get().data_version;
+    const changes = store.db.prepare('SELECT total_changes() AS n').get().n;
+    const queue = cliPath || version !== observedVersion || changes !== observedChanges ? new Catalog(store).projects() : [];
     pending = (async () => {
       await Promise.all(Array.from({ length: Math.min(4, queue.length) }, async () => {
         while (queue.length && !stopped) {
           const project = queue.shift();
           if (store.need('project', project.id).deletedAt) { errors.delete(project.id); continue; }
-          try { await observe(store, project.id, { cliPath, timeoutMs }); errors.delete(project.id); }
+          try { if (cliPath) await observe(store, project.id, { cliPath, timeoutMs }); errors.delete(project.id); }
           catch (error) { errors.set(project.id, { message: error.message, at: new Date().toISOString() }); }
           if (onObserved && !store.need('project', project.id).deletedAt) {
             try { await onObserved(project); }
@@ -113,7 +115,7 @@ export function createMonitor(store, { cliPath, intervalMs = 5000, timeoutMs = 5
           }
         }
       }));
-    })().finally(() => { pending = null; });
+    })().finally(() => { observedVersion = version; observedChanges = changes; pending = null; });
     return pending;
   }
   async function sweep() {
@@ -122,7 +124,7 @@ export function createMonitor(store, { cliPath, intervalMs = 5000, timeoutMs = 5
   }
   return {
     refresh,
-    start() { if (cliPath && !timer && !pending && !stopped) void sweep(); },
+    start() { if ((cliPath || onObserved) && !timer && !pending && !stopped) void sweep(); },
     snapshot() { return dashboardSnapshot(store, { live: Boolean(cliPath), refreshing: Boolean(pending), intervalMs, errors, ...(trustKey ? { trustKey } : {}) }); },
     async stop() { stopped = true; clearTimeout(timer); await pending; },
   };

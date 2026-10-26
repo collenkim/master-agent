@@ -117,6 +117,7 @@ test('legacy failed requests enter the inbox; defer/recheck/stale/replay preserv
   await assert.rejects(inbox.respond({ ...body, commandId: randomUUID() }), { code: 'stale-question' });
   const updated = f.store.need('target-request', request.id);
   f.store.put('target-request', { ...updated, state: 'waiting', preparation: { state: 'waiting', issues: [{ projectId: request.targetId, code: 'control-not-bound', message: '연결 필요', guidance: '연결 후 재검사' }] } }, updated.revision);
+  inbox.observeMaster();
   const reopened = inbox.snapshot().items.find(i => i.handler === 'preparation' && i.state === 'open');
   assert.ok(reopened); assert.notEqual(reopened.id, item.id);
 });

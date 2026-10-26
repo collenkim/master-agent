@@ -81,10 +81,14 @@ export function renderHistory(snapshot) {
   }
   if (!initialized) {
     initialized = true;
+    $('history-archive').addEventListener('toggle', () => {
+      if ($('history-archive').open) void load(currentBefore);
+      else { controller?.abort(); generation++; }
+    });
     $('history-filter').addEventListener('submit', event => { event.preventDefault(); void load(); });
     for (const id of ['history-project', 'history-group']) $(id).addEventListener('change', () => { void load(); });
     $('history-older').addEventListener('click', () => { if (nextBefore) void load(nextBefore); });
     $('history-latest').addEventListener('click', () => { void load(); });
   }
-  if (!currentBefore) void load();
+  if (!currentBefore && $('history-archive').open) void load();
 }

@@ -9,8 +9,9 @@ import { createInteractions } from '../packages/dashboard/interactions.mjs';
 import { startDashboard } from '../packages/dashboard/server.mjs';
 import { acceptRequest } from '../packages/orchestrator/requests.mjs';
 
-mkdirSync(resolve('.master-agent'), { recursive: true });
-const artifacts = mkdtempSync(resolve('.master-agent/interactions-browser-')), cleanup = [];
+const artifactRoot = resolve(process.env.MASTER_AGENT_SMOKE_ROOT ?? '.master-agent');
+mkdirSync(artifactRoot, { recursive: true });
+const artifacts = mkdtempSync(join(artifactRoot, 'interactions-browser-')), cleanup = [];
 const f = planningSetup({ after(fn) { cleanup.push(fn); } });
 await f.planner.analyze(f.mission.id, { name: 'fixture', async generate({ context }) {
   const answer = blockedAnswer(context); answer.issues[0].recommendation = answer.issues[0].options[0];
@@ -31,9 +32,11 @@ let browser;
 try {
   browser = await openBrowser(dashboard.url, artifacts);
   const { send, evaluate, waitFor, errors } = browser;
+  const waitList = () => waitFor(`document.getElementById('interaction-items')?.getAttribute('aria-busy') === 'false'`);
   await waitFor('document.querySelectorAll("#interaction-items .project").length === 4');
   assert.equal(await evaluate('Boolean(window.injected || document.querySelector("#interaction-items img"))'), false);
-  await evaluate(`document.getElementById('interaction-source').value='master'; document.getElementById('interaction-source').dispatchEvent(new Event('input')); document.querySelector('[data-interaction]').click();`);
+  await evaluate(`document.getElementById('interaction-source').value='master'; document.getElementById('interaction-source').dispatchEvent(new Event('input'));`);
+  await waitList(); await evaluate(`document.querySelector('[data-interaction]').click()`);
   assert.equal(await evaluate('document.querySelectorAll("#interaction-options input:checked").length'), 1, JSON.stringify({ errors, form: await evaluate('document.getElementById("interaction-form").innerHTML') }));
   assert.equal(f.store.list('interaction-command').length, 0);
   await evaluate(`document.getElementById('interaction-custom').value='직접 확인한 정책'; document.getElementById('interaction-custom').dispatchEvent(new Event('input')); document.getElementById('refresh').click();`);
@@ -73,6 +76,7 @@ try {
   await evaluate(`document.getElementById('interaction-custom').value='보존할 입력'; document.getElementById('interaction-custom').dispatchEvent(new Event('input'))`);
   const mission = f.store.need('mission', f.mission.id);
   f.store.put('mission', { ...mission, reason: 'External edit to trigger stale view' }, mission.revision);
+  await dashboard.monitor.refresh();
   await evaluate(`document.getElementById('refresh').click()`);
   await waitFor(`document.getElementById('interaction-stale').textContent.includes('변경')`);
   assert.equal(await evaluate('document.getElementById("interaction-submit").disabled'), true);
@@ -84,12 +88,15 @@ try {
   assert.equal(await evaluate(`document.getElementById('interaction-stale').textContent`), '');
   assert.equal(await evaluate(`document.getElementById('interaction-next').hidden`), true);
   assert.equal(await evaluate(`document.getElementById('interaction-history').textContent.includes('아직 제출한 답변이 없습니다')`), false);
-  await evaluate(`document.getElementById('interaction-close').click(); document.getElementById('interaction-state').value='answered'; document.getElementById('interaction-state').dispatchEvent(new Event('input')); document.querySelector('[data-interaction]').click()`);
+  const answeredId = f.store.list('interaction-command').find(c => c.answer === '직접 확인한 정책').interactionId;
+  await evaluate(`document.getElementById('interaction-close').click(); document.getElementById('interaction-state').value='answered'; document.getElementById('interaction-state').dispatchEvent(new Event('input'))`);
+  await waitList(); await evaluate(`document.querySelector('[data-interaction="${answeredId}"]').click()`);
   assert.equal(await evaluate(`document.getElementById('interaction-stale').textContent`), '');
   assert.ok(['직접 확인한 정책', '보존할 입력'].includes(await evaluate(`document.getElementById('interaction-custom').value`)));
   assert.equal(await evaluate(`document.getElementById('interaction-submit').disabled`), true);
   await evaluate(`document.getElementById('interaction-state').value='pending'; document.getElementById('interaction-state').dispatchEvent(new Event('input'))`);
-  await evaluate(`document.getElementById('interaction-close').click(); document.getElementById('interaction-source').value='code-agent'; document.getElementById('interaction-source').dispatchEvent(new Event('input')); [...document.querySelectorAll('[data-interaction]')].find(b=>b.textContent.includes('승인')).click()`);
+  await evaluate(`document.getElementById('interaction-close').click(); document.getElementById('interaction-source').value='code-agent'; document.getElementById('interaction-source').dispatchEvent(new Event('input'))`);
+  await waitList(); await evaluate(`[...document.querySelectorAll('[data-interaction]')].find(b=>b.textContent.includes('승인')).click()`);
   assert.equal(await evaluate('document.getElementById("approval-reviewed").checked'), false);
   assert.equal(await evaluate('document.getElementById("approval-body").textContent'), '승인 전문: 문서 변경과 로컬 반영');
   assert.equal(await evaluate('document.querySelector("#interaction-approval button:disabled").textContent.includes("미지원")'), true);
@@ -108,6 +115,7 @@ try {
   // An older failed request must become actionable without creating a replacement TASK.
   const preparation = acceptRequest(f.store, { targetType: 'project', targetId: project.id, goal: '새 서비스 준비', taskNumber: 'SETUP-1' }).request;
   f.store.put('target-request', { ...preparation, state: 'failed', error: { code: 'missing-knowledge', message: '먼저 근거를 수집하세요.' } }, preparation.revision);
+  await dashboard.monitor.refresh();
   await evaluate(`document.getElementById('interaction-source').value='master'; document.getElementById('interaction-state').value='pending'; document.getElementById('interaction-search').value='SETUP-1'; document.getElementById('refresh').click()`);
   await waitFor(`document.getElementById('interaction-items').textContent.includes('프로젝트 실행 준비 필요')`);
   assert.ok((await evaluate('document.getElementById("projects").textContent')).includes('먼저 근거를 수집하세요.'));
@@ -124,11 +132,52 @@ try {
   assert.equal(f.store.need('target-request', preparation.id).state, 'queued');
   assert.equal(f.store.need('target-request', preparation.id).taskNumber, 'SETUP-1');
   await evaluate(`document.getElementById('interaction-close').click()`);
+  // Archive browsing must preserve every receipt and active request while keeping large histories bounded.
+  const archivedBase = f.store.list('interaction').find(i => i.source === 'code-agent' && i.kind === 'question');
+  for (let index = 0; index < 55; index++) f.store.put('interaction', { ...archivedBase,
+    id: `archive-${index}`, title: `보관 시험 ${index}`, producerState: 'closed',
+    updatedAt: new Date(Date.now() + index * 1000).toISOString() });
+  const commandCount = f.store.list('interaction-command').length;
+  const activeIds = f.store.list('interaction').filter(i => i.producerState === 'open').map(i => i.id);
+  await evaluate(`document.getElementById('interaction-source').value=''; document.getElementById('interaction-search').value='보관 시험'; document.getElementById('interaction-archive').click(); document.getElementById('refresh').click()`);
+  await waitFor(`document.getElementById('interaction-list-status').textContent.includes('55건')`);
+  const ids = () => evaluate(`[...document.querySelectorAll('#interaction-items [data-interaction]')].map(e => e.dataset.interaction)`);
+  const firstPage = await ids();
+  assert.equal(firstPage.length, 25); assert.equal(firstPage[0], 'archive-54');
+  assert.equal(await evaluate(`document.getElementById('interaction-items').textContent.includes('새 요청')`), false);
+  assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'), true);
+  await evaluate(`document.getElementById('interaction-next-page').click(); document.getElementById('refresh').click()`);
+  await waitFor(`!document.getElementById('refresh').disabled`);
+  const secondPage = await ids();
+  assert.equal(secondPage.length, 25); assert.equal(secondPage[0], 'archive-29');
+  await evaluate(`document.getElementById('interaction-next-page').click()`);
+  await waitList();
+  const lastPage = await ids();
+  assert.equal(lastPage.length, 5); assert.equal(new Set([...firstPage, ...secondPage, ...lastPage]).size, 55);
+  assert.equal(await evaluate(`document.getElementById('interaction-next-page').disabled`), true);
+  await evaluate(`document.getElementById('interaction-search').value='보관 시험 54'; document.getElementById('interaction-search').dispatchEvent(new Event('input'))`);
+  await waitList();
+  assert.deepEqual(await ids(), ['archive-54']);
+  assert.equal(await evaluate(`document.getElementById('interaction-prev').disabled`), true);
+  await evaluate(`document.querySelector('#interaction-items [data-interaction]').click()`);
+  assert.equal(await evaluate(`document.getElementById('interaction-submit').disabled`), true);
+  await evaluate(`document.getElementById('interaction-close').click(); document.getElementById('interaction-search').value=''; document.getElementById('interaction-waiting').click()`);
+  await waitList();
+  assert.equal(await evaluate(`document.getElementById('interaction-state').value`), 'pending');
+  assert.equal((await ids()).some(id => id.startsWith('archive-')), false);
+  const serverPage = await (await fetch(dashboard.url + '/api/interactions?box=archive&page=3&pageSize=25&search=' + encodeURIComponent('보관 시험'))).json();
+  assert.equal(serverPage.items.length, 5); assert.equal(serverPage.total, 55); assert.equal(serverPage.page, 3);
+  const savedRevisions = f.store.list('interaction').map(i => [i.id, i.revision]);
+  const publicPage = await (await fetch(dashboard.url + '/api/interactions?box=all')).json();
+  assert.deepEqual(f.store.list('interaction').map(i => [i.id, i.revision]), savedRevisions);
+  assert.equal(/"(?:challenge|humanChannel)"/.test(JSON.stringify(publicPage)), false);
+  assert.equal(f.store.list('interaction-command').length, commandCount);
+  assert.deepEqual(f.store.list('interaction').filter(i => i.producerState === 'open').map(i => i.id), activeIds);
   await dashboard.close(); await evaluate(`document.getElementById('refresh').click()`);
   await waitFor(`document.getElementById('connection').textContent === '연결 끊김'`);
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ passed: true, producer: 'synthetic', actualCodeAgentResponses: false,
-    checks: ['recommendation-no-auto-submit', 'draft-poll-reopen', 'defer', 'explicit-submit', 'poll-submit-race', 'success-not-stale', 'live-response-history', 'answered-reopen', 'next-question', 'wait-other-answers', 'single-launch', 'stale-view-preserves-input', 'full-approval-unchecked', 'unsupported-disabled', 'XSS', 'mobile', 'preparation-legacy-failure', 'preparation-default-no-auto-submit', 'preparation-same-task-recheck', 'disconnect'], artifacts }));
+    checks: ['recommendation-no-auto-submit', 'draft-poll-reopen', 'defer', 'explicit-submit', 'poll-submit-race', 'success-not-stale', 'live-response-history', 'answered-reopen', 'next-question', 'wait-other-answers', 'single-launch', 'stale-view-preserves-input', 'full-approval-unchecked', 'unsupported-disabled', 'XSS', 'mobile', 'preparation-legacy-failure', 'preparation-default-no-auto-submit', 'preparation-same-task-recheck', 'archive-pagination', 'server-pagination', 'GET-read-only', 'public-projection', 'archive-search', 'archive-read-only', 'disconnect'], artifacts }));
 } finally {
   await browser?.close();
   await dashboard.close();

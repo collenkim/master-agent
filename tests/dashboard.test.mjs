@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { get } from 'node:http';
 import { join } from 'node:path';
+import { Store } from '../packages/storage/store.mjs';
 import { setup } from './helpers.mjs';
 import { dashboardSnapshot, createMonitor } from '../packages/dashboard/monitor.mjs';
 import { startDashboard } from '../packages/dashboard/server.mjs';
@@ -151,4 +152,23 @@ test('dashboard rejects invalid port, polling interval and shell-wrapper CLI bef
     await assert.rejects(startDashboard({ dbPath: join(root, 'unused.db'), ...options }), error => ['usage', 'invalid-cli'].includes(error.code));
     assert.equal(existsSync(join(root, 'unused.db')), false);
   }
+});
+
+
+test('M6: 저장 관측 모드는 다른 연결의 DB 변경을 수집하고 동일한 상태를 반복 동기화하지 않는다', async t => {
+  const { store, db, fixture } = setup(t), writer = new Store(db);
+  let observed = 0;
+  const monitor = createMonitor(store, { onObserved: () => { observed++; }, observe: () => { throw new Error('CLI를 호출하지 않는다'); } });
+  try {
+    await monitor.refresh();
+    assert.equal(observed, fixture.projects.length);
+    await monitor.refresh();
+    assert.equal(observed, fixture.projects.length);
+    const mission = writer.list('mission')[0];
+    writer.put('mission', { ...mission, reason: '다른 실행기의 변경' }, mission.revision);
+    await monitor.refresh();
+    assert.equal(observed, fixture.projects.length * 2);
+    await monitor.refresh();
+    assert.equal(observed, fixture.projects.length * 2);
+  } finally { await monitor.stop(); writer.close(); }
 });

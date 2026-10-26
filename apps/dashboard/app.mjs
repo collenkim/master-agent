@@ -57,12 +57,12 @@ function render() {
     <div class="card-actions"><button type="button" class="project-request" data-id="${escape(p.id)}">이 프로젝트에 요청</button><button type="button" class="delete-project danger-button" data-id="${escape(p.id)}">프로젝트 삭제</button></div>
     <p class="path">${escape(p.path)}</p>
     ${connectionView(p)}
-    ${p.activity ? `<div class="work"><span class="muted">접수된 요청</span><strong>${escape(p.activity.ids.join(' · '))}</strong><span>${escape(p.activity.detail)}</span></div>` : ''}
+    ${p.activity ? `<div class="work"><span class="muted">master 요청</span><strong>${escape(p.activity.ids.join(' · '))}</strong><span>${escape(p.activity.detail)}</span></div>` : ''}
     ${p.work || !p.activity ? `<div class="work"><span class="muted">${p.observation.historical || p.observation.stale ? '마지막 관측 작업' : '현재 관측 작업'}</span><strong>${escape(p.work?.id ?? (p.observation.status === 'observed' ? '작업 없음' : '확인되지 않음'))}</strong><span>${escape([p.work?.phase, p.work?.stage, p.work?.task].filter(Boolean).join(' / ') || '—')}</span></div>` : ''}
     <div class="chips">${p.activity ? badge(p.activity.status) : ''}${p.resume && !(p.activity && p.resume.code === 'no-work') ? badge(p.resume.code) : ''}${p.observation.stale ? '<span class="badge warning">오래됨·미조회</span>' : ''}${p.observation.historical && p.work ? '<span class="badge warning">이전 관측</span>' : ''}</div>
     <p class="muted">관측 ${escape(date(p.observation.observedAt))}<br>조회 시도 ${escape(date(p.observation.checkedAt))}</p>
     ${p.observation.error ? `<p class="error">${escape(p.observation.error)}</p>` : ''}
-    ${(p.requests ?? []).filter(r => r.state === 'failed' || r.issues.length).map(r => `<p class="error">${escape(r.taskNumber ?? r.id)} · ${escape(r.error || '실행 준비 필요 — 공통 요청함에서 확인하세요.')}<small>${r.issues.map(i => escape(i.message)).join('<br>')}</small></p>`).join('')}
+    ${(p.requests ?? []).filter(r => r.state === 'failed' || r.issues.length).map(r => `<p class="error">master 요청 ${escape(r.taskNumber ?? r.id)} · ${escape(r.error || '실행 준비 필요 — 공통 요청함에서 확인하세요.')}<small>${r.issues.map(i => escape(i.message)).join('<br>')}</small></p>`).join('')}
     <div class="waiting"><span>승인 대기 <b>${p.consents.length}</b></span><span>답변 대기 <b>${p.questions.length}</b></span><span>임대 <b>${escape(p.lease || '미확인')}</b></span></div>
     <details data-id="${escape(p.id)}" ${openProjects.has(p.id) ? 'open' : ''}><summary>작업·판단 상세</summary>
       <p>프로젝트 ID: ${escape(p.id)}</p><p>제어 연결: ${p.control ? `${escape(p.control.controller)} (등록 당시 ${p.control.owner ? '소유자' : '관찰자'})` : '없음'}</p>
@@ -90,8 +90,9 @@ function render() {
   </details>`).join('') || '<div class="empty">등록된 목표가 없습니다.</div>';
   renderManagement();
   renderUpdates();
-  renderInteractions(latest, post, refresh, { pair: openPairing });
+  const interactionsReady = renderInteractions(latest, post, refresh, { pair: openPairing });
   renderHistory(latest);
+  return interactionsReady;
 }
 
 async function refresh({ afterPending = false } = {}) {
@@ -105,7 +106,7 @@ async function refresh({ afterPending = false } = {}) {
   try {
     const response = await fetch('/api/overview', { signal: AbortSignal.timeout(10000) });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    latest = await response.json(); render();
+    latest = await response.json(); await render();
     if ($('project-dialog').open) void loadCandidates();
     $('connection').textContent = `연결됨 · ${date(latest.generatedAt)}`;
     $('notice').className = 'notice';
