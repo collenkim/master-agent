@@ -267,7 +267,7 @@ export class Planner {
     } catch (error) {
       this.store.transaction(() => {
         const run = this.store.get('analysis-run', runId);
-        if (!run || run.status === 'interrupted') return;
+        if (!run || ['interrupted', 'cancelled'].includes(run.status)) return;
         run.status = ['stale-state', 'stale-context', 'stale-knowledge'].includes(error.code) ? 'stale' : 'error';
         run.error = { code: error.code ?? 'analysis-error', message: error.message }; run.finishedAt = now();
         this.store.put('analysis-run', run, run.revision);

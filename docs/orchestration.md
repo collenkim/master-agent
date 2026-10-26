@@ -82,6 +82,8 @@ PlanVersion은 목표·완료 조건·범위·정책·계약 버전과 연결된
 
 Mission 상태는 `received`, `analyzing`, `planning`, `waiting-decision`, `executing`, `replanning`, `verifying`, `paused`, `blocked`, `succeeded`, `failed`, `cancelled`로 정의합니다. Task·Attempt·러너의 상태는 별도로 관리합니다. 일부 Task가 성공했어도 Mission은 검증 중 또는 차단 상태일 수 있습니다.
 
+종료 전 목표는 실행 중(`running`) 시도가 없을 때 `mission cancel`로 `cancelled`에 전이한다. 실행 중 시도는 `mission stop` 또는 `mission unknown`으로 먼저 정리한다. 취소는 잠금·분석·복구 보류를 해제하고 결정·사용자 사유를 기록한다. `succeeded`, `simulation-complete`, `cancelled`에서 다시 취소하는 전이는 거부한다.
+
 스케줄러는 선행 작업과 산출물 유효성, 현재 계획 버전, 권한, 예산, 프로젝트 잠금, 러너 용량을 검사한 뒤 배정합니다. 준비된 독립 작업만 병렬 실행합니다. 다른 작업의 실패가 영향을 주지 않는 작업은 정책상 허용되면 계속할 수 있습니다.
 
 LangGraph JS가 영속 체크포인트를 사용해 실행 흐름을 관리합니다. 도메인 트랜잭션·시도 ID·권한 검증·프로젝트 잠금은 외부 작업의 중복 실행과 잘못된 승인을 차단합니다. [LangGraph 실행 구조와 재시작 규칙](langgraph.md)을 참고하세요.

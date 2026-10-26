@@ -20,7 +20,7 @@ test('업무 번호는 프로젝트별 고유하며 다른 접수 키·그룹 �
   assert.equal(f.store.db.prepare('SELECT * FROM requests WHERE key=?').get('group'), undefined);
 });
 
-test('기존 저장소의 완료·취소된 업무 번호도 재시작 뒤 새 목표로 중복 생성하지 않는다', t => {
+test('기존 저장소의 완료된 업무 번호도 재시작 뒤 새 목표로 중복 생성하지 않는다', t => {
   const f = setup(t);
   const input = { ...f.fixture.mission, taskNumber: 'UZRF-394', requestKey: 'legacy', scope: { projectIds: [f.fixture.projects[0].id], groupIds: [] } };
   const mission = f.engine.create(input);

@@ -155,7 +155,7 @@ export class Recovery {
     } catch (e) {
       this.store.transaction(() => {
         const run = this.store.get('recovery-run', runId);
-        if (!run || run.state === 'interrupted') return;
+        if (!run || ['interrupted', 'cancelled'].includes(run.state)) return;
         run.state = 'blocked'; run.error = e.code ?? 'recovery-error'; run.finishedAt = now(); this.store.put('recovery-run', run, run.revision);
         const current = this.store.need('mission', id), a = current.attempts.find(a => a.id === attemptId);
         if (a?.recoveryBusy === runId) { delete a.recoveryBusy; this.engine.save(current, 'recovery-blocked', { runId, error: run.error }); }

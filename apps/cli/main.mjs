@@ -110,6 +110,7 @@ code-agent는 설치된 명령에서 자동 탐색합니다. --cli는 별도 빌
   mission escalations <ID>             사람에게 넘긴 판단·보낸 위임 판단 기록
   mission relay <ID> <시도ID> <답JSON> [--cli <경로>]  사람에게 넘긴 질문의 사람 답 전달
   mission pause <ID> --revision <N>    새 배정 일시 정지
+  mission cancel <ID> --revision <N> [--reason <사유>]  목표 취소·잠금 해제(실행 중 시도는 먼저 종료)
   mission resume <ID> --revision <N>   배정 재개
   mission retry <ID> <작업ID> --revision <N>  실패한 모의 작업 재시도 준비
   mission unknown <ID> <시도ID> --revision <N>  관측 불가 기록·잠금 유지
@@ -131,7 +132,7 @@ async function main() {
     control: { type: 'boolean' }, controller: { type: 'string' }, 'token-file': { type: 'string' }, to: { type: 'string' }, mode: { type: 'string' },
     force: { type: 'boolean' }, 'wait-ms': { type: 'string' }, 'poll-ms': { type: 'string' }, 'follow-timeout-ms': { type: 'string' },
     port: { type: 'string' }, 'refresh-ms': { type: 'string' },
-    saved: { type: 'boolean' }, description: { type: 'string' }, input: { type: 'string' },
+    saved: { type: 'boolean' }, description: { type: 'string' }, input: { type: 'string' }, reason: { type: 'string' },
     criterion: { type: 'string', multiple: true }, 'request-key': { type: 'string' }, 'task-number': { type: 'string' }, host: { type: 'string' }, main: { type: 'string' },
   } });
   if (values.help || !args.length || args[0] === 'help') { console.log(help); return; }
@@ -158,13 +159,14 @@ async function main() {
     'project control': 3, 'project pair': 3, 'project snapshot': 3, 'project handover': 3, 'project accept': 3,
     'mission reattach': 4, 'mission stop': 4, 'mission delegate': 4, 'mission escalations': 3, 'mission relay': 5,
     'mission create': 3, 'mission list': 2, 'mission show': 3, 'mission graph': 3, 'mission plan': 4, 'mission step': 3, 'mission run': 3,
-    'mission pause': 3, 'mission resume': 3, 'mission retry': 4, 'mission unknown': 4,
+    'mission pause': 3, 'mission resume': 3, 'mission retry': 4, 'mission unknown': 4, 'mission cancel': 3,
     'group create': 4, 'group show': 3, 'group delete': 3, 'group add': 4, 'group remove': 4, 'group request': 4, 'project request': 4,
     'request list': 2, 'request show': 3, 'request run': 3, 'request continue': 3 };
   const key = category === 'demo' ? 'demo' : `${category} ${action}`;
   requireThat(counts[key] === args.length, 'usage', help);
   const revision = values.revision === undefined ? undefined : Number(values.revision);
   if (values.revision !== undefined) requireThat(Number.isSafeInteger(revision) && revision > 0, 'usage', '--revision은 양의 정수입니다.');
+  if (key === 'mission cancel') requireThat(revision, 'usage', '--revision이 필요합니다.');
   if (['project update', 'project collect', 'mission analyze', 'mission clarify', 'mission plan', 'mission pause', 'mission resume', 'mission retry', 'mission unknown', 'mission dispatch', 'mission continue', 'mission verification', 'mission verify', 'mission handoff', 'mission complete'].includes(key)) requireThat(revision, 'usage', '--revision이 필요합니다.');
   if (['mission dispatch', 'mission continue', 'mission verify', 'mission handoff'].includes(key)) requireThat(values['expect-state'] && !values.simulate, 'usage', '--expect-state가 필요합니다. 모의 실행 옵션과 함께 사용할 수 없습니다.');
   if (['mission advance', 'mission drive'].includes(key)) requireThat(!values.simulate, 'usage', '모의 옵션은 사용할 수 없습니다.');
@@ -319,6 +321,7 @@ async function main() {
         result = await new DecisionDelegation(store).relay(id, file, controlHost(), Array.isArray(input) ? { answers: input } : input); break;
       }
       case 'mission pause': case 'mission resume': case 'mission retry': result = engine.control(id, action, revision, file); break;
+      case 'mission cancel': result = engine.control(id, action, revision, undefined, { reason: values.reason }); break;
       case 'mission unknown': result = engine.markUnknown(id, file, revision); break;
     }
     return result;

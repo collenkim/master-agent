@@ -6,9 +6,20 @@ import { join, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { Store } from '../packages/storage/store.mjs';
 import { temporary } from './helpers.mjs';
+import { setup } from './helpers.mjs';
+import { acceptRequest } from '../packages/orchestrator/requests.mjs';
 
 const cli = resolve('apps/cli/main.mjs');
 const run = (root, ...args) => JSON.parse(execFileSync(process.execPath, [cli, ...args], { cwd: root, encoding: 'utf8' }));
+
+test('S1: CLI mission cancel은 사유를 저장하고 request show에 취소를 표시한다', t => {
+  const { store, root, db, fixture } = setup(t);
+  const { request } = acceptRequest(store, { targetType: 'project', targetId: fixture.projects[0].id, goal: '잘못 접수' });
+  const m = store.need('mission', request.id);
+  const result = run(root, 'mission', 'cancel', m.id, '--revision', String(m.revision), '--reason', '대상 선택 오류', '--db', db);
+  assert.equal(result.state, 'cancelled'); assert.equal(result.reason, '대상 선택 오류');
+  assert.equal(run(root, 'request', 'show', m.id, '--db', db).state, 'cancelled');
+});
 
 test('CLI 데모가 영속 DB를 만들고 다른 프로세스에서 판단·근거를 읽는다', t => {
   const root = temporary(t);

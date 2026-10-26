@@ -10,6 +10,18 @@ import { analysisSchema, analysisSchemaFor, validateShape } from '../packages/re
 
 const provider = generate => ({ name: 'fixture-not-ai', model: 'fixture', generate });
 
+test('S1: 분석 중 목표 취소 후 늦은 결과가 취소 상태를 덮어쓰지 않는다', async t => {
+  const { planner, engine, store, mission } = planningSetup(t);
+  await assert.rejects(planner.analyze(mission.id, provider(async ({ context }) => {
+    engine.control(mission.id, 'cancel', store.need('mission', mission.id).revision);
+    return { data: answerFor(context) };
+  }), { expectedRevision: mission.revision }), { code: 'stale-state' });
+  const current = store.need('mission', mission.id);
+  assert.equal(current.state, 'cancelled'); assert.equal(current.planningHold, false);
+  assert.equal(store.need('analysis-run', current.analysisRunId).status, 'cancelled');
+  assert.equal(current.plans.length, 0);
+});
+
 test('근거 전달→구조화 계획→판단 저장→계획 활성화→기존 실행 경로를 연결한다', async t => {
   const { planner, engine, store, mission } = planningSetup(t);
   const p = provider(async ({ context, prompt, schema }) => {

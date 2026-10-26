@@ -48,7 +48,7 @@ master-agent request continue <요청ID> --revision <요청버전>
 
 `--input`은 선택 설정 JSON이다. 예를 들어 `{ "taskNumber": "UZRF-392", "criteria": [{ "id": "cancel", "description": "취소 회귀 통과" }], "templates": [] }` 형태이며 검증 템플릿 배열은 [검증 계약 재사용](autonomous-progress.md)을 따른다. JSON에 `"host": { "mode": "both", "main": "codex" }`를 넣을 수도 있다. CLI의 --task-number, --criterion, --host, --main, --provider, --model, --request-key, --revision을 함께 주면 해당 옵션이 우선한다. both에서 `--model`은 주 host에만 적용하고 검토 host는 CLI 기본 모델을 쓴다. 요청 대상과 원문은 명령의 위치 인자를 사용한다. 대시보드에서도 같은 검증 설정을 전달할 수 있다.
 
-선택 TASK 번호는 요청·목표 기록과 AI 계획·프로젝트별 개발 지시에 전달하고 이어 실행에서도 유지한다. 그룹의 하위 작업은 같은 번호를 참조하며 내부 작업·실행 ID를 대체하지 않는다. 형식은 영문·숫자로 시작하는 64자 이하의 영문·숫자·점·밑줄·하이픈이다. 같은 프로젝트의 TASK 번호는 대소문자를 구분하지 않고 고유하다. 다른 프로젝트에서는 같은 번호를 사용할 수 있다. 새 request-key로 같은 프로젝트·번호를 접수하거나 기존 그룹 요청의 일부 프로젝트에 같은 번호를 다시 접수하면 기존 목표 ID를 안내하고 거부한다. 완료·취소 뒤에도 번호를 재사용하지 않는다. 같은 request-key와 내용의 재전송은 기존 목표를 반환하고, 같은 키의 번호·내용 변경은 충돌로 거부한다. 후속 보완은 기존 목표의 질문·재계획·이어 실행 절차로 처리한다.
+선택 TASK 번호는 요청·목표 기록과 AI 계획·프로젝트별 개발 지시에 전달하고 이어 실행에서도 유지한다. 그룹의 하위 작업은 같은 번호를 참조하며 내부 작업·실행 ID를 대체하지 않는다. 형식은 영문·숫자로 시작하는 64자 이하의 영문·숫자·점·밑줄·하이픈이다. 같은 프로젝트의 TASK 번호는 대소문자를 구분하지 않고 고유하다. 다른 프로젝트에서는 같은 번호를 사용할 수 있다. 새 request-key로 같은 프로젝트·번호를 접수하거나 기존 그룹 요청의 일부 프로젝트에 같은 번호를 다시 접수하면 기존 목표 ID를 안내하고 거부한다. 완료한 목표의 번호는 재사용하지 않으며, 취소한 목표의 번호는 새 요청에서 재사용할 수 있다. 같은 request-key와 내용의 재전송은 기존 목표를 반환하고, 같은 키의 번호·내용 변경은 충돌로 거부한다. 후속 보완은 기존 목표의 질문·재계획·이어 실행 절차로 처리한다.
 
 실행 전 준비는 다음과 같다.
 
@@ -86,16 +86,19 @@ master-agent mission run <목표ID> --simulate
 master-agent mission show <목표ID>
 master-agent mission pause <목표ID> --revision <조회한버전>
 master-agent mission resume <목표ID> --revision <새버전>
+master-agent mission cancel <목표ID> --revision <새버전> --reason "잘못 접수한 목표"
 master-agent mission run <목표ID> --simulate
 ```
 
 revision은 오래된 조작을 거부하는 상태 버전이며 승인 값이 아니다. 일시 정지는 새 배정을 막고 이미 실행 중인 작업의 결과는 기록한다. resume은 배정 가능 상태로 바꾸며 모의 실행을 이어가려면 run을 호출한다.
 
+`mission cancel`은 종료 전 목표를 `cancelled`로 마감한다. 실행 중 시도는 먼저 `mission stop`으로 종료를 확인하거나 `mission unknown`으로 미확인을 기록한다. 취소는 해당 목표의 잠금을 모두 해제하고 진행 중 분석·복구 기록과 보류를 정리하며 결정과 사유를 보존한다. `--reason`을 생략하면 기본 취소 사유를 기록한다. 이미 종료한 목표의 취소는 거부한다. 취소한 목표의 TASK 번호는 새 요청에서 재사용할 수 있고 프로젝트 등록 해제를 막지 않는다.
+
 실패가 확인된 모의 작업은 `mission retry <목표ID> <작업ID> --revision <버전>`으로 다시 대기 상태에 넣을 수 있다. 성공한 다른 작업은 반복하지 않는다. 새 계획은 `mission plan`으로 적용하며 이전 계획·시도·증거를 보존하되 모든 작업을 새로 검증한다. 영향받지 않은 증거를 골라 재사용하는 최적화는 아직 없다.
 
 프로젝트 지식은 `project update <프로젝트ID> <JSON> --revision <버전>`으로 변경한다. 갱신 가능한 항목은 domains, capabilities, constraints, currentPlans, references다. 이 정보가 계획 이후 바뀌면 실행 전 재계획을 요구한다. 현재는 보수적으로 대상 스냅샷 안의 프로젝트 버전을 모두 비교한다.
 
-프로세스 중단 후 남은 running 상태는 자동 재실행하지 않는다. `mission unknown <목표ID> <시도ID> --revision <버전>`으로 미확인을 기록할 수 있다. 호스트 반환 기록이 있는 일부 unknown 작업은 mission reconcile로 검증 단계에 복구한다. 반환 기록 없는 실행·검증 프로세스의 잠금 해제는 제공하지 않는다. 상태 파일을 직접 바꾸는 복구 방식은 제공하지 않는다.
+프로세스 중단 후 남은 running 상태는 자동 재실행하지 않는다. `mission unknown <목표ID> <시도ID> --revision <버전>`으로 미확인을 기록할 수 있다. 호스트 반환 기록이 있는 일부 unknown 작업은 mission reconcile로 검증 단계에 복구한다. 목표를 폐기할 때는 `mission cancel`로 잠금을 해제한다. 상태 파일을 직접 바꾸는 복구 방식은 제공하지 않는다.
 
 ## code-agent 상태 조회
 

@@ -82,11 +82,13 @@ export async function runRequest(store, id, { cliPath, host, provider, workflow,
   const finish = patch => store.transaction(() => {
     const current = store.need('target-request', id);
     requireThat(current.owner === owner, 'request-busy', '요청 실행 소유자가 변경되었습니다.');
+    if (current.state === 'cancelled') return current;
     return store.put('target-request', { ...current, ...patch, updatedAt: now() }, current.revision);
   });
   const recordPreparation = preparation => {
     store.transaction(() => {
       const engine = new Engine(store), m = store.need('mission', id);
+      if (m.state === 'cancelled') return;
       m.preparation = preparation;
       if (preparation.state === 'waiting') m.reason = preparation.issues.map(i => `${i.projectName ?? i.projectId}: ${i.message}`).join('\n');
       else if (!m.plans.length && !m.planningHold) m.reason = '준비 점검을 마쳤습니다. 실행 계획을 생성합니다.';

@@ -29,10 +29,10 @@ export class Engine {
         return this.store.need('mission', previous.mission_id);
       }
       const scope = this.catalog.snapshot(request.scope);
-      // 접수 키는 재전송 식별자다. 업무 번호는 프로젝트별로 완료·취소 뒤에도 같은 목표를 가리킨다.
+      // 취소한 목표의 업무 번호는 새 접수에 사용할 수 있다. 접수 키는 원래 목표를 유지한다.
       if (request.taskNumber !== undefined) {
         const duplicate = this.store.list('mission').find(m =>
-          m.taskNumber?.toLowerCase() === request.taskNumber.toLowerCase() &&
+          m.state !== 'cancelled' && m.taskNumber?.toLowerCase() === request.taskNumber.toLowerCase() &&
           m.scope.projectIds.some(projectId => scope.projectIds.includes(projectId)));
         if (duplicate) {
           const projects = duplicate.scope.projectIds.filter(projectId => scope.projectIds.includes(projectId));
@@ -285,11 +285,15 @@ export class Engine {
       return this.save(m, 'simulation-completed', { decisionId: d.id });
     });
   }
-  control(id, action, expectedRevision, taskId) {
+  control(id, action, expectedRevision, taskId, { reason = '사용자가 목표 취소를 요청했습니다.' } = {}) {
     return this.store.transaction(() => {
       const m = this.checked(id, expectedRevision);
       requireThat(!finished.has(m.state), 'invalid-state', '종료된 목표입니다.');
-      requireThat(['pause', 'resume', 'retry'].includes(action), 'invalid-input', '지원하지 않는 제어 동작입니다.');
+      requireThat(['pause', 'resume', 'retry', 'cancel'].includes(action), 'invalid-input', '지원하지 않는 제어 동작입니다.');
+      if (action === 'cancel') {
+        requireThat(!m.attempts.some(a => a.state === 'running'), 'invalid-state', '먼저 mission stop 또는 mission unknown으로 시도를 종료하라.');
+        string(reason, 'reason');
+      }
       if (action === 'pause') requireThat(m.state !== 'paused', 'invalid-state', '이미 일시 정지 중입니다.');
       if (action === 'resume') requireThat(m.state === 'paused', 'invalid-state', '일시 정지 상태가 아닙니다.');
       if (action === 'retry') {
@@ -299,13 +303,29 @@ export class Engine {
         requireThat(this.projectVersionsMatch(m), 'stale-state', '프로젝트 정보가 바뀌었습니다. 재계획하세요.');
       }
       const d = this.decision(m, action, {
-        reason: `사용자가 ${action}을 요청했습니다.`, evidence: [`mission:${m.id}@${m.revision}`],
+        actor: 'operator', reason: action === 'cancel' ? reason : `사용자가 ${action}을 요청했습니다.`, evidence: [`mission:${m.id}@${m.revision}`],
         alternatives: ['현재 상태 유지', action], nextAction: action,
         verification: '현재 상태와 제어 동작 조건 대조', ...(taskId ? { taskId } : {}),
       });
       if (action === 'pause') m.state = 'paused';
       if (action === 'resume') m.state = m.planningHold ? 'blocked' : activePlan(m) ? 'planned' : 'received';
       if (action === 'retry') { taskState(m, taskId).state = 'queued'; m.state = 'planned'; }
+      if (action === 'cancel') {
+        m.state = 'cancelled'; m.finishedAt = now();
+        m.replanPending = false; m.planningHold = false; delete m.recoveryHold;
+        for (const attempt of m.attempts) delete attempt.recoveryBusy;
+        this.store.db.prepare('DELETE FROM locks WHERE mission_id=?').run(id);
+        for (const [kind, field, states] of [
+          ['analysis-run', 'status', ['running']],
+          ['recovery-run', 'state', ['analyzing', 'authorized', 'held', 'executing']],
+        ]) {
+          for (const run of this.store.list(kind).filter(r => r.missionId === id && states.includes(r[field]))) {
+            this.store.put(kind, { ...run, [field]: 'cancelled', finishedAt: m.finishedAt, cancellationDecisionId: d.id }, run.revision);
+          }
+        }
+        const request = this.store.get('target-request', id);
+        if (request) this.store.put('target-request', { ...request, state: 'cancelled', blockers: [], error: null, updatedAt: m.finishedAt }, request.revision);
+      }
       m.reason = d.reason;
       return this.save(m, action, { decisionId: d.id });
     });

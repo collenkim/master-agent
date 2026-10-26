@@ -7,8 +7,55 @@ import { setup, cleanup, temporary } from './helpers.mjs';
 import { execFile } from 'node:child_process';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { acceptRequest } from '../packages/orchestrator/requests.mjs';
 
 const rejects = code => error => error.code === code;
+
+test('S1: 취소는 잠금·분석·복구 보류를 해제하고 프로젝트 등록 해제를 허용한다', t => {
+  const { engine, store, mission } = setup(t);
+  const ticket = engine.prepare(mission.id, mission.revision);
+  let current = engine.markUnknown(mission.id, ticket.id, store.need('mission', mission.id).revision);
+  current = store.put('mission', { ...current, planningHold: true, replanPending: true, recoveryHold: 'recovery' }, current.revision);
+  store.put('analysis-run', { id: 'analysis', missionId: mission.id, status: 'running' });
+  store.put('recovery-run', { id: 'recovery', missionId: mission.id, state: 'analyzing' });
+  const cancelled = engine.control(mission.id, 'cancel', current.revision, undefined, { reason: '잘못 접수한 목표' });
+  assert.equal(cancelled.state, 'cancelled'); assert.equal(cancelled.reason, '잘못 접수한 목표');
+  assert.equal(cancelled.planningHold, false); assert.equal(cancelled.replanPending, false);
+  assert.equal(cancelled.recoveryHold, undefined);
+  assert.equal(store.need('analysis-run', 'analysis').status, 'cancelled');
+  assert.equal(store.need('recovery-run', 'recovery').state, 'cancelled');
+  assert.equal(store.db.prepare('SELECT count(*) AS n FROM locks WHERE mission_id=?').get(mission.id).n, 0);
+  assert.ok(engine.catalog.remove(ticket.projectId, store.need('project', ticket.projectId).revision).deletedAt);
+  assert.equal(engine.describe(mission.id).nextAction, 'none');
+});
+
+test('S1: 취소한 목표의 TASK 번호는 새 요청에서 재사용하고 접수 키는 유지한다', t => {
+  const { engine, store, fixture } = setup(t);
+  const input = { targetType: 'project', targetId: fixture.projects[0].id, taskNumber: 'TASK-1', goal: '취소할 요청', requestKey: 'cancel-me' };
+  const { request } = acceptRequest(store, input);
+  const m = store.need('mission', request.id);
+  engine.control(m.id, 'cancel', m.revision);
+  assert.equal(store.need('target-request', m.id).state, 'cancelled');
+  assert.equal(acceptRequest(store, input).request.id, m.id);
+  assert.notEqual(acceptRequest(store, { ...input, requestKey: 'replacement' }).request.id, m.id);
+});
+
+test('S1: 실행 중 시도·오래된 revision·종료 목표 취소는 상태를 바꾸지 않는다', t => {
+  const { engine, store, mission } = setup(t);
+  const ticket = engine.prepare(mission.id, mission.revision);
+  let m = store.need('mission', mission.id);
+  m.attempts[0].mode = 'live'; m = store.put('mission', m, m.revision);
+  assert.throws(() => engine.control(m.id, 'cancel', m.revision), e => e.code === 'invalid-state' && /mission stop.*mission unknown/.test(e.message));
+  assert.ok(store.lock(ticket.projectId));
+  m = engine.markUnknown(m.id, ticket.id, m.revision);
+  assert.throws(() => engine.control(m.id, 'cancel', m.revision - 1), rejects('stale-state'));
+  m = engine.control(m.id, 'cancel', m.revision);
+  assert.throws(() => engine.control(m.id, 'cancel', m.revision), rejects('invalid-state'));
+  for (const state of ['succeeded', 'simulation-complete']) {
+    m = store.put('mission', { ...m, state }, m.revision);
+    assert.throws(() => engine.control(m.id, 'cancel', m.revision), rejects('invalid-state'));
+  }
+});
 
 test('세 프로젝트: 판단이 저장된 이후 실행하고 통합 증거로 모의 완료한다', async t => {
   const { engine, store, mission } = setup(t);
