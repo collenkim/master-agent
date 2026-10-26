@@ -251,8 +251,13 @@ export class DecisionDelegation {
     const view = await client.result('questions', { payload: { workId: attempt.codeAgentWorkId } });
     const judgment = { category: 'routine', reason: string(reason ?? '사람이 master 를 통해 답했습니다.', 'reason').slice(0, 2000), evidence: ['human-relay'] };
     const record = this.record(m, attempt, { kind: 'question', action: 'answer', target: answers.map(a => a.q).join(','), judgment, grantId: grant.id, questionsHash: view.questionsHash, input: answers, provider: 'human' });
-    await client.result('answer', { commandId: `rel-${record.id}`, payload: { actor: 'human', decisionId: record.id, grantId: grant.id, reason: judgment.reason, evidence: judgment.evidence,
-      questionsHash: view.questionsHash, workId: attempt.codeAgentWorkId, answers } });
+    try {
+      await client.result('answer', { commandId: `rel-${record.id}`, payload: { actor: 'human', decisionId: record.id, grantId: grant.id, reason: judgment.reason, evidence: judgment.evidence,
+        questionsHash: view.questionsHash, workId: attempt.codeAgentWorkId, answers } });
+    } catch (error) {
+      this.finish(record.id, 'rejected', { error: error.controlCode ?? error.code ?? 'error' });
+      throw error;
+    }
     this.finish(record.id, 'answered', { relayed: true });
     this.store.transaction(() => {
       for (const e of this.escalations(id).filter(e => e.attemptId === attemptId && e.kind === 'question' && e.state === 'open' && answers.some(a => a.q === e.target))) {
