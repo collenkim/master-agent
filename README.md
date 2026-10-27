@@ -84,18 +84,7 @@ master-agent mission list --db .master-agent/demo.db
 
 ## 전체 현황 대시보드
 
-```powershell
-master-agent dashboard --db C:\workspace\control\master.db
-
-# 다른 터미널에서 같은 DB의 서버 확인·재시작·종료
-master-agent dashboard status --db C:\workspace\control\master.db
-master-agent dashboard restart --db C:\workspace\control\master.db
-master-agent dashboard stop --db C:\workspace\control\master.db
-```
-
-출력된 `http://127.0.0.1:4310`을 브라우저에서 엽니다. **설치된 code-agent는 자동 탐색**합니다. PATH의 실행 파일·npm 전역 설치와 링크를 확인하며 Windows npm 설치 경로도 확인합니다. 별도 빌드를 사용할 때만 `CODE_AGENT_CLI` 또는 `--cli`를 지정합니다. `--port <번호>`로 포트를 바꾸고, Ctrl+C로 대시보드 서버를 종료합니다. `--refresh-ms 5000`은 전체 조회가 끝난 뒤 다음 조회까지의 간격입니다.
-
-`restart`는 기존 서버를 종료하고 **같은 DB·포트·조회 설정**으로 새 프로세스에서 실행합니다. 서버가 꺼져 있어도 마지막 설정으로 시작합니다. 시작·재시작 명령을 실행한 터미널은 유지해야 하며 자동 시작 서비스는 제공하지 않습니다. 코드 변경 후 `restart`를 실행하고 화면을 새로고침하세요. [연결 오류 해결](docs/ui.md#실행과-연결)에 상태 확인과 복구 방법이 있습니다.
+대시보드 실행·재시작·상태 확인·종료와 옵션은 [실행과 연결](docs/ui.md#실행과-연결)을 따른다.
 
 - 같은 DB에 등록된 **모든 프로젝트**를 조회합니다. master 목표에 연결되지 않은 독립 code-agent 작업도 포함합니다. 등록 창에서는 알려진 작업 위치의 code-agent 설치 프로젝트를 찾아 선택할 수 있습니다.
 - 등록 창을 열 때 설치 프로젝트 목록을 조회하고 이후에는 `목록 새로고침`으로 갱신한다. 입력 중인 내용은 유지하며 후보 선택·등록 후 프로젝트 상태 관제도 자동으로 포함한다.

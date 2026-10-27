@@ -28,9 +28,7 @@ master-agent group list
 
 `master-agent mission events prune <목표ID> --revision <버전>`은 종료 후 30일이 지난 목표의 오래된 이벤트를 정리한다. 종료 체크포인트 삭제와 근거·회차 저장 범위는 [기록 보존과 정리](langgraph.md#기록-보존과-정리)를 따른다.
 
-`master-agent dashboard --db <DB 경로>`로 전체 등록 프로젝트의 로컬 웹 관제를 연다. 설치된 code-agent를 자동 탐색한다. 출력된 URL에 접속하며 Ctrl+C로 대시보드만 종료한다. 저장된 관측만 볼 때는 `--saved`를 쓴다. 모든 code-agent 연동 명령의 `--cli`는 별도 빌드 지정용 선택 옵션이며 환경 변수 `CODE_AGENT_CLI`보다 우선한다. 자세한 범위는 [대시보드](ui.md)를 따른다.
-
-같은 `--db`를 지정해 `dashboard status`로 서버 상태를 확인하고 `dashboard restart`로 기존 설정을 유지해 재시작한다. `dashboard stop`은 대시보드만 종료한다. 시작·재시작 명령은 해당 터미널을 유지해야 한다. 등록 창의 설치 후보는 실행 중에도 자동 갱신되므로 새 프로젝트에 code-agent를 설치한 뒤 서버를 재시작할 필요가 없다.
+대시보드 실행·재시작·상태 확인·종료와 연결 문제 해결은 [실행과 연결](ui.md#실행과-연결)을 따른다.
 
 ## 환경 변수
 

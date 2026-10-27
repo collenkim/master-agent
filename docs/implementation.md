@@ -57,6 +57,20 @@ L6은 권장안 (나)를 적용했다. 재시작 뒤 실행 식별자·감독·�
 각 커밋 전 전체 테스트와 check를 통과했다. 최종 `npm.cmd test`는 349건 통과, 실패·건너뜀 0건이며 `npm.cmd run check`는 소스 127개·문서 20개를 통과했다. lint는 B2에서 도입하므로 아직 실행 명령이 없다. 고정한 공개 code-agent 빌드와 임시 프로젝트·모의 모델을 사용했고 실제 모델은 호출하지 않았다.
 
 
+## 2026-10-26 전면 재검토 — Phase 5 완료
+
+| 항목 | 커밋 | 처리 내용 |
+| --- | --- | --- |
+| B1 | `4f4e1b7` | LF·UTF-8 편집 정책, 바이너리 속성, .idea 제외, 추적 파일 정규화 |
+| B2·B3 | `f871c19` | 최소 ESLint 규칙, Windows·Ubuntu CI, smoke 실행 묶음, 네이티브 없는 SQLite 의존성 |
+| B4 | `7e72d8c` | request run 도움말·사용법과 환경 변수 7종의 용도·기본값·읽는 파일 |
+
+신규 회귀는 `tests/dashboard.test.mjs`의 cross-site 거부, `tests/smoke.test.mjs`의 실행 없는 목록 조회, `tests/langgraph.test.mjs`의 네이티브 생성 경로 거부로 3건이다. 깨끗한 임시 폴더에서 `npm ci`를 설치 스크립트 생략 플래그 없이 실행했고 공식 체크포인터 import도 통과했다. 실제 DB 처리는 계속 node:sqlite 어댑터를 사용한다.
+
+각 커밋 전 전체 테스트와 check를 통과했다. 최종 `npm.cmd test`는 352건 통과, 실패·건너뜀 0건이며 `npm.cmd run check`는 소스 129개·문서 20개, `npm.cmd run lint`도 통과했다. 원격 CI는 구성만 했으며 실제 모델 smoke는 비용이 발생하므로 호출하지 않았다.
+
+라이선스와 저장소 URL은 사용자 확인 전이므로 지시서의 기본값인 UNLICENSED·repository 생략을 적용했다. B4의 연결 배지 중복은 허용된 후속 항목 C1에서 ui.md 링크로 통합한다. 그 밖에 건너뛴 항목은 없다.
+
 ## 현재 제공 범위
 
 | 영역 | 구현 |

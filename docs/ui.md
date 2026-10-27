@@ -11,7 +11,7 @@ master-agent dashboard restart --db <같은 DB 경로>
 master-agent dashboard stop --db <같은 DB 경로>
 ```
 
-설치된 code-agent를 PATH·npm 전역 설치에서 자동 탐색하고 실제 진입점을 호출한다. 별도 빌드는 `CODE_AGENT_CLI` 또는 `--cli`로 지정한다. 기본 주소는 `http://127.0.0.1:4310`이며 `--port`로 바꾼다. 기본 조회 간격은 5초이고 `--refresh-ms`로 변경한다. `--saved`로 실행하거나 설치를 찾지 못하면 DB의 마지막 관측을 표시한다.
+설치된 code-agent를 PATH·npm 전역 설치에서 자동 탐색하고 실제 진입점을 호출한다. 별도 빌드는 `CODE_AGENT_CLI` 또는 `--cli`로 지정한다. 기본 주소는 `http://127.0.0.1:4310`이며 `--port`로 바꾼다. 전체 조회를 마친 뒤 다음 조회까지의 기본 간격은 5초이고 `--refresh-ms`로 변경한다. `--saved`로 실행하거나 설치를 찾지 못하면 DB의 마지막 관측을 표시한다.
 
 `dashboard` 또는 `dashboard start`는 현재 터미널에서 서버를 실행한다. `restart`는 기존 서버를 인증해 종료하고 명령을 호출한 새 프로세스에서 다시 실행한다. 같은 DB·포트·저장 관측 여부·조회 간격·명시한 CLI 경로·후보 탐색 시작 위치를 유지하며, 옵션을 주면 덮어쓴다. 서버가 종료된 상태면 마지막 설정으로 시작한다. `status`는 running·stopped·unreachable과 URL을 반환한다. `stop`은 대시보드만 종료한다.
 
