@@ -117,7 +117,7 @@ master-agent의 목적은 여러 프로젝트에 걸친 사용자 목표를 AI�
 
 재개 코드는 `stale-request`, `unobservable`, `no-work`, `ownership-conflict`, `wait`, `needs-human`, `replan-required`, `reapproval-required`, `limit-reached`, `ready`입니다. UI에서는 한국어 설명과 원래 코드를 함께 조회할 수 있게 합니다.
 
-`--expect-state`, `--expect-work`, `--expect-attempt`는 조회 결과를 기대 값과 대조하는 옵션이며 조회와 이후 실행을 원자적으로 묶지는 않습니다. 통신 계약의 submit은 같은 잠금 안에서 기대 상태·소유권·임대를 검사합니다. 이 보장은 직접 실행 호스트의 별도 조회·시작에는 적용되지 않습니다.
+`--expect-state`, `--expect-work`, `--expect-attempt`는 조회 결과를 기대 값과 대조하는 옵션이며 조회와 이후 실행을 원자적으로 묶지는 않는다. 개발 실행은 관리 통신 계약의 submit을 사용하며 같은 잠금 안에서 기대 상태·소유권·임대를 검사한다.
 
 지원하지 않는 스키마, 잘못된 JSON, 시간 초과, 실행 파일 누락은 서로 다른 연결 오류로 저장합니다. 사람이 읽는 status 문자열을 파싱하는 대체 연결은 두지 않습니다. 프로세스 종료 코드, JSON 스키마 유효성, 로컬 작업 상태를 각각 판정합니다.
 

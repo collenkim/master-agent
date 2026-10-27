@@ -13,16 +13,15 @@ import { LiveExecution } from '../packages/orchestrator/live.mjs';
 import { acceptRequest } from '../packages/orchestrator/requests.mjs';
 import { prepareRequest } from '../packages/orchestrator/preparation.mjs';
 import { ControlHost, bindControl, checkManagedSupport } from '../packages/runner/control-host.mjs';
-import { hostPrompt } from '../packages/runner/claude-host.mjs';
+import { hostPrompt } from '../packages/runner/host-context.mjs';
 import { controlProbe, hostReadinessIssue } from '../packages/code-agent-adapter/pairing.mjs';
 
-test('managed prompts follow injected host and flow procedures; direct Claude remains explicit', () => {
+test('managed prompts follow injected host and flow procedures', () => {
   const ticket = { goal: '작업', taskNumber: 'TASK-1', codeAgentWorkId: 'MA-1' };
-  const managed = hostPrompt(ticket, { control: true });
+  const managed = hostPrompt(ticket);
   assert.ok(!managed.includes('.claude/') && !managed.includes('CLAUDE.md'));
   assert.ok(managed.includes('code-agent flow advance --json'));
   assert.ok(managed.includes('procedure·instruction·agent·contextFile'));
-  assert.ok(hostPrompt(ticket).includes('.claude/skills/ca-request/SKILL.md'));
   checkManagedSupport({ versions: [1], hosts: [{ kind: 'codex', supported: true }] });
   assert.throws(() => checkManagedSupport({ versions: [1], hosts: [{ kind: 'codex', supported: false }] }), { code: 'control-unsupported' });
 });

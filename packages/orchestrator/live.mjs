@@ -55,14 +55,14 @@ export class LiveExecution {
     }
   }
   async dispatch(id, taskId, host, { expectedRevision, expectedState, workId, wait = true } = {}) {
-    requireThat(host?.mode === 'live' && (host.name === 'claude' || host.name === 'code-agent' && host.transport === 'code-agent-master') && typeof host.inspect === 'function' && typeof host.execute === 'function', 'invalid-runner', 'code-agent 관리 실행 또는 Claude 직접 실행 호스트가 필요합니다.');
+    requireThat(host?.mode === 'live' && host.name === 'code-agent' && host.transport === 'code-agent-master' && typeof host.inspect === 'function' && typeof host.execute === 'function', 'invalid-runner', 'code-agent 관리 실행 호스트가 필요합니다.');
     string(expectedState, 'expectedState');
     const before = this.engine.checked(id, expectedRevision);
     requireThat(before.mode === 'live', 'wrong-mode', 'live 목표만 실제 호스트로 배정할 수 있습니다.');
     const plan = before.plans.at(-1), task = plan?.proposal.tasks.find(t => t.id === taskId);
     requireThat(task && taskState(before, taskId).state === 'queued', 'invalid-state', '계획의 대기 작업만 배정할 수 있습니다.');
     const project = this.store.need('project', task.projectId);
-    const executionCapabilities = host.transport === 'code-agent-master' ? ['code-agent:managed', 'code-agent:claude', 'code-agent:codex'] : ['code-agent:claude'];
+    const executionCapabilities = ['code-agent:managed', 'code-agent:claude', 'code-agent:codex'];
     requireThat(executionCapabilities.some(c => project.capabilities.includes(c) && task.requiredCapabilities.includes(c)) && !task.requiredCapabilities.includes('simulation'),
       'capability-mismatch', '프로젝트와 작업에 해당 실행 경로의 code-agent 기능이 필요합니다.');
     host.checkInstallation?.(project);
@@ -178,7 +178,7 @@ export class LiveExecution {
     });
   }
   async continue(id, attemptId, host, { expectedRevision, expectedState, recoveryRunId, automatic = false, wait = true } = {}) {
-    requireThat(host?.mode === 'live' && (host.name === 'claude' || host.name === 'code-agent' && host.transport === 'code-agent-master') && typeof host.inspect === 'function' && typeof host.execute === 'function', 'invalid-runner', 'code-agent 관리 실행 또는 Claude 직접 실행 호스트가 필요합니다.');
+    requireThat(host?.mode === 'live' && host.name === 'code-agent' && host.transport === 'code-agent-master' && typeof host.inspect === 'function' && typeof host.execute === 'function', 'invalid-runner', 'code-agent 관리 실행 호스트가 필요합니다.');
     string(expectedState, 'expectedState');
     const before = this.engine.checked(id, expectedRevision), attempt = before.attempts.find(a => a.id === attemptId);
     requireThat(before.mode === 'live' && !before.planningHold && !taskHeld(this.store, before, attempt?.taskId) && before.state !== 'paused' && attempt?.mode === 'live' && !attempt.recoveryBusy && !attempt.reconciliationPending &&

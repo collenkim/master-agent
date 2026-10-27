@@ -8,7 +8,7 @@ import { hash } from '../packages/domain/contracts.mjs';
 import { writeFileSync, existsSync, mkdirSync, realpathSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { createRequire } from 'node:module';
-import { hostPrompt } from '../packages/runner/claude-host.mjs';
+import { hostPrompt } from '../packages/runner/host-context.mjs';
 
 const contract = {
   id: 'value-api', path: 'source.mjs', symbol: 'value', inputs: [],
@@ -27,7 +27,7 @@ test('committed contract documents become a code-agent bundle and verified local
   assert.equal(bundle.contracts[0].repository, realpathSync.native(f.projects[0].path));
   assert.equal(bundle.contracts[0].commit.length, 40);
   assert.deepEqual(bundle.contracts[0].claims.map(c => c.text), contractLines(declaration));
-  const prompt = hostPrompt({ inputContracts: inputs }, { control: true });
+  const prompt = hostPrompt({ inputContracts: inputs });
   assert.match(prompt, /code-agent planning contracts/);
   assert.match(prompt, /첫 planning 담당 배정 전에/);
   assert.ok(prompt.length < 20000);

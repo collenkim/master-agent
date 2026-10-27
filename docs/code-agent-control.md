@@ -1,6 +1,6 @@
 # code-agent 통신 계약 연동
 
-code-agent가 제공하는 master 통신 계약(`code-agent.master` v1, code-agent 저장소 `doc/master-control.md`)으로 실행을 접수·관찰·정지·재개·인계하고, 사람이 code-agent에서 준 권한 범위의 일상 판단을 위임 판단으로 보낸다. 대시보드·CLI의 프로젝트/그룹 요청과 `--control` 실행이 이 경로를 쓴다. 직접 실행 호스트(`ClaudeHost`)는 [별도 계약](live-execution.md)을 따른다.
+code-agent가 제공하는 master 통신 계약(`code-agent.master` v1, code-agent 저장소 `doc/master-control.md`)으로 실행을 접수·관찰·정지·재개·인계하고, 사람이 code-agent에서 준 권한 범위의 일상 판단을 위임 판단으로 보낸다. 대시보드·CLI의 프로젝트/그룹 요청과 `--control` 실행이 이 경로를 쓴다. 개발 실행은 이 관리 계약으로 통일하며 배정·계속 실행·검증·인계·복구·재계획·자동 진행 명령에는 `--control`이 필요하다. 실행 상태는 [실제 개발 호스트 연결](live-execution.md)을 따른다.
 
 ## 역할과 적용 조건
 
@@ -10,7 +10,7 @@ host를 고르지 않은 요청은 프로젝트의 `execution claude|codex`·`ex
 
 새 프로젝트 등록의 기본 기능은 `code-agent:managed`다. 기존 `code-agent:claude`와 명시적 `code-agent:codex` 등록·계획도 관리 경로에서 받으며 실제 호스트는 code-agent가 선택한다. 준비 점검은 설치 마커·지원 프로토콜/호스트·제어권·인증을 확인한다. 선택된 호스트의 설치·권한·Codex 프로젝트/hook 신뢰 판정은 code-agent의 접수·감독을 따른다. master는 권한 설정이나 신뢰를 자동 변경하지 않는다.
 
-관리 실행의 지시문은 `.claude` 경로를 지정하지 않고 주입된 호스트 지침과 `code-agent flow advance --json`이 반환한 `procedure`·`instruction`·`agent`·`contextFile`을 따른다. 결과 기록 후 `resume`으로 이어가고 `human`·`wait`는 대기로 남긴다. Claude 직접 실행은 별도의 기존 경로다.
+관리 실행의 지시문은 `.claude` 경로를 지정하지 않고 주입된 호스트 지침과 `code-agent flow advance --json`이 반환한 `procedure`·`instruction`·`agent`·`contextFile`을 따른다. 결과 기록 후 `resume`으로 이어가고 `human`·`wait`는 대기로 남긴다. master-agent가 Claude 개발 프로세스를 직접 시작하는 경로는 제공하지 않는다.
 
 Codex 접수의 세션 ID는 임시 별칭일 수 있다. master는 결과의 `hostKind`·`sessionConfirmed`·`sessionAlias`와 확정된 thread ID를 기록하고 같은 thread만 재개한다. thread 미확인은 새 세션으로 대체하지 않는다. 호스트·권한 설정이 바뀐 세션의 재개는 code-agent가 거부하며, 호스트 전환은 사용자의 `execution --handoff` 절차와 별도 실행 인계가 필요하다. 요청에서 host를 고른 작업도 같으며, 사람이 `execution <host> --handoff`로 인계하면 그 작업에 고정된 선택도 인계한 host로 바뀐다.
 
@@ -21,7 +21,7 @@ Codex 접수의 세션 ID는 임시 별칭일 수 있다. master는 결과의 `h
 | code-agent 감독 프로세스 | 등록된 호스트 설정을 주입해 Claude·Codex 실행 세션 시작·생존 확인·협력 정지·강제 종료·종료 기록 |
 | 사람 | 연동 켜기·제어자 등록, 위임 권한(grant) 부여·회수, 중대한 판단, 강제 인계 |
 
-1. 사람이 대상 프로젝트의 TTY에서 `code-agent master enable --controller <ID> --token-out <저장소 밖 파일>`로 연동을 켠다. 켜지 않은 프로젝트는 연결되지 않고(`control-not-enabled`) 기존 직접 실행 경로만 쓴다.
+1. 사람이 대상 프로젝트의 TTY에서 `code-agent master enable --controller <ID> --token-out <저장소 밖 파일>`로 연동을 켠다. 켜지 않은 프로젝트는 연결되지 않으며(`control-not-enabled`) 실행 전에 제어 연결을 완료해야 한다.
 2. master는 `project control`로 제어자로 연결한다. 페어링을 지원하는 code-agent에서는 1번 대신 사람이 확인한 [제어 연결(페어링)](#제어-연결페어링)으로 켜기·연결을 한 번에 한다. 연결 기록에는 토큰 파일 경로만 남기고 토큰 값은 저장하지 않는다. **연결은 승인 권한이 아니다** — 위임 판단은 사람이 `code-agent master grant <권한.json>`으로 준 범위(동작·임무 또는 작업·경로·만료·사용 횟수)에서만 code-agent가 받는다.
 3. 사람만 하는 동작(setup·docs·baseline·model·plugin·update·abort 등)과 master 실행이 준비하지 않은 확인 요청은 위임 대상이 아니다.
 4. 대시보드의 명시적 사람 답은 별도 `dashboard-human` 채널을 사용한다. 사용자가 `code-agent master human enable --controller <ID>`로 등록한 Ed25519 키로만 서명하며 AI grant·기존 `answer actor:human`과 구분한다. `interactions`·`interaction.respond`·`interaction.result` 계약과 지원 범위는 [공통 요청함](dashboard-interactions.md)을 따른다. 사람 전용 동의도 이 채널에서 원래 검증·적용 함수로 처리한다.
@@ -45,7 +45,7 @@ master-agent project accept <프로젝트ID> --cli <경로> --controller <새 �
 master-agent project pair <프로젝트ID> --cli <경로> [--controller dashboard]   # TTY에서 확인 단어 pair
 ```
 
-`--control`은 dispatch·continue·verify·handoff·reconcile·replan·recover·advance·drive에 붙인다. reattach·stop·delegate·relay는 항상 이 경로다. `--poll-ms`(결과·이벤트 조회 주기)와 `--follow-timeout-ms`(한 실행을 기다리는 상한 — 넘으면 기다림만 멈추고 실행은 code-agent에서 계속된다)는 master 쪽 설정이다. heartbeat·연결 끊김 판단·정지 유예·실행 시간 상한 등은 code-agent 정책(`code-agent master enable --policy`, 통신 `policy`)이 정한다.
+`--control`은 dispatch·continue·verify·handoff·reconcile·reconcile-verification·replan·recover·advance·drive에 필수로 붙인다. reattach·stop·delegate·relay는 항상 이 경로다. `--poll-ms`(결과·이벤트 조회 주기)와 `--follow-timeout-ms`(한 실행을 기다리는 상한 — 넘으면 기다림만 멈추고 실행은 code-agent에서 계속된다)는 master 쪽 설정이다. heartbeat·연결 끊김 판단·정지 유예·실행 시간 상한 등은 code-agent 정책(`code-agent master enable --policy`, 통신 `policy`)이 정한다.
 
 `drive --control`은 독립 프로젝트를 먼저 접수하고 실행 ID를 저장한 뒤, 각 결과를 한 번씩 조회한다. 하나가 실행 중이어도 다른 프로젝트를 접수할 수 있다. 동일 프로젝트 잠금·선행 인계 조건은 유지하며 판단과 검사는 순차 수행한다. 이 경로의 관측 상한은 저장된 acceptedAt부터 계산하므로 재연결로 초기화되지 않는다. 초과·관측 불가는 unknown으로 보존하고 잠금·외부 실행은 그대로 둔다. 개별 dispatch·continue·reattach는 종료를 기다린다.
 

@@ -2,7 +2,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { ControlClient, ControlError, validCli } from '../code-agent-adapter/control.mjs';
-import { hostPrompt, inspectState } from './claude-host.mjs';
+import { hostPrompt, inspectState } from './host-context.mjs';
 import { hash, now, requireThat, string } from '../domain/contracts.mjs';
 
 /** master 기록에 남길 code-agent 이벤트 — 진척·질문·동의·검증·실행·연결. 나머지는 커서만 넘긴다 */
@@ -113,7 +113,7 @@ export class ControlHost {
   }
   inspect(project, expectedState, sessionId) { return inspectState(this.cliPath, project, expectedState, sessionId); }
   validateTicket(ticket) {
-    const prompt = hostPrompt(ticket, { control: true });
+    const prompt = hostPrompt(ticket);
     requireThat(prompt.length <= 20000, 'handoff-context-limit', '배정 입력이 code-agent 접수 한도 20000자를 넘습니다. 계약·범위를 나눠 다시 계획하세요. 계약을 잘라 보내지 않습니다.');
     return prompt;
   }

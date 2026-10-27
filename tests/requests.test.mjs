@@ -10,7 +10,7 @@ import { LEASE_TTL_MS } from '../packages/orchestrator/lease.mjs';
 import { verificationFixture } from './verification-fixture.mjs';
 import { startDashboard } from '../packages/dashboard/server.mjs';
 import { answerFor, planningSetup } from './planning-fixture.mjs';
-import { hostPrompt } from '../packages/runner/claude-host.mjs';
+import { hostPrompt } from '../packages/runner/host-context.mjs';
 
 test('M1: request reset은 확인·버전·로컬 생존을 검사하고 같은 요청을 대기로 돌린다', t => {
   const f = setup(t), id = acceptRequest(f.store, { targetType: 'project', targetId: f.fixture.projects[0].id, goal: '복구할 요청' }).request.id;
@@ -90,7 +90,7 @@ for (const targetType of ['group', 'project']) test(`${targetType} requests exec
   f.host.execute = async (ticket, options) => {
     assert.equal(ticket.taskNumber, 'UZRF-392');
     assert.notEqual(ticket.codeAgentWorkId, ticket.taskNumber);
-    assert.match(hostPrompt(ticket, { control: true }), /"taskNumber": "UZRF-392"/);
+    assert.match(hostPrompt(ticket), /"taskNumber": "UZRF-392"/);
     return execute(ticket, options);
   };
   f.host.inspect = async project => {

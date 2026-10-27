@@ -136,6 +136,8 @@ master-agent mission escalations <목표ID>
 master-agent mission stop <목표ID> <시도ID> --mode pause
 ```
 
+mission의 dispatch·continue·verify·handoff·reconcile·reconcile-verification·recover·replan·advance·drive에는 `--control`이 필요하다. 직접 실행과 `--host-cli` 옵션은 제공하지 않는다.
+
 원자적 접수·이벤트 재동기화·재부착·정지·위임 판단·제어권 인계의 조건은 [code-agent 통신 계약 연동](code-agent-control.md)을 따른다.
 
 ## 구현 경계
@@ -146,7 +148,7 @@ master-agent mission stop <목표ID> <시도ID> --mode pause
 
 배정 전 `delivery` 검증 계약을 등록하면 handoff에서 code-agent 커밋의 동의 기록과 반영 후 테스트를 대조한다. 호스트 반환 뒤 관측이 끊긴 unknown 시도는 `mission reconcile`로 실행 없이 검증 단계에 복구할 수 있다. 적용 조건과 증거 수준은 [반영 기록·관측 복구](delivery-reconciliation.md)를 따른다.
 
-재계획으로 보류된 실패 시도는 `mission replan <목표ID> <시도ID> --revision <버전> --expect-state <상태버전> [--provider claude|codex]`로 인계한다. provider가 있는 drive도 외부 종료 확인 후 같은 흐름을 사용한다. [재계획 인계](replanning.md)의 보존·재수집·재분석 계약을 따른다.
+재계획으로 보류된 실패 시도는 `mission replan <목표ID> <시도ID> --revision <버전> --expect-state <상태버전> --control [--provider claude|codex]`로 인계한다. provider가 있는 drive도 외부 종료 확인 후 같은 흐름을 사용한다. [재계획 인계](replanning.md)의 보존·재수집·재분석 계약을 따른다.
 
 규칙 판단은 Decision.actor=rule-engine, 검증된 AI 계획 활성화는 ai+validator, 사용자 질문 응답은 human, 검증 계약 등록은 operator로 기록한다. 카탈로그의 도메인·기능·수집 경로는 직접 지정하며 AI가 수집된 코드·문서를 근거로 프로젝트 역할과 계획을 생성한다. 실제 검증은 파일 스냅샷과 독립 명령의 조건별 결과·산출물 해시를 보존한다. 사용법은 [실제 검증과 자동 진행](live-verification.md)을 따른다.
 

@@ -82,3 +82,17 @@ test('알 수 없는 버전과 손상된 저장소를 조용히 초기화하지 
   const existing = new DatabaseSync(other); existing.exec('CREATE TABLE important_data(id INTEGER)'); existing.close();
   assert.throws(() => new Store(other), e => e.code === 'unknown-database');
 });
+
+test('L6: 관리 실행 명령은 --control 없이 DB를 만들거나 CLI를 탐색하지 않는다', t => {
+  const root = temporary(t), db = join(root, 'must-not-exist.db');
+  for (const action of ['dispatch', 'continue', 'verify', 'handoff', 'recover', 'replan', 'reconcile', 'reconcile-verification', 'advance', 'drive']) {
+    const args = ['mission', action, 'mission', ...(['advance', 'drive'].includes(action) ? [] : ['attempt'])];
+    const result = spawnSync(process.execPath, [cli, ...args, '--revision', '1', '--expect-state', 'v1',
+      '--provider', 'claude', '--cli', join(root, 'missing.mjs'), '--db', db], { cwd: root, encoding: 'utf8' });
+    assert.equal(result.status, 1, action);
+    const error = JSON.parse(result.stderr);
+    assert.equal(error.error, 'usage', action);
+    assert.match(error.message, /--control/, action);
+  }
+  assert.equal(existsSync(db), false);
+});

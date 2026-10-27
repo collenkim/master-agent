@@ -1,11 +1,8 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { extname, join } from 'node:path';
-import { findCli, runProcess } from '../reasoning/cli-provider.mjs';
 import { parseState } from '../code-agent-adapter/observe.mjs';
-import { DomainError, requireThat, hash } from '../domain/contracts.mjs';
+import { requireThat } from '../domain/contracts.mjs';
 import { dependencyBundle, contractLines } from '../verification/handoff-contracts.mjs';
-import { findCodeAgent } from '../code-agent-adapter/discovery.mjs';
-
 import { childEnv, execFileTree as runFile } from './process.mjs';
 
 /** 선행 작업 증거의 요약 — 세션에 필요한 것은 어떤 검사가 통과했고 무엇을 반영했는지다. 파일 트리 스냅샷·원격 상태·검사 출력은 master 기록에 남고
@@ -16,9 +13,9 @@ function evidenceSummary(e) {
     artifacts: e.artifacts ?? [], delivery: e.delivery ? { level: e.delivery.level, ...(e.delivery.commit ? { commit: e.delivery.commit } : {}) } : null, at: e.at };
 }
 
-/** control: code-agent 통신 계약으로 접수한 실행 — 기대 상태는 code-agent 가 접수 잠금 안에서 이미 대조했다.
+/** code-agent 통신 계약으로 접수한 실행 — 기대 상태는 code-agent가 접수 잠금 안에서 이미 대조했다.
  *  실행이 시작되면 세션 임대·hook 기록으로 상태 버전이 바뀌므로 세션에 다시 대조시키지 않는다. 선행 증거는 요약만 싣는다 */
-export function hostPrompt(ticket, { control = false } = {}) {
+export function hostPrompt(ticket) {
   const dependencyContracts = dependencyBundle(ticket.inputContracts);
   const contractDocuments = (ticket.recipe?.exports ?? []).filter(c => c.documentPath).map(c => ({ path: c.documentPath, lines: contractLines(c) }));
   // 같은 프로젝트의 선행 작업이 반영한 커밋 — 새 작업이 기본 기준 브랜치에서 시작하면 그 산출물이 빠진다
@@ -26,19 +23,13 @@ export function hostPrompt(ticket, { control = false } = {}) {
   const codeAgentBase = (ticket.inputEvidence ?? []).filter(e => e?.projectId === projectId && typeof e.delivery?.commit === 'string').at(-1)?.delivery.commit;
   const context = { missionId: ticket.missionId, planVersion: ticket.planVersion, taskId: ticket.taskId, attemptId: ticket.id,
     ...(ticket.taskNumber === undefined ? {} : { taskNumber: ticket.taskNumber }),
-    codeAgentWorkId: ticket.codeAgentWorkId, ...(codeAgentBase ? { codeAgentBase } : {}), ...(control ? {} : { expectedState: ticket.expectedState }), goal: ticket.goal, criteria: ticket.criteria,
-    task: ticket.task, inputEvidence: control ? (ticket.inputEvidence ?? []).map(evidenceSummary) : ticket.inputEvidence, recovery: ticket.recovery?.proposal,
+    codeAgentWorkId: ticket.codeAgentWorkId, ...(codeAgentBase ? { codeAgentBase } : {}), goal: ticket.goal, criteria: ticket.criteria,
+    task: ticket.task, inputEvidence: (ticket.inputEvidence ?? []).map(evidenceSummary), recovery: ticket.recovery?.proposal,
     inputContracts: ticket.inputContracts ?? [], ...(dependencyContracts ? { dependencyContracts } : {}),
     ...(contractDocuments.length ? { contractDocuments } : {}), verificationContract: ticket.recipe, ...(ticket.note ? { masterNote: ticket.note } : {}) };
-  const check = control
-    ? '이 실행은 code-agent가 기대 상태·작업·임대를 대조한 뒤 접수했습니다. 실행이 시작되면 상태 버전이 바뀌므로 다시 대조하지 말고, code-agent status --json으로 현재 위치만 확인해 이어 가세요. 지정된 codeAgentWorkId가 아닌 다른 작업이 진행 중이면 수정하지 말고 보고하세요.'
-    : '먼저 code-agent status --json으로 작업과 상태 버전을 다시 확인하세요. 기대 상태와 다르면 수정하지 말고 보고하세요.';
-  const instructions = control
-    ? 'code-agent가 주입한 호스트 설정과 해당 호스트의 프로젝트 지침·설치된 절차를 따르세요. 호스트·모델·권한 설정을 임의로 덮어쓰지 마세요.'
-    : '프로젝트의 CLAUDE.md와 code-agent 실행 절차를 따르세요.';
-  const procedure = control
-    ? 'code-agent flow advance --json을 실행하고 반환된 procedure·instruction·agent·contextFile을 따르세요. 새 작업의 접수 절차에는 지정된 codeAgentWorkId를 사용하세요. 결과 기록 후 resume 명령으로 이어가며 human은 질문·동의 준비 후 대기하고 wait는 반복 조회하지 마세요. done이나 호스트 턴 종료만으로 master 작업 완료를 선언하지 마세요.'
-    : '새 작업은 .claude/skills/ca-request/SKILL.md를 읽고 그 절차로 접수하며 지정된 codeAgentWorkId를 사용하세요. 기존 작업은 .claude/skills/ca-next/SKILL.md 절차로 이어가세요.';
+  const check = '이 실행은 code-agent가 기대 상태·작업·임대를 대조한 뒤 접수했습니다. 실행이 시작되면 상태 버전이 바뀌므로 다시 대조하지 말고, code-agent status --json으로 현재 위치만 확인해 이어 가세요. 지정된 codeAgentWorkId가 아닌 다른 작업이 진행 중이면 수정하지 말고 보고하세요.';
+  const instructions = 'code-agent가 주입한 호스트 설정과 해당 호스트의 프로젝트 지침·설치된 절차를 따르세요. 호스트·모델·권한 설정을 임의로 덮어쓰지 마세요.';
+  const procedure = 'code-agent flow advance --json을 실행하고 반환된 procedure·instruction·agent·contextFile을 따르세요. 새 작업의 접수 절차에는 지정된 codeAgentWorkId를 사용하세요. 결과 기록 후 resume 명령으로 이어가며 human은 질문·동의 준비 후 대기하고 wait는 반복 조회하지 마세요. done이나 호스트 턴 종료만으로 master 작업 완료를 선언하지 마세요.';
   return `master-agent가 배정한 개발 작업입니다. ${instructions}
 이것은 사용자 승인을 대신하는 문서가 아닙니다. 요구 확정·계획 승인·동의는 기존 code-agent 절차로 확인해야 합니다.
 승인 응답을 지어내거나 승인 파일·임대·hook·설정을 직접 수정하지 마세요. 필요한 승인을 받을 수 없으면 현재 상태와 질문을 보고하고 멈추세요.
@@ -57,7 +48,7 @@ verificationContract의 checks는 master가 반영 뒤 직접 실행하는 독�
 ${JSON.stringify(context, null, 2)}`;
 }
 
-/** code-agent status --json 읽기 조회 — ClaudeHost·ControlHost 가 같이 쓴다 */
+/** code-agent status --json 읽기 조회 — 관리 실행 호스트가 쓴다 */
 export async function inspectState(cliPath, project, expectedState, sessionId) {
   requireThat(existsSync(join(project.path, '.code-agent/version')), 'not-installed', 'code-agent 설치가 필요합니다.');
   const js = ['.js', '.mjs', '.cjs'].includes(extname(cliPath).toLowerCase());
@@ -74,50 +65,4 @@ export async function inspectState(cliPath, project, expectedState, sessionId) {
   requireThat(result.status === 'observed', 'observation-failed', result.error ?? '현재 상태를 확인할 수 없습니다.');
   if (expectedState) requireThat(result.state.stateVersion === expectedState && result.state.resume.code !== 'stale-request', 'stale-remote-state', 'code-agent 상태가 바뀌었습니다. 다시 조회하세요.');
   return result.state;
-}
-
-export function checkClaudeInstallation(project) {
-  for (const file of ['CLAUDE.md', '.claude/skills/ca-request/SKILL.md', '.claude/skills/ca-next/SKILL.md', '.claude/settings.json']) {
-    requireThat(existsSync(join(project.path, file)), 'host-not-installed', `Claude용 code-agent 설치 파일이 없습니다: ${file}`);
-  }
-  let settings;
-  try { settings = JSON.parse(readFileSync(join(project.path, '.claude/settings.json'), 'utf8')); }
-  catch { throw new DomainError('host-not-installed', 'Claude 설정 파일을 읽지 못했거나 JSON 형식이 손상됐습니다.'); }
-  requireThat(settings && typeof settings === 'object' && !Array.isArray(settings),
-    'host-not-installed', 'Claude 설정 파일은 JSON 객체여야 합니다.');
-  requireThat(settings.disableAllHooks !== true && ['PreToolUse', 'SessionStart', 'Stop'].every(event =>
-    Array.isArray(settings.hooks?.[event]) && settings.hooks[event].some(entry => entry.hooks?.some(h => h.type === 'command' && /code-agent|cli\.js/.test(h.command ?? '')))),
-  'host-not-installed', 'code-agent의 Claude hook 설정이 필요합니다.');
-}
-
-/** 개발 호스트는 프로젝트의 설치된 hook·skills·권한 설정을 유지한다. */
-export class ClaudeHost {
-  mode = 'live';
-  name = 'claude';
-  constructor({ cliPath, hostPath, model, timeoutMs = 600000 } = {}) {
-    cliPath = findCodeAgent(cliPath);
-    requireThat(Number.isInteger(timeoutMs) && timeoutMs > 0, 'invalid-input', '호스트 시간 제한이 잘못됐습니다.');
-    this.cliPath = cliPath; this.command = findCli('claude', hostPath); this.model = model ?? 'cli-default'; this.timeoutMs = timeoutMs;
-  }
-  inspect(project, expectedState, sessionId) { return inspectState(this.cliPath, project, expectedState, sessionId); }
-  checkInstallation(project) { checkClaudeInstallation(project); }
-  async execute(ticket, { beforeStart = () => {} } = {}) {
-    this.checkInstallation(ticket.project);
-    // 판단 저장 후 프로세스 시작 직전에도 검사한다. CLI의 조회 계약은 원자적 예약이 아니다.
-    await this.inspect(ticket.project, ticket.expectedState, ticket.sessionId);
-    beforeStart();
-    const args = ['--print', '--output-format', 'json', '--permission-mode', 'manual'];
-    if (ticket.sessionId) args.push('--resume', ticket.sessionId);
-    if (this.model !== 'cli-default') args.push('--model', this.model);
-    const { stdout } = await runProcess(this.command.executable, [...this.command.prefix, ...args], {
-      cwd: ticket.project.path, input: hostPrompt(ticket), timeoutMs: this.timeoutMs,
-    });
-    let envelope;
-    try { envelope = JSON.parse(stdout); } catch { throw new Error('개발 호스트 결과가 JSON이 아닙니다.'); }
-    requireThat(envelope && typeof envelope.result === 'string' && typeof envelope.session_id === 'string', 'invalid-host-result', '호스트 세션과 요약을 확인할 수 없습니다.');
-    return { sessionId: envelope.session_id, summary: envelope.result.slice(0, 16000),
-      status: envelope.is_error === true || envelope.subtype !== 'success' ? 'blocked' : 'returned',
-      permissionDenials: Array.isArray(envelope.permission_denials) ? envelope.permission_denials.map(d => ({ tool: String(d.tool_name ?? 'unknown') })).slice(0, 100) : [],
-      outputHash: hash(stdout) };
-  }
 }

@@ -64,7 +64,7 @@ master는 문서 원문·검증 시점의 SHA-256·반영 커밋의 일반 파�
 
 ```powershell
 master-agent mission verification <목표ID> <계약JSON> --revision <목표버전>
-master-agent mission drive <목표ID> --cli C:/IdeaProjects/code-agent/dist/agent/cli.js
+master-agent mission drive <목표ID> --cli C:/IdeaProjects/code-agent/dist/agent/cli.js --control
 ```
 
 `advance`는 한 단계만 수행하고 `drive`는 가능한 전이를 반복한다. 작업 선택은 고정 계획의 의존 관계와 현재 상태에 따른다. AI 분석·재계획은 기존 analyze 경로가 담당한다. 막혔을 때 `blockers`와 `mission show`의 시도·판단·검증 기록을 확인한다. 자동으로 기존 외부 작업을 가져오거나 실패한 호스트를 반복 실행하지 않는다.
@@ -88,8 +88,8 @@ verified는 잠금 해제가 아니다. 기존 code-agent에서 작업을 마치
 no-work만으로 커밋·반영 승인을 증명할 수는 없다. 여기서 succeeded는 등록된 로컬 완료 조건과 검증된 산출물의 인계를 뜻하며, 커밋·push·배포 완료를 보증하지 않는다. 배정 전 delivery 계약을 등록하면 지정한 기록 파일의 변경, 커밋 내 영수증과 반영 후 독립 테스트를 대조한다. [반영 기록·관측 복구](delivery-reconciliation.md)의 계약을 따르며, 등록되지 않은 변경은 여전히 차단한다.
 
 ```powershell
-master-agent mission verify <목표ID> <시도ID> --revision <목표버전> --expect-state <원격버전> --cli <code-agent경로>
-master-agent mission handoff <목표ID> <시도ID> --revision <목표버전> --expect-state <원격버전> --cli <code-agent경로>
+master-agent mission verify <목표ID> <시도ID> --revision <목표버전> --expect-state <원격버전> --cli <code-agent경로> --control
+master-agent mission handoff <목표ID> <시도ID> --revision <목표버전> --expect-state <원격버전> --cli <code-agent경로> --control
 master-agent mission complete <목표ID> --revision <목표버전>
 ```
 

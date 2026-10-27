@@ -16,7 +16,7 @@
 ## 사용
 
 ```powershell
-master-agent mission replan <목표ID> <실패시도ID> --revision <현재버전> --expect-state <상태버전> --cli C:/IdeaProjects/code-agent/dist/agent/cli.js --provider claude
+master-agent mission replan <목표ID> <실패시도ID> --revision <현재버전> --expect-state <상태버전> --cli C:/IdeaProjects/code-agent/dist/agent/cli.js --provider claude --control
 master-agent mission show <목표ID>
 ```
 
@@ -40,4 +40,4 @@ master-agent mission analyze <목표ID> --revision <갱신된버전> --provider 
 
 ## 검증 경계
 
-회귀 테스트는 임시 Git 저장소의 실제 파일·검증 명령과 통제된 외부 상태·AI 응답을 사용한다. 직접 실행 호스트의 조회와 시작은 원자적이지 않다. `--control` 경로는 code-agent가 접수 시 상태·소유권·임대를 한 잠금 안에서 대조하고, grant 범위의 위임 판단을 지원한다([통신 계약](code-agent-control.md)). 실제 모델의 정상 전체 흐름과 실패 후 재계획 품질 평가는 구분하며 후자는 후속 검증이다.
+회귀 테스트는 임시 Git 저장소의 실제 파일·검증 명령과 통제된 외부 상태·AI 응답을 사용한다. 관리 실행은 code-agent가 접수 시 상태·소유권·임대를 한 잠금 안에서 대조하고, grant 범위의 위임 판단을 지원한다([통신 계약](code-agent-control.md)). 실제 모델의 정상 전체 흐름과 실패 후 재계획 품질 평가는 구분하며 후자는 후속 검증이다.

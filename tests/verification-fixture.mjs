@@ -34,7 +34,12 @@ export function verificationFixture(t) {
     checks: (task.kind === 'integration' ? projects : projects.filter(p => p.id === task.projectId)).map(p => ({ id: `check-${p.id}`, executable: process.execPath, args: [join(p.path, 'check.mjs')], criterionIds: ['value'], timeoutMs: 5000 })),
     artifacts: [{ name: 'result', checkId: `check-${task.projectId}` }] }));
   for (const recipe of recipes) mission = verifier.configure(mission.id, recipe, mission.revision);
-  const host = { mode: 'live', name: 'claude', async inspect(project) { return structuredClone(states[project.id]); },
+  const host = { mode: 'live', name: 'code-agent', transport: 'code-agent-master', async inspect(project) { return structuredClone(states[project.id]); },
+    client() { return { async result(action) {
+      if (action === 'consents') return { consents: [] };
+      if (action === 'questions') return { questions: [] };
+      throw new Error(`검증 대역에서 지원하지 않는 제어 조회: ${action}`);
+    } }; },
     async execute(ticket, { beforeStart } = {}) {
       beforeStart?.();
       if (ticket.task.kind === 'implementation') writeFileSync(join(ticket.project.path, 'source.mjs'), 'export const value = 2;\n');

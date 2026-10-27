@@ -4,11 +4,9 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { setup } from './helpers.mjs';
 import { LiveExecution } from '../packages/orchestrator/live.mjs';
-import { ClaudeHost } from '../packages/runner/claude-host.mjs';
+import { inspectState } from '../packages/runner/host-context.mjs';
 import { Planner } from '../packages/reasoning/planner.mjs';
 import { Knowledge } from '../packages/knowledge/sources.mjs';
-import { execFileSync } from 'node:child_process';
-import { resolve } from 'node:path';
 
 function fixture(t) {
   const f = setup(t, { plan: false });
@@ -21,7 +19,7 @@ function fixture(t) {
     repo: { root: f.store.need('project', proposal.tasks[0].projectId).path }, work: null, request: null,
     ownership: { process: 'unverified', lease: { state: 'none' } }, consents: { readable: true, open: [] },
     questions: null, unknown: [], resume: { code: 'no-work', reasons: [] } };
-  const host = { mode: 'live', name: 'claude', calls: 0,
+  const host = { mode: 'live', name: 'code-agent', transport: 'code-agent-master', calls: 0,
     async inspect() { return structuredClone(state); },
     async execute(ticket) {
       host.calls++;
@@ -150,34 +148,23 @@ test('실행 중 pause는 돌아온 결과로 해제되지 않으며 모의 결�
   await assert.rejects(f.live.continue(m.id, m.attempts[0].id, f.host, { expectedRevision: m.revision, expectedState: 'v2' }), e => e.code === 'invalid-state');
 });
 
-test('실제 자식 프로세스: 프로젝트 cwd·hook 유지·세션 재개·stdin과 상태 대조', async t => {
+test('L6: 관리 실행 상태 조회는 현재 버전과 프로젝트 cwd를 대조한다', async t => {
   const f = fixture(t), project = f.store.need('project', f.proposal.tasks[0].projectId);
-  for (const dir of ['.code-agent', '.claude/skills/ca-request', '.claude/skills/ca-next']) mkdirSync(join(project.path, dir), { recursive: true });
-  for (const file of ['.code-agent/version', 'CLAUDE.md', '.claude/skills/ca-request/SKILL.md', '.claude/skills/ca-next/SKILL.md']) writeFileSync(join(project.path, file), 'fixture');
-  writeFileSync(join(project.path, '.claude/settings.json'), JSON.stringify({ hooks: Object.fromEntries(['PreToolUse', 'Stop', 'SessionStart'].map(e => [e, [{ hooks: [{ type: 'command', command: 'code-agent fixture' }] }]])) }));
-  const cli = join(f.root, 'status.mjs'), hostPath = join(f.root, 'host.mjs');
-  writeFileSync(cli, `console.log(JSON.stringify(${JSON.stringify(f.state)}));`);
-  writeFileSync(hostPath, `import assert from 'node:assert/strict';
+  mkdirSync(join(project.path, '.code-agent'), { recursive: true });
+  writeFileSync(join(project.path, '.code-agent/version'), 'fixture');
+  const cli = join(f.root, 'status.mjs');
+  writeFileSync(cli, `import assert from 'node:assert/strict';
     assert.equal(process.cwd().toLowerCase(), ${JSON.stringify(project.path.toLowerCase())});
-    assert.ok(process.argv.includes('--resume')); assert.ok(process.argv.includes('session-test'));
-    assert.equal(process.argv[process.argv.indexOf('--permission-mode')+1], 'manual');
-    assert.ok(!process.argv.some(a=>/dangerously|disableAllHooks|disable-slash|--bare/.test(a)));
-    let input=''; for await(const part of process.stdin) input+=part;
-    assert.ok(input.includes('MA-TEST')); assert.ok(!input.includes('private-ticket-token'));
-    console.log(JSON.stringify({subtype:'success',session_id:'session-test',result:'한글 결과',permission_denials:[]}));`);
-  const host = new ClaudeHost({ cliPath: cli, hostPath });
-  const result = await host.execute({ project, expectedState: 'v1', codeAgentWorkId: 'MA-TEST', token: 'private-ticket-token', sessionId: 'session-test' });
-  assert.equal(result.summary, '한글 결과');
-  await assert.rejects(host.inspect(project, 'old'), e => e.code === 'stale-remote-state');
-  writeFileSync(hostPath, `let input=''; for await(const part of process.stdin) input+=part; console.log(JSON.stringify({subtype:'success',session_id:'cli-test',result:'호스트 응답',permission_denials:[]}));`);
-  const response = JSON.parse(execFileSync(process.execPath, [resolve('apps/cli/main.mjs'), 'mission', 'dispatch', f.mission.id, f.taskId,
-    '--db', f.db, '--revision', String(f.mission.revision), '--expect-state', 'v1', '--cli', cli, '--host-cli', hostPath], { cwd: f.root, encoding: 'utf8' }));
-  assert.equal(response.attempts[0].turns[0].result.sessionId, 'cli-test');
-  assert.equal(response.tasks[0].state, 'blocked');
-  for (const raw of ['{broken-json', 'null']) {
-    writeFileSync(join(project.path, '.claude/settings.json'), raw);
-    assert.throws(() => host.checkInstallation(project), e => e.code === 'host-not-installed');
-  }
-  writeFileSync(join(project.path, '.claude/settings.json'), '{"disableAllHooks":true}');
-  assert.throws(() => host.checkInstallation(project), e => e.code === 'host-not-installed');
+    assert.ok(process.argv.includes('--session') && process.argv.includes('session-test'));
+    console.log(JSON.stringify(${JSON.stringify(f.state)}));`);
+  assert.equal((await inspectState(cli, project, 'v1', 'session-test')).stateVersion, 'v1');
+  await assert.rejects(inspectState(cli, project, 'old', 'session-test'), { code: 'stale-remote-state' });
+});
+
+test('L6: 직접 실행 호스트는 배정과 계속 실행 전에 거부한다', async t => {
+  const f = fixture(t), direct = { ...f.host, name: 'claude', transport: undefined };
+  await assert.rejects(f.live.dispatch(f.mission.id, f.taskId, direct, f.options), { code: 'invalid-runner' });
+  await assert.rejects(f.live.continue(f.mission.id, 'attempt', direct, f.options), { code: 'invalid-runner' });
+  assert.equal(f.host.calls, 0);
+  assert.equal(f.store.need('mission', f.mission.id).attempts.length, 0);
 });

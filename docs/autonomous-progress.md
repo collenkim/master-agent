@@ -51,7 +51,7 @@ AI 계획 입력에도 템플릿을 전달한다. drive는 현재 작업에 맞�
 
 ## 실제 연동 시험과 남은 경계
 
-직접 실행 호스트의 print 세션에서는 code-agent 동의가 필요한 경우 사람이 대화형 호스트나 TTY에서 응답한다. 실제 모델 검증 범위는 [검증 기록](verification.md)을 따른다.
+개발 실행은 code-agent 관리 계약을 사용한다. 사람의 동의는 공통 요청함 또는 기존 호스트에서 응답한다. 실제 모델 검증 범위는 [검증 기록](verification.md)을 따른다.
 
 사람이 code-agent에서 연동을 켜고 위임 권한을 준 프로젝트는 [code-agent 통신 계약 연동](code-agent-control.md) 경로(`--control`)를 쓴다.
 

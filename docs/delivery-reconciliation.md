@@ -36,14 +36,14 @@ code-agent의 `consentReceipts.ts`에 정의된 커밋 내 기록 형식을 읽�
 호스트 호출마다 `invocationId`를 새로 부여한다. CLI가 정상 결과를 반환하면 원격 상태를 조회하기 전에 `host-return`을 영속 저장한다. 늦게 도착한 이전 호출의 결과는 새 호출에 적용하지 않는다.
 
 ```powershell
-master-agent mission reconcile <목표ID> <시도ID> --revision <현재버전> --expect-state <상태버전> --cli C:/IdeaProjects/code-agent/dist/agent/cli.js
+master-agent mission reconcile <목표ID> <시도ID> --revision <현재버전> --expect-state <상태버전> --cli C:/IdeaProjects/code-agent/dist/agent/cli.js --control
 ```
 
 대상은 unknown 상태이고 배정 기준·검증 계약을 가진 시도다. 프로세스 중단으로 running만 남았다면 기존 `mission unknown`으로 먼저 미확인 상태를 기록한다. 이는 프로세스 종료를 증명하지 않는다.
 
 reconcile은 현재 invocation의 봉인된 정상 반환, 동일 code-agent 작업과 세션, 승인·질문·동의 상태, 현재 트리에 결합된 code-agent check/test, 활성 실행 임대 없음, 허용된 파일 변경과 기준 HEAD를 대조한다. 통과하면 잠금을 유지한 채 `awaiting-verification`으로 이동한다. 호스트를 다시 실행하지 않으며 독립 검증이 끝나기 전 `continue`도 금지한다. 이후 `mission verify` 또는 drive로 진행한다.
 
-반환 기록이 없거나 이전 호출의 기록뿐인 경우, 검증·반영 검사 프로세스가 running/unknown으로 남은 경우, 외부 작업이 이미 사라진 경우, 임대 충돌·파일 범위 변경·일시 정지는 복구하지 않는다. 이 경로는 호스트가 반환했지만 관측·저장이 중단된 경우에 한정된다. 읽기 전용 분석 예약과 정상 반환된 검증의 중단 처리는 [분석·검증 중단 처리](interruption.md)로 확장했다. 직접 실행 호스트의 전체 자식 프로세스 종료와 실행 중 강제 취소는 제공하지 않는다(통신 계약 경로의 정지·취소는 [code-agent 통신 계약 연동](code-agent-control.md#정지취소)). 상태 파일을 직접 수정하는 우회 절차도 제공하지 않는다.
+반환 기록이 없거나 이전 호출의 기록뿐인 경우, 검증·반영 검사 프로세스가 running/unknown으로 남은 경우, 외부 작업이 이미 사라진 경우, 임대 충돌·파일 범위 변경·일시 정지는 복구하지 않는다. 이 경로는 호스트가 반환했지만 관측·저장이 중단된 경우에 한정된다. 읽기 전용 분석 예약과 정상 반환된 검증의 중단 처리는 [분석·검증 중단 처리](interruption.md)로 확장했다. 관리 실행의 정지·취소는 [code-agent 통신 계약 연동](code-agent-control.md#정지취소)을 따른다. 상태 파일을 직접 수정하는 우회 절차도 제공하지 않는다.
 
 ## 검증 범위
 

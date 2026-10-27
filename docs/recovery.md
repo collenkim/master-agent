@@ -29,13 +29,13 @@ master-agent request reset <요청ID> --revision <요청버전> --confirm
 | replan | 변경 이유와 권고 저장, 신규 배정 보류 |
 | needs-human | 중대한 문제의 질문·권고 저장, 판단 대기 |
 
-code-agent의 요구 확정·계획 승인·미응답 질문·동의·임대는 기존 절차를 따른다. 복구안의 실행 허용과 code-agent 동의는 별개다. `--control` 경로는 사람이 준 grant 안에서 routine 동의·답변을 [위임 판단](code-agent-control.md)으로 적용한다. 직접 실행 호스트나 권한 밖 판단은 기존 사람 응답 절차를 따른다.
+code-agent의 요구 확정·계획 승인·미응답 질문·동의·임대는 기존 절차를 따른다. 복구안의 실행 허용과 code-agent 동의는 별개다. 관리 실행은 사람이 준 grant 안에서 routine 동의·답변을 [위임 판단](code-agent-control.md)으로 적용한다. 권한 밖 판단은 기존 사람 응답 절차를 따른다.
 
 ## CLI
 
 ```powershell
-master-agent mission recover <목표ID> <시도ID> --revision <버전> --expect-state <상태버전> --cli C:/IdeaProjects/code-agent/dist/agent/cli.js --provider claude
-master-agent mission drive <목표ID> --cli C:/IdeaProjects/code-agent/dist/agent/cli.js --provider claude
+master-agent mission recover <목표ID> <시도ID> --revision <버전> --expect-state <상태버전> --cli C:/IdeaProjects/code-agent/dist/agent/cli.js --provider claude --control
+master-agent mission drive <목표ID> --cli C:/IdeaProjects/code-agent/dist/agent/cli.js --provider claude --control
 master-agent mission show <목표ID>
 ```
 

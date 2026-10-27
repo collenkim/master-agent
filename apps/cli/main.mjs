@@ -14,7 +14,6 @@ import { requireThat } from '../../packages/domain/contracts.mjs';
 import { Knowledge } from '../../packages/knowledge/sources.mjs';
 import { Planner } from '../../packages/reasoning/planner.mjs';
 import { CliProvider } from '../../packages/reasoning/cli-provider.mjs';
-import { ClaudeHost } from '../../packages/runner/claude-host.mjs';
 import { LiveExecution } from '../../packages/orchestrator/live.mjs';
 import { LiveVerification } from '../../packages/verification/live-verification.mjs';
 import { LiveWorkflow } from '../../packages/orchestrator/drive.mjs';
@@ -83,29 +82,29 @@ code-agent는 설치된 명령에서 자동 탐색합니다. --cli는 별도 빌
                                       현재 질문 응답; provider 지정 시 바로 재분석
   mission step <ID> --simulate         준비된 작업 하나 모의 실행
   mission run <ID> --simulate          진행 가능한 작업 모의 실행
-  mission dispatch <ID> <작업ID> --revision <N> --expect-state <버전> [--cli <code-agent경로>] [--host-cli <Claude경로>] [--work <기존작업ID>]
-                                      live 목표의 작업을 Claude 호스트에 배정
-  mission continue <ID> <시도ID> --revision <N> --expect-state <버전> [--cli <code-agent경로>] [--host-cli <Claude경로>]
+  mission dispatch <ID> <작업ID> --control --revision <N> --expect-state <버전> [--cli <code-agent경로>] [--work <기존작업ID>]
+                                      live 목표의 작업을 code-agent 관리 호스트에 배정
+  mission continue <ID> <시도ID> --control --revision <N> --expect-state <버전> [--cli <code-agent경로>]
                                       종료가 관측된 기존 호스트 작업 계속
   mission verification-template <ID> <템플릿JSON> --revision <N>  지정 범위의 검증 계약 자동 연결·재사용 허용
   mission verification <ID> <계약JSON> --revision <N>  배정 전 파일 범위·검증 명령·산출물 연결 등록
-  mission verify <ID> <시도ID> --revision <N> --expect-state <버전> [--cli <code-agent경로>]
+  mission verify <ID> <시도ID> --control --revision <N> --expect-state <버전> [--cli <code-agent경로>]
                                       독립 검증 명령 실행·증거 저장
-  mission handoff <ID> <시도ID> --revision <N> --expect-state <버전> [--cli <code-agent경로>]
+  mission handoff <ID> <시도ID> --control --revision <N> --expect-state <버전> [--cli <code-agent경로>]
                                       검증된 산출물·외부 작업 종료 확인 후 잠금 해제
   mission complete <ID> --revision <N> 모든 live 작업·조건·최신 증거 대조 후 완료
   mission stop-analysis <ID> <분석ID> --revision <N>  읽기 전용 분석 결과 적용 취소·재분석 준비
-  mission reconcile-verification <ID> <시도ID> --revision <N> --expect-state <버전> [--cli <경로>]
+  mission reconcile-verification <ID> <시도ID> --control --revision <N> --expect-state <버전> [--cli <경로>]
                                       모든 검증 명령 반환·입력 대조 후 새 검증 단계로 복구
-  mission reconcile <ID> <시도ID> --revision <N> --expect-state <버전> [--cli <경로>]
+  mission reconcile <ID> <시도ID> --control --revision <N> --expect-state <버전> [--cli <경로>]
                                       영속 호스트 반환·현재 상태 대조 후 재실행 없이 독립 검증으로 복구
-  mission replan <ID> <시도ID> --revision <N> --expect-state <버전> [--cli <경로>] [--provider codex|claude]
+  mission replan <ID> <시도ID> --control --revision <N> --expect-state <버전> [--cli <경로>] [--provider codex|claude]
                                       외부 작업 종료 확인·변경 보존·잠금 정리·근거 재수집 후 재계획
   mission replan-refresh <ID> --revision <N>  인계 이후 트리 변경 기록·근거 재수집·재분석 준비
-  mission recover <ID> <시도ID> --revision <N> --expect-state <버전> [--cli <경로>] --provider codex|claude [--context <추가근거>]
+  mission recover <ID> <시도ID> --control --revision <N> --expect-state <버전> [--cli <경로>] --provider codex|claude [--context <추가근거>]
                                       실패 분석·재검토·범위 내 복구 판단 후 실행
-  mission advance <ID> [--cli <code-agent경로>] [--provider codex|claude]  가능한 live 단계 자동 판단; provider 지정 시 실패 복구
-  mission drive <ID> [--cli <code-agent경로>]    가능한 live 작업을 진행하고 승인·실패 경계에서 대기
+  mission advance <ID> --control [--cli <code-agent경로>] [--provider codex|claude]  가능한 live 단계 자동 판단; provider 지정 시 실패 복구
+  mission drive <ID> --control [--cli <code-agent경로>]    가능한 live 작업을 진행하고 승인·실패 경계에서 대기
   mission reattach <ID> <시도ID> [--cli <경로>]  재시작 뒤 같은 호출의 실행에 다시 붙어 결과 기록(재실행 없음)
   mission stop <ID> <시도ID> [--cli <경로>] --mode pause|cancel [--force] [--wait-ms <N>]
                                       시도의 실행만 정지·취소 요청(정지 확인은 결과·이벤트로)
@@ -131,7 +130,7 @@ async function main() {
   const { values, positionals: args } = parseArgs({ allowPositionals: true, strict: true, options: {
     db: { type: 'string' }, cli: { type: 'string' }, revision: { type: 'string' }, simulate: { type: 'boolean' }, help: { type: 'boolean' },
     provider: { type: 'string' }, 'ai-cli': { type: 'string' }, model: { type: 'string' }, context: { type: 'string' },
-    'host-cli': { type: 'string' }, 'expect-state': { type: 'string' }, work: { type: 'string' },
+    'expect-state': { type: 'string' }, work: { type: 'string' },
     control: { type: 'boolean' }, controller: { type: 'string' }, 'token-file': { type: 'string' }, to: { type: 'string' }, mode: { type: 'string' },
     force: { type: 'boolean' }, 'wait-ms': { type: 'string' }, 'poll-ms': { type: 'string' }, 'follow-timeout-ms': { type: 'string' },
     port: { type: 'string' }, 'refresh-ms': { type: 'string' },
@@ -168,6 +167,8 @@ async function main() {
     'request list': 2, 'request show': 3, 'request run': 3, 'request continue': 3, 'request reset': 3 };
   const key = category === 'demo' ? 'demo' : `${category} ${action}`;
   requireThat(counts[key] === args.length, 'usage', help);
+  if (['dispatch', 'continue', 'verify', 'handoff', 'recover', 'replan', 'reconcile', 'reconcile-verification', 'advance', 'drive'].some(a => key === `mission ${a}`))
+    requireThat(values.control === true, 'usage', '개발 실행은 code-agent 관리 연결을 사용합니다. --control이 필요합니다.');
   const revision = values.revision === undefined ? undefined : Number(values.revision);
   if (values.revision !== undefined) requireThat(Number.isSafeInteger(revision) && revision > 0, 'usage', '--revision은 양의 정수입니다.');
   if (['mission cancel', 'mission replan-refresh', 'mission events-prune'].includes(key)) requireThat(revision, 'usage', '--revision이 필요합니다.');
@@ -203,8 +204,6 @@ async function main() {
   const dbPath = resolve(values.db ?? '.master-agent/master.db');
   const store = new Store(dbPath); const engine = new Engine(store);
   const controlHost = () => new ControlHost(store, { cliPath: values.cli, model: values.model, pollMs: ms('poll-ms', 2000), followTimeoutMs: ms('follow-timeout-ms', 4 * 3600 * 1000) });
-  // --control 이면 code-agent 통신 계약 호스트, 아니면 기존 직접 실행 호스트 — 기존 명령의 동작은 바꾸지 않는다
-  const liveHost = options => values.control ? controlHost() : new ClaudeHost({ cliPath: values.cli, hostPath: values['host-cli'], ...options });
   try {
     const execute = async () => {
     let result;
@@ -283,35 +282,35 @@ async function main() {
       case 'mission step': result = await engine.step(id, new SimulationRunner()); break;
       case 'mission run': result = await engine.run(id, new SimulationRunner()); break;
       case 'mission dispatch': case 'mission continue': {
-        const host = liveHost({ model: values.model });
+        const host = controlHost();
         const live = new LiveExecution(store);
         result = await live[action](id, file, host, { expectedRevision: revision, expectedState: values['expect-state'], workId: values.work });
         break;
       }
       case 'mission stop-analysis': result = stopAnalysis(store, id, file, revision); break;
       case 'mission reconcile': case 'mission reconcile-verification': {
-        const host = liveHost({});
+        const host = controlHost();
         result = await new Reconciliation(store)[action === 'reconcile' ? 'reconcile' : 'verification'](id, file, host, { expectedRevision: revision, expectedState: values['expect-state'] }); break;
       }
       case 'mission replan': {
-        const host = liveHost({});
+        const host = controlHost();
         const provider = values.provider ? new CliProvider({ provider: values.provider, cliPath: values['ai-cli'], model: values.model }) : undefined;
         result = await new Replanning(store).transition(id, file, host, provider, { expectedRevision: revision, expectedState: values['expect-state'] }); break;
       }
       case 'mission recover': {
-        const host = liveHost({ model: values.model });
+        const host = controlHost();
         const provider = new CliProvider({ provider: values.provider, cliPath: values['ai-cli'], model: values.model });
         result = await new Recovery(store).recover(id, file, host, provider, { expectedRevision: revision, expectedState: values['expect-state'], context: values.context }); break;
       }
       case 'mission verification-template': result = new VerificationTemplates(store).register(id, json(file), revision); break;
       case 'mission verification': result = new LiveVerification(store).configure(id, json(file), revision); break;
       case 'mission verify': case 'mission handoff': {
-        const host = liveHost({});
+        const host = controlHost();
         result = await new LiveVerification(store)[action](id, file, host, { expectedRevision: revision, expectedState: values['expect-state'] }); break;
       }
       case 'mission complete': result = new LiveVerification(store).complete(id, revision); break;
       case 'mission advance': case 'mission drive': {
-        const host = liveHost({ model: values.model });
+        const host = controlHost();
         const workflow = new LiveWorkflow(store);
         const provider = values.provider ? new CliProvider({ provider: values.provider, cliPath: values['ai-cli'], model: values.model }) : undefined;
         result = await workflow[action === 'drive' ? 'run' : 'advance'](id, host, provider); break;

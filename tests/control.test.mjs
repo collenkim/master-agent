@@ -7,7 +7,7 @@ import { LiveExecution } from '../packages/orchestrator/live.mjs';
 import { DecisionDelegation } from '../packages/orchestrator/decisions.mjs';
 import { inspectDelivery } from '../packages/verification/delivery.mjs';
 import { snapshotTree } from '../packages/verification/tree.mjs';
-import { hostPrompt } from '../packages/runner/claude-host.mjs';
+import { hostPrompt } from '../packages/runner/host-context.mjs';
 
 // 모의 시험 — code-agent 통신 계약을 흉내 낸 전송(control-fixture.mjs)과 가짜 판단기를 쓴다. 실제 code-agent·모델 실행 결과가 아니다.
 
@@ -210,14 +210,13 @@ test('위임 판단이 처리한 회차만 자동으로 이어 가고, 사람에
   assert.equal(execFileSync('git', ['-C', f.projects[0].path, 'log', '--oneline'], { encoding: 'utf8' }).trim().split('\n').length, 1, '반영 커밋 없음');
 });
 
-test('통신 계약 실행의 프롬프트는 세션에 기대 상태를 다시 대조시키지 않는다 — 접수 때 code-agent 가 대조했다(직접 실행 호스트는 그대로)', () => {
+test('통신 계약 실행의 프롬프트는 세션에 기대 상태를 다시 대조시키지 않는다 — 접수 때 code-agent 가 대조했다', () => {
   const ticket = { missionId: 'M', planVersion: 1, taskId: 'T', id: 'A', codeAgentWorkId: 'MA-1', expectedState: 'sha256:x', goal: 'g', criteria: [], task: {}, inputEvidence: [] };
-  const control = hostPrompt(ticket, { control: true }), direct = hostPrompt(ticket);
+  const control = hostPrompt(ticket);
   assert.ok(!control.includes('sha256:x') && !control.includes('"expectedState"') && !control.includes('기대 상태와 다르면'));
   assert.match(control, /다시 대조하지 말고/);
-  assert.ok(direct.includes('"expectedState": "sha256:x"') && direct.includes('기대 상태와 다르면'));
-  // master 의 독립 검사·범위 제약은 code-agent 요구·테스트로 옮기지 않는다(두 경로 공통)
-  for (const prompt of [control, direct]) assert.match(prompt, /독립 검사입니다. 프로젝트 밖 검사 스크립트를 작업 안에서 실행하거나 code-agent의 수락 기준·테스트 케이스로 옮기지 마세요/);
+  // master의 독립 검사·범위 제약은 code-agent 요구·테스트로 옮기지 않는다.
+  assert.match(control, /독립 검사입니다. 프로젝트 밖 검사 스크립트를 작업 안에서 실행하거나 code-agent의 수락 기준·테스트 케이스로 옮기지 마세요/);
 });
 
 test('반영 동의의 문서 변경 후보는 위임 판단이 적용하지 않고(모두 유지), 판단기에도 그렇게 알린다', async t => {
@@ -235,11 +234,11 @@ test('반영 동의의 문서 변경 후보는 위임 판단이 적용하지 않
 test('같은 프로젝트의 선행 작업이 반영한 커밋을 새 작업의 기준으로 알려 준다(다른 프로젝트의 반영은 기준이 아니다)', () => {
   const ticket = { missionId: 'M', planVersion: 1, taskId: 'T', id: 'A', projectId: 'app', codeAgentWorkId: 'MA-2', goal: 'g', criteria: [], task: {},
     inputEvidence: [{ projectId: 'core', delivery: { commit: 'c0ffee1' } }, { projectId: 'app', delivery: { commit: 'abc1234' } }, { projectId: 'app', delivery: { level: 'local-files' } }] };
-  const prompt = hostPrompt(ticket, { control: true });
+  const prompt = hostPrompt(ticket);
   assert.match(prompt, /--base abc1234/);
   assert.match(prompt, /"codeAgentBase": "abc1234"/);
   assert.ok(!prompt.includes('--base c0ffee1'));
-  assert.ok(!hostPrompt({ ...ticket, inputEvidence: [] }, { control: true }).includes('codeAgentBase'));
+  assert.ok(!hostPrompt({ ...ticket, inputEvidence: [] }).includes('codeAgentBase'));
 });
 
 test('독립 검증은 code-agent 가 반영 자리에 닿은 뒤에만 한다 — 리뷰 질문이 위임으로 답해지면 같은 세션을 먼저 이어 간다', async t => {
@@ -262,7 +261,7 @@ test('검증 뒤 code-agent 작업이 반영 자리를 떠나면 그 검증으�
   f.sims.one.work.phase = 'review'; f.sims.one.n++;
   // 직접 실행 호스트(통신 계약 아님)에는 검증된 시도를 이어 가는 길을 열지 않는다
   const direct = { mode: 'live', name: 'claude', inspect: f.host.inspect.bind(f.host), execute: async () => assert.fail('실행하지 않는다') };
-  await assert.rejects(new LiveExecution(f.store).continue(f.mission.id, first.id, direct, { expectedRevision: f.store.need('mission', f.mission.id).revision, expectedState: f.stateOf('one').stateVersion }), { code: 'invalid-state' });
+  await assert.rejects(new LiveExecution(f.store).continue(f.mission.id, first.id, direct, { expectedRevision: f.store.need('mission', f.mission.id).revision, expectedState: f.stateOf('one').stateVersion }), { code: 'invalid-runner' });
   await until(f, () => f.store.need('mission', f.mission.id).tasks.find(t => t.id === 'edit-one').state === 'succeeded');
   const runs = f.store.list('verification-run').filter(r => r.attemptId === first.id).sort((x, y) => Date.parse(x.startedAt) - Date.parse(y.startedAt));
   assert.equal(runs.length, 2);
@@ -324,7 +323,7 @@ test('반영 확인이 위임 수정 요청을 받으면 검증된 시도라도 
   assert.equal(f.store.list('evidence').find(e => e.attemptId === one.id).verificationRunId, runs[1].id);
 });
 
-test('통신 계약 실행의 프롬프트는 선행 증거를 요약만 싣는다 — 통합 작업도 code-agent 접수 한도(20000자) 안이다(직접 실행 호스트는 그대로)', () => {
+test('통신 계약 실행의 프롬프트는 선행 증거를 요약만 싣는다 — 통합 작업도 code-agent 접수 한도(20000자) 안이다', () => {
   const evidence = (taskId, projectId, commit) => ({ id: `e-${taskId}`, taskId, projectId, attemptId: `a-${taskId}`, verificationRunId: `v-${taskId}`, at: '2026-10-15T00:00:00.000Z',
     checks: [{ id: `${taskId}-independent`, criterionIds: [taskId], passed: true, exitCode: 0, output: '통과\n'.repeat(400), outputHash: 'h' }],
     tree: { head: commit, digest: 'd', files: Array.from({ length: 150 }, (_, i) => ({ path: `doc/work/MA-x/file-${i}.md`, digest: 'f'.repeat(64) })) },
@@ -332,13 +331,12 @@ test('통신 계약 실행의 프롬프트는 선행 증거를 요약만 싣는�
     delivery: { level: 'local-commit-with-consent-record', runId: 'r', commit, receiptHash: 'x'.repeat(64) } });
   const ticket = { missionId: 'M', planVersion: 1, taskId: 'checkout', id: 'A', projectId: 'app', codeAgentWorkId: 'MA-3', goal: 'g', criteria: [], task: { kind: 'integration' },
     inputEvidence: [evidence('discount', 'core', 'c0ffee1'), evidence('total', 'app', 'abc1234')] };
-  const control = hostPrompt(ticket, { control: true }), direct = hostPrompt(ticket);
+  const control = hostPrompt(ticket);
   assert.ok(JSON.stringify(ticket.inputEvidence).length > 20000, '시험 증거는 실제 run4 처럼 한도를 넘는다');
   assert.ok(control.length < 20000, `프롬프트 ${control.length}자`);
   for (const text of ['"commit": "c0ffee1"', '"commit": "abc1234"', '"id": "discount-independent"', '"passed": true', '"codeAgentBase": "abc1234"']) assert.ok(control.includes(text), text);
   // 검사 출력은 JSON 문자열(줄바꿈이 \n 두 글자)로 실린다
   assert.ok(!control.includes('file-149.md') && !control.includes('통과\\n통과'), '파일 트리·검사 출력은 싣지 않는다');
-  assert.ok(direct.includes('file-149.md') && direct.includes('통과\\n통과'), '직접 실행 호스트의 프롬프트는 바꾸지 않는다');
 });
 
 test('업무 질문 판단에는 같은 작업에서 이미 답한 질문과 답의 출처가 함께 실린다 — 앞 답을 전제로 묻는 질문을 자료 없이 판단하지 않는다', async t => {

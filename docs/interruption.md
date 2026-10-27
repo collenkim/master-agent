@@ -27,7 +27,7 @@ started·unknown 기록은 프로세스 종료 증거로 취급하지 않는다.
 
 ```powershell
 master-agent mission unknown <목표ID> <시도ID> --revision <현재버전>
-master-agent mission reconcile-verification <목표ID> <시도ID> --revision <갱신된버전> --expect-state <상태버전> --cli C:/IdeaProjects/code-agent/dist/agent/cli.js
+master-agent mission reconcile-verification <목표ID> <시도ID> --revision <갱신된버전> --expect-state <상태버전> --cli C:/IdeaProjects/code-agent/dist/agent/cli.js --control
 ```
 
 프로세스 중단으로 verifying 상태가 남았다면 unknown으로 기록한다. 이미 unknown이면 첫 명령은 생략한다. unknown 표시는 종료 확인을 대신하지 않는다.
@@ -40,4 +40,4 @@ master-agent mission reconcile-verification <목표ID> <시도ID> --revision <�
 
 `mission show`의 `analyses`·`recoveries`에서 분석 중단을, `commands`에서 명령별 반환을, `reconciliations`에서 대조 판단을 확인한다. 기록 없는 과거 버전의 실행은 소급 확인하지 않는다.
 
-code-agent 통신 경로의 실행 중 정지·취소는 [mission stop](code-agent-control.md)으로 제공한다. 직접 실행 Claude 호스트의 실행 중 취소, 전체 프로세스 트리의 종료 증명, 미반환 명령·중단된 반영 검사 정리, 자동 예약 만료는 지원하지 않는다. DB를 직접 수정하거나 저장된 PID로 프로세스를 종료하는 우회 절차는 제공하지 않는다. 중단·복구를 포함한 실제 모델 연속 시험은 [미검증 범위](verification.md#미검증-범위)에 남아 있다.
+code-agent 통신 경로의 실행 중 정지·취소는 [mission stop](code-agent-control.md)으로 제공한다. 미반환 명령·중단된 반영 검사 정리와 분석 예약의 자동 만료는 지원하지 않는다. DB를 직접 수정하거나 저장된 PID로 프로세스를 종료하는 우회 절차는 제공하지 않는다. 중단·복구를 포함한 실제 모델 연속 시험은 [미검증 범위](verification.md#미검증-범위)에 남아 있다.
