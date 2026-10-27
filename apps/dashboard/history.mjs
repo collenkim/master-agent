@@ -46,7 +46,7 @@ function renderEntry(item) {
       ${!item.workId && !item.runId ? '<p class="muted">작업 식별자가 없는 프로젝트 이벤트입니다.</p>' : ''}`;
   }
   const summary = item.source === 'observation' && d ? `${item.workId ?? '작업 없음'} · ${phase(d.work)}` : item.source === 'interaction' ? d.title : item.workId;
-  return `<details class="mission history-entry" data-sequence="${item.sequence}"><summary><span>${escape(names[item.type] ?? item.type)}${summary ? ` · ${escape(summary)}` : ''}<small>${escape(project?.name ?? item.projectId)} · ${escape(date(item.occurredAt))} · ${{ observation: '상태 관측', 'code-agent': 'code-agent 이벤트', interaction: '요청함' }[item.source]}</small></span></summary>
+  return `<details class="mission history-entry" data-sequence="${item.sequence}"><summary><span>${escape(names[item.type] ?? item.type)}${summary ? ` · ${escape(summary)}` : ''}<small>${escape(project?.name ?? item.projectId)} · ${escape(date(item.occurredAt))} · ${escape({ observation: '상태 관측', 'code-agent': 'code-agent 이벤트', interaction: '요청함' }[item.source] ?? '기타')}</small></span></summary>
     <p class="path">${identity.map(escape).join(' · ') || '프로젝트 범위'}${item.seq ? ` · 이벤트 #${item.seq}` : ''}</p>${body}<small>수집 ${escape(date(item.recordedAt))}</small></details>`;
 }
 
@@ -76,8 +76,10 @@ export function renderHistory(snapshot) {
   latest = snapshot;
   for (const [id, records] of [['history-project', snapshot.projects], ['history-group', snapshot.groups]]) {
     const select = $(id), selected = select.value;
-    select.innerHTML = '<option value="">전체</option>' + records.map(r => `<option value="${escape(r.id)}">${escape(r.name || r.id)}</option>`).join('');
-    select.value = records.some(r => r.id === selected) ? selected : '';
+    const markup = '<option value="">전체</option>' + records.map(r => `<option value="${escape(r.id)}">${escape(r.name || r.id)}</option>`).join('');
+    if (select.innerHTML !== markup) {
+      select.innerHTML = markup; select.value = records.some(r => r.id === selected) ? selected : '';
+    }
   }
   if (!initialized) {
     initialized = true;

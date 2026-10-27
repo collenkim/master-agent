@@ -6,15 +6,18 @@ import { setup } from '../tests/helpers.mjs';
 import { startDashboard } from '../packages/dashboard/server.mjs';
 import { openBrowser } from './browser.mjs';
 
-mkdirSync(resolve('.master-agent'), { recursive: true });
-const artifacts = mkdtempSync(resolve('.master-agent/group-delete-browser-')), cleanup = [];
+const artifactRoot = resolve(process.env.MASTER_AGENT_SMOKE_ROOT ?? '.master-agent');
+mkdirSync(artifactRoot, { recursive: true });
+const artifacts = mkdtempSync(join(artifactRoot, 'group-delete-browser-')), cleanup = [];
 const f = setup({ after(fn) { cleanup.push(fn); } });
 const groupId = f.fixture.group.id;
+mkdirSync(join(f.fixture.projects[0].path, '.code-agent'));
+writeFileSync(join(f.fixture.projects[0].path, '.code-agent/version'), 'fixture');
 f.engine.catalog.group({ id: 'empty-delete', name: '<img src=x onerror="window.injected=true"> 빈 그룹', projectIds: [] });
 const originalScope = f.store.need('mission', f.mission.id).scope;
 let dashboard, browser;
 try {
-  dashboard = await startDashboard({ dbPath: f.db, port: 0, observe: false });
+  dashboard = await startDashboard({ dbPath: f.db, port: 0, observe: false, candidateOptions: { cwd: join(f.root, 'workspace'), home: f.root } });
   browser = await openBrowser(dashboard.url, artifacts);
   const { send, evaluate, waitFor, errors } = browser;
   const click = selector => evaluate(`document.querySelector(${JSON.stringify(selector)}).click()`);
@@ -33,6 +36,18 @@ try {
     await evaluate('document.getElementById("projects").scrollIntoView({block:"start"})');
     await screenshot(`project-actions-${width}.png`);
   }
+  await evaluate(`window.candidateReads=0;const baseFetch=window.fetch.bind(window);window.fetch=(url,options)=>{
+    if(String(url).startsWith('/api/project-candidates'))window.candidateReads++;return baseFetch(url,options);
+  }`);
+  await click('#new-project');
+  await waitFor("window.candidateReads === 1 && !document.getElementById('candidate-refresh').disabled");
+  await click('#refresh');
+  await waitFor("!document.getElementById('refresh').disabled");
+  assert.equal(await evaluate('window.candidateReads'), 1);
+  assert.equal(await evaluate("getComputedStyle(document.querySelector('.candidate-pick:disabled')).cursor"), 'default');
+  await click('#candidate-refresh');
+  await waitFor("window.candidateReads === 2 && !document.getElementById('candidate-refresh').disabled");
+  await click('[data-close="project-dialog"]');
   await click(`.delete-group[data-id="${groupId}"]`);
   assert.equal(await evaluate('document.getElementById("delete-group-dialog").open'), true);
   await click('[data-close="delete-group-dialog"]');
@@ -69,7 +84,7 @@ try {
   await evaluate('document.getElementById("request-type").value="project"; document.getElementById("request-type").dispatchEvent(new Event("change"))');
   assert.equal(await evaluate('document.getElementById("request-target").options.length'), 3);
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ passed: true, artifacts, checks: ['button-alignment-1440-390-320', 'cancel', 'stale-confirmation', 'populated-group-delete', 'empty-group-delete', 'project-and-scope-preserved', 'reload', 'request-targets', 'XSS'] }));
+  console.log(JSON.stringify({ passed: true, artifacts, checks: ['button-alignment-1440-390-320', 'candidate-open-once-and-manual-refresh', 'disabled-cursor', 'cancel', 'stale-confirmation', 'populated-group-delete', 'empty-group-delete', 'project-and-scope-preserved', 'reload', 'request-targets', 'XSS'] }));
 } finally {
   await browser?.close();
   await dashboard?.close();

@@ -59,7 +59,8 @@ export async function startDashboard({ dbPath, port = 4310, cliPath, intervalMs 
     };
     // Loopback binding plus exact Host/Origin checks keep other sites from reading local records.
     if (request.headers.host !== new URL(origin).host || request.headers.origin && request.headers.origin !== origin ||
-        request.headers['sec-fetch-site'] === 'cross-site') return send(403, '{"error":"forbidden"}');
+        request.headers['sec-fetch-site'] === 'cross-site') return send(403, JSON.stringify({ error: 'forbidden',
+      ...(/^localhost(?::\d+)?$/i.test(request.headers.host ?? '') ? { message: `${origin}로 접속하세요.` } : {}) }));
     try {
       const path = new URL(request.url, origin).pathname;
       if (request.method === 'POST') {

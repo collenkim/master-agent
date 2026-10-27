@@ -405,7 +405,9 @@ export function createInteractions(store, { cliPath, readRemote, resolveHumanKey
       } else {
         requireThat(input.action === 'answer' && Array.isArray(input.answers) && input.answers.length <= 16 && input.answers.every(a =>
           a && typeof a.questionId === 'string' && (!a.optionIds || Array.isArray(a.optionIds) && a.optionIds.length <= 16 && a.optionIds.every(v => typeof v === 'string')) &&
-          (a.text === undefined || typeof a.text === 'string' && a.text.length <= 8000) && Object.keys(a).every(k => ['questionId', 'optionIds', 'text', 'optionInputs'].includes(k))), 'invalid-input', '질문별 선택과 직접 입력이 필요합니다.');
+          (a.text === undefined || typeof a.text === 'string' && a.text.length <= 8000) &&
+          (a.optionInputs === undefined || a.optionInputs && typeof a.optionInputs === 'object' && !Array.isArray(a.optionInputs) &&
+            Object.values(a.optionInputs).every(value => typeof value === 'string' && value.length <= 8000)) && Object.keys(a).every(k => ['questionId', 'optionIds', 'text', 'optionInputs'].includes(k))), 'invalid-input', '질문별 선택과 직접 입력이 필요합니다.');
         submission.answers = input.answers;
       }
     }
@@ -426,7 +428,7 @@ export function createInteractions(store, { cliPath, readRemote, resolveHumanKey
     });
     return transmit(input.commandId);
   }
-  function transmit(id) {
+  function transmit(id, { recovering = false } = {}) {
     if (sending.has(id)) return sending.get(id);
     const run = (async () => {
       const command = store.need('interaction-command', id);
@@ -438,7 +440,10 @@ export function createInteractions(store, { cliPath, readRemote, resolveHumanKey
       try {
         const result = await interactionClient(store, project, cliPath).result('interaction.respond', command.remoteWire);
         patch = { state: result.status === 'deferred' ? 'deferred' : result.status === 'pending' ? 'reopened' : 'received', receivedAt: now(), receiptId: result.receiptId ?? null, error: null, errorMessage: null };
-      } catch (error) { patch = { state: error.code === 'control-unavailable' ? 'unknown' : 'failed', error: error.code ?? 'interaction-failed', errorMessage: String(error.message ?? '').slice(0, 2000) }; }
+      } catch (error) { patch = { state: recovering || error.code === 'control-unavailable' ? 'unknown' : 'failed',
+        error: error.code ?? 'interaction-failed', errorMessage: recovering
+          ? '기존 응답 결과를 확인하지 못했습니다. 같은 접수 번호로 결과 확인·재시도할 수 있습니다.'
+          : String(error.message ?? '').slice(0, 2000) }; }
       store.transaction(() => {
         const current = store.need('interaction-command', id);
         if (['sending', 'unknown'].includes(current.state)) store.put('interaction-command', { ...current, ...patch }, current.revision);
@@ -469,9 +474,28 @@ export function createInteractions(store, { cliPath, readRemote, resolveHumanKey
     requireThat(command.remoteWire && ['unknown', 'sending'].includes(command.state), 'invalid-input', '결과 미확인 응답만 같은 접수 번호로 재전송합니다.');
     return transmit(commandId);
   }
+  async function recoverSending(id) {
+    try { await transmit(id, { recovering: true }); }
+    catch (error) {
+      store.transaction(() => {
+        const current = store.need('interaction-command', id);
+        if (current.state === 'unknown') store.put('interaction-command', { ...current, error: error.code ?? 'interaction-unavailable',
+          errorMessage: '기존 응답 결과를 확인하지 못했습니다. 같은 접수 번호로 결과 확인·재시도할 수 있습니다.' }, current.revision);
+      });
+    }
+  }
+
   const tracked = action => (...args) => {
     const task = action(...args).finally(() => { active.delete(task); observeMaster(); }); active.add(task); return task;
   };
   observeMaster();
+  const interrupted = store.transaction(() => store.list('interaction-command').filter(c => c.remoteWire && c.state === 'sending').map(command => {
+    store.put('interaction-command', { ...command, state: 'unknown', error: 'response-interrupted',
+      errorMessage: '서버 재시작으로 응답 결과를 확인하고 있습니다.' }, command.revision);
+    store.event(command.missionId ?? command.projectId, 'interaction-response-interrupted', { commandId: command.id, interactionId: command.interactionId });
+    return command.id;
+  }));
+  if (interrupted.length) void tracked(async () => { for (const id of interrupted) await recoverSending(id); })().catch(() => {});
+
   return { snapshot, observeMaster, respond: tracked(respond), refreshProject, retry: tracked(retry), async stop() { await Promise.allSettled([...active, ...sending.values()]); } };
 }

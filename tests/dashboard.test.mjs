@@ -141,6 +141,13 @@ test('HTTP serves local UI and saved DB, rejects writes, foreign origins and hos
       get(dashboard.url + '/api/overview', { headers: { Host: 'other.example' } }, response => { response.resume(); resolve(response.statusCode); }).on('error', reject);
     });
     assert.equal(foreignHost, 403);
+    const localAlias = await new Promise((resolve, reject) => {
+      get(dashboard.url + '/api/overview', { headers: { Host: 'localhost:' + new URL(dashboard.url).port } }, response => {
+        let body = ''; response.setEncoding('utf8'); response.on('data', data => { body += data; });
+        response.on('end', () => resolve({ status: response.statusCode, body: JSON.parse(body) }));
+      }).on('error', reject);
+    });
+    assert.equal(localAlias.status, 403); assert.ok(localAlias.body.message.includes(dashboard.url));
     assert.equal((await fetch(dashboard.url + '/package.json')).status, 404);
     assert.deepEqual(store.list('mission'), before);
   } finally { await dashboard.close(); }
@@ -189,4 +196,24 @@ test('M8: 내부 파일 오류는 경로를 노출하지 않고 500 고정 응�
     assert.equal(logs.length, 1); assert.equal(logs[0][0], 'ENOENT');
     assert.equal(logs[0][1].includes('\n'), false);
   } finally { t.mock.restoreAll(); await dashboard.close(); }
+});
+
+
+test('L5: onObserved 실패는 해당 프로젝트에만 남고 다음 관측에서 복구한다', async t => {
+  const { store, fixture } = setup(t); let failing = true;
+  const calls = [];
+  const monitor = createMonitor(store, { cliPath: 'fixture', observe: async () => {}, onObserved: async project => {
+    calls.push(project.id);
+    if (failing && project.id === fixture.projects[0].id) throw Object.assign(new Error('private-source-error'), { code: 'invalid-history' });
+  } });
+  try {
+    await monitor.refresh();
+    assert.equal(calls.length, fixture.projects.length);
+    const first = monitor.snapshot();
+    assert.equal(first.projects.find(p => p.id === fixture.projects[0].id).observation.error, '질문 조회 실패: invalid-history');
+    assert.ok(!JSON.stringify(first).includes('private-source-error'));
+    assert.ok(first.projects.filter(p => p.id !== fixture.projects[0].id).every(p => !p.observation.error));
+    failing = false; await monitor.refresh();
+    assert.equal(monitor.snapshot().projects.find(p => p.id === fixture.projects[0].id).observation.error, '');
+  } finally { await monitor.stop(); }
 });

@@ -38,7 +38,7 @@ export function resetRequest(store, id, expectedRevision, { confirm = false } = 
     requireThat(!['succeeded', 'simulation-complete', 'cancelled'].includes(store.need('mission', id).state), 'invalid-state', '종료된 목표입니다.');
     requireThat(!localProcessAlive(record.pid, record.host), 'request-busy', '같은 호스트에서 살아 있는 요청 실행기는 초기화할 수 없습니다.');
     reclaimRequest(store, record, 'operator-reset');
-    return store.put('target-request', { ...record, state: 'queued', owner: null, pid: null, host: null,
+    return store.put('target-request', { ...record, state: 'queued', launchId: null, owner: null, pid: null, host: null,
       heartbeatAt: null, startedAt: null, error: null, updatedAt: now() }, record.revision);
   });
 }
@@ -89,22 +89,24 @@ export function continueRequest(store, id, expectedRevision, { inTransaction = f
     requireThat(!['succeeded', 'cancelled'].includes(store.need('mission', id).state), 'invalid-state', '종료된 목표입니다.');
     requireThat(!requestActive(record), 'request-busy', '요청 실행기 임대가 아직 유효합니다.');
     if (requestLeased(record)) reclaimRequest(store, record, 'expired');
-    return store.put('target-request', { ...record, state: 'queued', pid: null, host: null, owner: null, heartbeatAt: null, startedAt: null, error: null, updatedAt: now() }, record.revision);
+    return store.put('target-request', { ...record, state: 'queued', launchId: null, pid: null, host: null, owner: null, heartbeatAt: null, startedAt: null, error: null, updatedAt: now() }, record.revision);
   };
   return inTransaction ? apply() : store.transaction(apply);
 }
 
 /** A durable worker survives the dashboard closing. It uses the existing LangGraph and gates. */
-export async function runRequest(store, id, { cliPath, host, provider, workflow, prepare = prepareRequest } = {}) {
+export async function runRequest(store, id, { cliPath, host, provider, workflow, prepare = prepareRequest, launchId } = {}) {
   const owner = randomUUID();
   const record = store.transaction(() => {
     const current = store.need('target-request', id);
     const expired = requestLeased(current) && !requestActive(current);
-    requireThat(current.state === 'queued' || current.state === 'running' && expired, 'request-busy', '대기 중이거나 임대가 만료된 요청만 실행할 수 있습니다.');
-    requireThat(!requestActive(current) || current.state === 'queued' && current.pid === process.pid && current.host === hostname(), 'request-busy', '요청 실행기 임대가 아직 유효합니다.');
+    const claimedLaunch = current.state === 'launching' && typeof launchId === 'string' && current.launchId === launchId;
+    requireThat(launchId === undefined || claimedLaunch, 'request-busy', '요청 실행 예약이 변경되었습니다. 이전 실행기를 시작하지 않습니다.');
+    requireThat(claimedLaunch || current.state === 'queued' || ['running', 'launching'].includes(current.state) && expired, 'request-busy', '대기 중이거나 임대가 만료된 요청만 실행할 수 있습니다.');
+    requireThat(claimedLaunch || !requestActive(current) || current.state === 'queued' && current.pid === process.pid && current.host === hostname(), 'request-busy', '요청 실행기 임대가 아직 유효합니다.');
     requireThat(!['succeeded', 'simulation-complete', 'cancelled'].includes(store.need('mission', id).state), 'invalid-state', '종료된 목표입니다.');
     if (expired) reclaimRequest(store, current, 'expired');
-    return store.put('target-request', { ...current, state: 'running', owner, pid: process.pid, host: hostname(), startedAt: now(), heartbeatAt: now(), updatedAt: now() }, current.revision);
+    return store.put('target-request', { ...current, state: 'running', owner, launchId: null, pid: process.pid, host: hostname(), startedAt: now(), heartbeatAt: now(), updatedAt: now() }, current.revision);
   });
   let heartbeatError;
   const timer = setInterval(() => {
@@ -208,32 +210,44 @@ export async function runRequest(store, id, { cliPath, host, provider, workflow,
 }
 
 export async function launchRequest(store, id, { dbPath, cliPath } = {}) {
-  let record = store.need('target-request', id);
-  if (record.state === 'running' && !requestActive(record)) record = continueRequest(store, id, record.revision);
-  requireThat(record.state === 'queued', 'request-busy', '대기 중인 요청만 시작할 수 있습니다.');
-  requireThat(!requestActive(record), 'request-busy', '요청 실행기가 이미 시작되었습니다.');
-  const args = [fileURLToPath(new URL('../../apps/cli/main.mjs', import.meta.url)), 'request', 'run', id, '--db', resolve(dbPath)];
-  if (cliPath) args.push('--cli', cliPath);
-  const logDir = join(dirname(resolve(dbPath)), 'request-logs');
-  mkdirSync(logDir, { recursive: true });
-  // IDs are created by Engine; never use a caller-supplied path as a log name.
   requireThat(/^[0-9a-f-]{36}$/.test(id), 'invalid-input', '요청 ID 형식이 잘못됐습니다.');
-  const fd = openSync(join(logDir, `${id}.log`), 'a');
+  const launchId = randomUUID(), database = resolve(dbPath);
+  const args = [fileURLToPath(new URL('../../apps/cli/main.mjs', import.meta.url)), 'request', 'run', id,
+    '--db', database, '--launch-id', launchId];
+  if (cliPath) args.push('--cli', cliPath);
+  store.transaction(() => {
+    const current = store.need('target-request', id), expired = requestLeased(current) && !requestActive(current);
+    requireThat(current.state === 'queued' || ['running', 'launching'].includes(current.state) && expired,
+      'request-busy', '대기 중이거나 임대가 만료된 요청만 시작할 수 있습니다.');
+    requireThat(!requestActive(current), 'request-busy', '요청 실행기가 이미 시작되었습니다.');
+    requireThat(!['succeeded', 'simulation-complete', 'cancelled'].includes(store.need('mission', id).state), 'invalid-state', '종료된 목표입니다.');
+    if (expired) reclaimRequest(store, current, 'expired');
+    store.put('target-request', { ...current, state: 'launching', launchId, owner: null, pid: null,
+      host: hostname(), startedAt: now(), heartbeatAt: now(), updatedAt: now() }, current.revision);
+  });
+  let fd, spawned = false;
   try {
-    const child = spawn(process.execPath, args, { cwd: dirname(resolve(dbPath)), detached: true, shell: false, windowsHide: true, env: childEnv(), stdio: ['ignore', fd, fd] });
+    const logDir = join(dirname(database), 'request-logs');
+    mkdirSync(logDir, { recursive: true });
+    fd = openSync(join(logDir, `${id}.log`), 'a');
+    const child = spawn(process.execPath, args, { cwd: dirname(database), detached: true, shell: false,
+      windowsHide: true, env: childEnv(), stdio: ['ignore', fd, fd] });
     await new Promise((resolve, reject) => { child.once('spawn', resolve); child.once('error', reject); });
-    child.unref();
+    spawned = true; child.unref();
     store.transaction(() => {
       const current = store.need('target-request', id);
-      if (current.state === 'queued') store.put('target-request', { ...current, pid: child.pid, host: hostname(), startedAt: now(), heartbeatAt: now(), updatedAt: now() }, current.revision);
+      if (current.state === 'launching' && current.launchId === launchId) store.put('target-request', {
+        ...current, pid: child.pid, heartbeatAt: now(), updatedAt: now() }, current.revision);
     });
     return requestStatus(store.need('target-request', id));
   } catch (error) {
     logHostError(store, id, error, 'worker-start-failed');
-    store.transaction(() => {
+    if (!spawned) store.transaction(() => {
       const current = store.need('target-request', id);
-      if (current.state === 'queued') store.put('target-request', { ...current, state: 'failed', error: { code: 'worker-start-failed', message: '요청 실행기를 시작하지 못했습니다. 로컬 요청 로그를 확인하세요.' }, updatedAt: now() }, current.revision);
+      if (current.state === 'launching' && current.launchId === launchId) store.put('target-request', { ...current,
+        state: 'failed', launchId: null, pid: null, host: null, heartbeatAt: null,
+        error: { code: 'worker-start-failed', message: '요청 실행기를 시작하지 못했습니다. 요청 로그를 확인하세요.' }, updatedAt: now() }, current.revision);
     });
     throw error;
-  } finally { closeSync(fd); }
+  } finally { if (fd !== undefined) closeSync(fd); }
 }

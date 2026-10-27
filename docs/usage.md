@@ -34,6 +34,8 @@ master-agent group list
 
 ## 서비스 그룹과 단일 프로젝트 요청
 
+요청 실행기는 프로세스를 시작하기 전에 DB에서 실행 시작을 원자적으로 예약한다. 동시에 같은 요청을 시작해도 하나만 진행하며, 운영자가 초기화한 예약의 이전 실행기가 늦게 도착하면 실행하지 않는다.
+
 웹의 프로젝트 등록·그룹 생성 및 편집은 [대시보드](ui.md#프로젝트와-서비스-그룹)를 따른다. 아래는 같은 카탈로그를 사용하는 CLI와 실제 실행 준비 절차다.
 
 그룹은 서비스 유지보수 범위다. `group create <ID> <이름> --description <범위>`로 만들고 `group add/remove <그룹ID> <프로젝트ID> --revision <그룹버전>`으로 소속을 바꾼다. `group show <ID>`에서 최신 버전을 확인한다. 기존 `group save <JSON> --revision <N>`도 지원하며 JSON은 id, name, description, projectIds다. 빈 그룹 저장은 가능하지만 실행 요청은 거부한다.

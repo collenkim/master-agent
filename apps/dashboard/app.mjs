@@ -13,7 +13,7 @@ const labels = {
   'replan-required': '재계획 필요', 'reapproval-required': '재승인 필요', 'limit-reached': '한도 도달',
   'stale-request': '요청 상태 변경', wait: '대기',
   'setup-required': '실행 준비 필요',
-  queued: '접수·시작 대기', failed: '실행 오류', interrupted: '실행기 중단',
+  queued: '접수·시작 대기', launching: '실행 시작 중', failed: '실행 오류', interrupted: '실행기 중단',
   skipped: '건너뜀', 'needs-attention': '결과 확인 필요',
 };
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -101,13 +101,12 @@ async function refresh({ afterPending = false } = {}) {
     if (afterPending) return refresh({ afterPending: true });
     return;
   }
-  clearTimeout(timer); $('refresh').disabled = true;
+  clearTimeout(timer); $('refresh').disabled = true; $('refresh').setAttribute('aria-busy', 'true');
   inFlight = (async () => {
   try {
     const response = await fetch('/api/overview', { signal: AbortSignal.timeout(10000) });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     latest = await response.json(); await render();
-    if ($('project-dialog').open) void loadCandidates();
     $('connection').textContent = `연결됨 · ${date(latest.generatedAt)}`;
     $('notice').className = 'notice';
     $('notice').textContent = latest.live ? `설치된 code-agent 연결됨 · 조회 완료 후 ${latest.intervalMs / 1000}초 간격${latest.refreshing ? ' · 조회 중' : ''}` :
@@ -115,7 +114,7 @@ async function refresh({ afterPending = false } = {}) {
   } catch (error) {
     $('connection').textContent = '연결 끊김'; $('notice').className = 'notice error';
     $('notice').textContent = `대시보드 서버에 연결할 수 없습니다 (${error.message}). 아래 내용은 마지막 수신 화면입니다.`;
-  } finally { inFlight = null; $('refresh').disabled = false; timer = setTimeout(refresh, latest?.intervalMs ?? 5000); }
+  } finally { inFlight = null; $('refresh').disabled = false; $('refresh').setAttribute('aria-busy', 'false'); timer = setTimeout(refresh, latest?.intervalMs ?? 5000); }
   })();
   return inFlight;
 }
@@ -137,13 +136,13 @@ function renderCandidates() {
 }
 async function loadCandidates() {
   if (candidateLoading) return;
-  candidateLoading = true; $('candidate-refresh').disabled = true; renderCandidates();
+  candidateLoading = true; $('candidate-refresh').disabled = true; $('candidate-refresh').setAttribute('aria-busy', 'true'); renderCandidates();
   try {
     const result = await post('/api/project-candidates', {});
     candidates = result.projects;
-    candidateInfo = result.truncated ? ' · 조회 한도에 도달해 일부만 표시합니다. 없는 경로는 직접 입력하세요.' : ' · 알려진 작업 위치의 설치 표시 기준 · 자동 갱신';
+    candidateInfo = result.truncated ? ' · 조회 한도에 도달해 일부만 표시합니다. 없는 경로는 직접 입력하세요.' : ' · 알려진 작업 위치의 설치 표시 기준 · 새로고침으로 갱신';
   } catch (error) { candidateInfo = ` · 조회 실패: ${error.message}. 경로를 직접 입력할 수 있습니다.`; }
-  finally { candidateLoading = false; $('candidate-refresh').disabled = false; renderCandidates(); }
+  finally { candidateLoading = false; $('candidate-refresh').disabled = false; $('candidate-refresh').setAttribute('aria-busy', 'false'); renderCandidates(); }
 }
 async function post(path, body) {
   const response = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Master-Token': latest.token }, body: JSON.stringify(body) });

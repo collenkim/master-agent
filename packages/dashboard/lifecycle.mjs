@@ -14,6 +14,7 @@ function alive(pid) {
   try { process.kill(pid, 0); return true; } catch (error) { return error.code !== 'ESRCH'; }
 }
 function removeOwned(path, id) { if (read(path)?.id === id) unlinkSync(path); }
+// Windows에서는 mode: 0o600으로 접근 권한을 제한할 수 없으므로 저장 위치의 계정 ACL을 따른다.
 function claim(path, id) {
   const previous = read(path);
   if (previous) {
@@ -64,7 +65,7 @@ export async function dashboardCommand(action, supplied = {}) {
     await control(previous, 'stop');
     const deadline = Date.now() + 15000;
     while (read(lockPath)?.id === lock.id) {
-      requireThat(Date.now() < deadline, 'dashboard-busy', '서버 종료 대기 시간이 초과됐습니다. 기존 터미널과 dashboard status를 확인하세요.');
+      requireThat(Date.now() < deadline, 'dashboard-busy', '서버 종료 대기 시간이 초과됐습니다. 진행 중 업데이트 완료 대기 중일 수 있습니다. 기존 터미널과 dashboard status를 확인하세요.');
       await delay(100);
     }
   }

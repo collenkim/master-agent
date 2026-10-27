@@ -1,3 +1,4 @@
+import { ControlClient } from '../packages/code-agent-adapter/control.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -347,4 +348,71 @@ test('M9: 원격 질문의 숫자 속성·선택 개수·승인 번호를 검증
   assert.equal(inbox.snapshot().items.filter(i => i.source === 'code-agent').length, 0);
   record = base; await inbox.refreshProject(project);
   assert.equal(inbox.snapshot().items.find(i => i.source === 'code-agent').questions[0].input.maxLength, 8000);
+});
+
+
+test('L4: 재기동은 sending을 unknown으로 전환하고 같은 commandId로 기존 응답 결과를 한 번 확인한다', async t => {
+  const f = await pending(t), project = f.fixture.projects[0], cli = join(f.root, 'recovery-cli.mjs');
+  writeFileSync(cli, '');
+  f.store.put('control-binding', { id: project.id, controller: 'restart', generation: 1, tokenFile: join(f.root, 'unused-token') });
+  const command = { id: 'interrupted-response', interactionId: 'remote-item', projectId: project.id,
+    controller: 'restart', generation: 1, state: 'sending', remoteWire: { commandId: 'interrupted-response' }, resume: { state: 'not-requested' } };
+  f.store.put('interaction-command', command);
+  const calls = [];
+  t.mock.method(ControlClient.prototype, 'result', async (type, input) => {
+    calls.push([type, input]);
+    assert.equal(f.store.need('interaction-command', command.id).state, 'unknown');
+    return { status: 'responded', receiptId: 'received-once' };
+  });
+  const inbox = createInteractions(f.store, { cliPath: cli, readRemote: async () => ({ capability: {}, records: [] }) });
+  await inbox.stop();
+  assert.deepEqual(calls, [['interaction.respond', command.remoteWire]]);
+  assert.equal(f.store.need('interaction-command', command.id).state, 'received');
+  assert.equal(f.store.need('interaction-command', command.id).receiptId, 'received-once');
+  await createInteractions(f.store, { cliPath: cli, readRemote: async () => ({ capability: {}, records: [] }) }).stop();
+  assert.equal(calls.length, 1);
+});
+
+test('L4: 재기동 확인 실패는 unknown과 수동 재시도 경로를 보존하고 자동으로 반복하지 않는다', async t => {
+  const f = await pending(t), project = f.fixture.projects[0], cli = join(f.root, 'recovery-cli.mjs');
+  writeFileSync(cli, '');
+  f.store.put('control-binding', { id: project.id, controller: 'restart', generation: 1, tokenFile: join(f.root, 'unused-token') });
+  const id = 'unconfirmed-response';
+  f.store.put('interaction-command', { id, interactionId: 'remote-item', projectId: project.id,
+    controller: 'restart', generation: 1, state: 'sending', remoteWire: { commandId: id }, resume: { state: 'not-requested' } });
+  const calls = [];
+  t.mock.method(ControlClient.prototype, 'result', async (type, input) => {
+    calls.push([type, input]);
+    if (calls.length === 1) throw Object.assign(new Error('private-host-error'), { code: 'control-unavailable' });
+    return { status: 'responded', receiptId: 'retry-receipt' };
+  });
+  const options = { cliPath: cli, readRemote: async () => ({ capability: {}, records: [] }) };
+  const inbox = createInteractions(f.store, options);
+  await inbox.stop();
+  assert.equal(f.store.need('interaction-command', id).state, 'unknown');
+  assert.ok(!JSON.stringify(f.store.need('interaction-command', id)).includes('private-host-error'));
+  await createInteractions(f.store, options).stop();
+  assert.equal(calls.length, 1);
+  await inbox.retry(id);
+  assert.deepEqual(calls.map(([type]) => type), ['interaction.respond', 'interaction.respond']);
+  assert.equal(calls[1][1].commandId, id);
+  assert.equal(f.store.need('interaction-command', id).state, 'received');
+});
+
+test('L5: 원격 답변 optionInputs는 문자열 값만 서명 전에 허용한다', async t => {
+  const f = await pending(t), project = f.fixture.projects[0], cli = join(f.root, 'input-cli.mjs');
+  writeFileSync(cli, '');
+  f.store.put('control-binding', { id: project.id, controller: 'inputs', generation: 1, tokenFile: join(f.root, 'unused-token') });
+  const record = { schemaVersion: 1, source: 'code-agent', sourceInstanceId: 'option-inputs', requestId: 'Q-inputs', revision: 1,
+    contentHash: 'remote-hash', context: { workId: null }, questions: [], title: '선택 입력', stage: 'planning',
+    kind: 'question', status: 'pending', canRespond: true, localKeyAvailable: true };
+  t.mock.method(ControlClient.prototype, 'result', async type => { assert.equal(type, 'interaction'); return record; });
+  const inbox = createInteractions(f.store, { cliPath: cli, resolveHumanKey: () => assert.fail('잘못된 입력을 서명하면 안 된다'),
+    readRemote: async () => ({ capability: { sourceInstanceId: 'option-inputs' }, records: [record] }) });
+  await inbox.refreshProject(project);
+  const item = inbox.snapshot().items.find(i => i.source === 'code-agent');
+  for (const optionInputs of [null, [], { one: 3 }, { one: {} }, { one: 'x'.repeat(8001) }]) {
+    await assert.rejects(inbox.respond(input(item, { answers: [{ questionId: 'Q1', optionIds: ['one'], optionInputs }] })), { code: 'invalid-input' });
+  }
+  assert.equal(f.store.list('interaction-command').length, 0);
 });

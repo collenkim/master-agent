@@ -136,7 +136,7 @@ async function main() {
     force: { type: 'boolean' }, 'wait-ms': { type: 'string' }, 'poll-ms': { type: 'string' }, 'follow-timeout-ms': { type: 'string' },
     port: { type: 'string' }, 'refresh-ms': { type: 'string' },
     saved: { type: 'boolean' }, description: { type: 'string' }, input: { type: 'string' }, reason: { type: 'string' }, confirm: { type: 'boolean' },
-    criterion: { type: 'string', multiple: true }, 'request-key': { type: 'string' }, 'task-number': { type: 'string' }, host: { type: 'string' }, main: { type: 'string' },
+    criterion: { type: 'string', multiple: true }, 'request-key': { type: 'string' }, 'launch-id': { type: 'string' }, 'task-number': { type: 'string' }, host: { type: 'string' }, main: { type: 'string' },
   } });
   if (values.help || !args.length || args[0] === 'help') { console.log(help); return; }
   if (args[0] === 'dashboard') {
@@ -199,6 +199,7 @@ async function main() {
   if (key === 'mission step' || key === 'mission run') requireThat(values.simulate, 'usage', '모의 실행은 --simulate로 명시해야 합니다. 실제 호스트 배정은 mission dispatch를 사용하세요.');
   if (['project observe', 'project control', 'project pair', 'project snapshot', 'project handover', 'project accept',
     ...['dispatch', 'continue', 'verify', 'handoff', 'recover', 'replan', 'reconcile', 'reconcile-verification', 'advance', 'drive', 'reattach', 'stop', 'delegate', 'relay'].map(a => `mission ${a}`)].includes(key)) values.cli = findCodeAgent(values.cli);
+  if (values['launch-id'] !== undefined) requireThat(key === 'request run', 'usage', '실행 예약은 request run에서만 사용합니다.');
   const dbPath = resolve(values.db ?? '.master-agent/master.db');
   const store = new Store(dbPath); const engine = new Engine(store);
   const controlHost = () => new ControlHost(store, { cliPath: values.cli, model: values.model, pollMs: ms('poll-ms', 2000), followTimeoutMs: ms('follow-timeout-ms', 4 * 3600 * 1000) });
@@ -258,7 +259,7 @@ async function main() {
       }
       case 'request list': result = store.list('target-request').map(requestStatus); break;
       case 'request show': result = requestStatus(store.need('target-request', id)); break;
-      case 'request run': result = await runRequest(store, id, { cliPath: values.cli }); if (result.state === 'failed') process.exitCode = 1; break;
+      case 'request run': result = await runRequest(store, id, { cliPath: values.cli, launchId: values['launch-id'] }); if (result.state === 'failed') process.exitCode = 1; break;
       case 'request continue': continueRequest(store, id, revision); result = await launchRequest(store, id, { dbPath, cliPath: values.cli }); break;
       case 'mission create': result = engine.create(json(id)); break;
       case 'mission list': result = store.list('mission').map(summary); break;

@@ -44,9 +44,11 @@ try {
   await click('#history-older');
   await waitFor('document.querySelectorAll(".history-entry").length === 4');
   assert.equal(await evaluate('document.getElementById("history-older").disabled'), true);
+  await evaluate("window.historyOption = document.getElementById('history-project').options[0]");
   await click('#refresh');
   await waitFor('!document.getElementById("refresh").disabled');
   assert.equal(await evaluate('document.querySelectorAll(".history-entry").length'), 4);
+  assert.equal(await evaluate("window.historyOption === document.getElementById('history-project').options[0]"), true);
   await click('#history-archive > summary');
   await click('#history-archive > summary');
   await waitFor('document.querySelectorAll(".history-entry").length === 4');
@@ -77,8 +79,13 @@ try {
   assert.equal(await evaluate('document.getElementById("history-archive").open'), false);
   await click('#history-archive > summary');
   await waitFor('document.querySelectorAll(".history-entry").length === 50');
+  f.store.event(project.id, 'stage-history', { projectId: project.id, groupIds: [f.fixture.group.id], source: 'future-source',
+    type: 'future.event', workId: 'FUTURE', occurredAt: new Date().toISOString(), detail: { reasons: [], phases: [] } });
+  await click('#history-latest');
+  await waitFor("document.getElementById('history-list').textContent.includes('FUTURE')");
+  assert.ok((await evaluate("document.querySelector('.history-entry').textContent")).includes('기타'));
   assert.deepEqual(errors, []);
-  const result = { passed: true, artifacts, checks: ['stage-task-verification', 'event-transition', 'pagination', 'older-page-preserved', 'archive-collapsed', 'archive-reopen', 'project-group-task-filters', 'reload', '1440-390-320', 'XSS'] };
+  const result = { passed: true, artifacts, checks: ['stage-task-verification', 'stable-filter-options', 'unknown-source-label', 'event-transition', 'pagination', 'older-page-preserved', 'archive-collapsed', 'archive-reopen', 'project-group-task-filters', 'reload', '1440-390-320', 'XSS'] };
   writeFileSync(join(artifacts, 'result.json'), JSON.stringify(result, null, 2));
   console.log(JSON.stringify(result));
 } finally {

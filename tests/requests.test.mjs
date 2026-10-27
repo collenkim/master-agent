@@ -184,3 +184,41 @@ test('L2: 호스트 오류 원문은 요청 DB 대신 로그의 첫 줄에만 �
   assert.match(log, /\[EHOST\] Error: private host detail/);
   assert.ok(!log.includes('private second line'));
 });
+
+test('L5: 동시 launch는 시작 전에 하나만 예약하고 실행기를 한 번 시작한다', async t => {
+  const { store, fixture, db, root } = setup(t);
+  const { request } = acceptRequest(store, { targetType: 'project', targetId: fixture.projects[0].id, goal: '동시 시작' });
+  const options = { dbPath: db, cliPath: join(root, 'missing-code-agent.js') };
+  const results = await Promise.allSettled([launchRequest(store, request.id, options), launchRequest(store, request.id, options)]);
+  assert.equal(results.filter(r => r.status === 'fulfilled').length, 1);
+  assert.equal(results.find(r => r.status === 'rejected').reason.code, 'request-busy');
+  let record;
+  for (let i = 0; i < 100; i++) { record = store.need('target-request', request.id); if (record.state === 'waiting') break; await delay(50); }
+  assert.equal(record.state, 'waiting'); assert.equal(record.launchId, null);
+  assert.equal(record.preparation.issues[0].code, 'invalid-cli');
+  await delay(100);
+});
+
+test('L5: 초기화한 예약의 늦은 실행기는 거부하고 현재 예약과 만료된 시작 임대만 인수한다', async t => {
+  const { store, fixture } = setup(t);
+  const { request } = acceptRequest(store, { targetType: 'project', targetId: fixture.projects[0].id, goal: '예약 대조' });
+  let record = store.put('target-request', { ...request, state: 'launching', launchId: 'old-launch', pid: null,
+    host: hostname(), heartbeatAt: new Date().toISOString() }, request.revision);
+  let calls = 0;
+  const options = { host: {}, provider: {}, workflow: { async run() { calls++; return { blockers: [] }; } } };
+  await assert.rejects(runRequest(store, request.id, options), { code: 'request-busy' });
+  await assert.rejects(runRequest(store, request.id, { ...options, launchId: 'wrong-launch' }), { code: 'request-busy' });
+  record = resetRequest(store, request.id, record.revision, { confirm: true });
+  assert.equal(record.launchId, null);
+  await assert.rejects(runRequest(store, request.id, { ...options, launchId: 'old-launch' }), { code: 'request-busy' });
+  assert.equal(calls, 0);
+  record = store.put('target-request', { ...record, state: 'launching', launchId: 'current-launch', pid: null,
+    host: hostname(), heartbeatAt: new Date().toISOString() }, record.revision);
+  record = await runRequest(store, request.id, { ...options, launchId: 'current-launch' });
+  assert.equal(record.state, 'waiting'); assert.equal(record.launchId, null); assert.equal(calls, 1);
+  store.put('target-request', { ...record, state: 'launching', launchId: 'expired-launch', pid: null,
+    heartbeatAt: new Date(Date.now() - LEASE_TTL_MS - 1).toISOString() }, record.revision);
+  assert.equal((await runRequest(store, request.id, options)).state, 'waiting');
+  assert.equal(calls, 2);
+  assert.ok(store.events(request.id).some(e => e.type === 'request-lease-reclaimed' && e.reason === 'expired'));
+});
