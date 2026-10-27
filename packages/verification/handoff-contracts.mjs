@@ -1,3 +1,4 @@
+import { childEnv } from '../runner/process.mjs';
 import { hash, requireThat, string, strings } from '../domain/contracts.mjs';
 import { safeRelative } from './tree.mjs';
 import { assertSealed } from './seal.mjs';
@@ -26,9 +27,9 @@ export function verifyContractDocuments(contracts, tree, commit) {
   for (const contract of contracts.filter(c => c.document)) {
     requireThat(/^[a-f0-9]{40}$/.test(commit ?? ''), 'invalid-contract', '계약 문서의 반영 커밋이 필요합니다.');
     const file = tree.files.find(f => f.path === contract.document.path);
-    const entry = execFileSync('git', ['-C', tree.root, 'ls-tree', commit, '--', contract.document.path], { encoding: 'utf8', windowsHide: true, timeout: 30000 });
+    const entry = execFileSync('git', ['-C', tree.root, 'ls-tree', commit, '--', contract.document.path], { encoding: 'utf8', shell: false, windowsHide: true, env: childEnv({ GIT_OPTIONAL_LOCKS: '0' }), timeout: 30000 });
     requireThat(/^100(?:644|755) blob /.test(entry) && entry.trim().split('\n').length === 1, 'invalid-contract', '커밋된 일반 계약 문서가 필요합니다.');
-    const blob = execFileSync('git', ['-C', tree.root, 'show', `${commit}:${contract.document.path}`], { windowsHide: true, maxBuffer: 131072, timeout: 30000 });
+    const blob = execFileSync('git', ['-C', tree.root, 'show', `${commit}:${contract.document.path}`], { shell: false, windowsHide: true, env: childEnv({ GIT_OPTIONAL_LOCKS: '0' }), maxBuffer: 131072, timeout: 30000 });
     requireThat(file?.digest === contract.document.sha256 && createHash('sha256').update(blob).digest('hex') === contract.document.sha256,
       'invalid-contract', '계약 문서의 검증된 파일과 반영 커밋 내용이 다릅니다.');
   }

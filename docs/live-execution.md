@@ -31,6 +31,8 @@ master-agent mission continue <목표ID> <시도ID> --revision <목표버전> --
 
 계속 실행은 같은 code-agent 작업 ID와 기록된 Claude 세션 ID를 사용한다. `--resume`에 해당 세션을 전달하고, 임대 소유권도 그 세션과 대조한다. 질문·승인은 프로젝트 경로의 기존 Claude 세션에서 처리한 뒤 상태를 다시 조회한다. master의 `mission clarify`는 계획 분석 질문용이며 code-agent 동의 응답을 대신하지 않는다. 이미 시작된 실제 작업이 있으면 새 계획·재분석으로 시도를 덮을 수 없다.
 
+Claude 설정 JSON을 읽지 못하거나 형식이 손상됐으면 `host-not-installed`로 실행을 거부한다.
+
 ## 상태와 잠금
 
 | 작업 상태 | 의미 | 후속 동작 |

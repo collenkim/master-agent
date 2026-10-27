@@ -1,12 +1,13 @@
+import { childEnv } from '../runner/process.mjs';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { snapshotTree, changesBetween, checkpointsCurrent, safeRelative, codeAgentRecord } from './tree.mjs';
 import { runProcess } from '../reasoning/cli-provider.mjs';
 import { sealOf } from './seal.mjs';
-import { requireThat, hash, now, strings } from '../domain/contracts.mjs';
+import { DomainError, requireThat, hash, now, strings } from '../domain/contracts.mjs';
 
-const git = (path, args) => execFileSync('git', ['-C', path, ...args], { encoding: 'utf8', windowsHide: true, timeout: 30000, maxBuffer: 1024 * 1024,
-  stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' } });
+const git = (path, args) => execFileSync('git', ['-C', path, ...args], { encoding: 'utf8', shell: false, windowsHide: true, timeout: 30000, maxBuffer: 1024 * 1024,
+  stdio: ['ignore', 'pipe', 'pipe'], env: childEnv({ GIT_OPTIONAL_LOCKS: '0' }) });
 export function validateDelivery(contract) {
   requireThat(contract?.mode === 'code-agent-commit', 'invalid-delivery', '지원 반영 계약은 code-agent-commit입니다.');
   strings(contract.metadataPaths, 'delivery.metadataPaths');
@@ -36,7 +37,11 @@ export function inspectDelivery(project, attempt, run, tree, store) {
   requireThat(parents.length === 2 && parents[1] === run.after.head && tree.head !== run.after.head, 'delivery-history', '검증 시점 HEAD 바로 다음의 단일 반영 커밋이 필요합니다.');
   requireThat(!git(project.path, ['status', '--porcelain=v1', '--untracked-files=all']).trim(), 'delivery-dirty', '반영 커밋과 작업 파일·인덱스가 같아야 합니다.');
   const raw = git(project.path, ['show', `${tree.head}:${receiptPath}`]);
-  const rows = raw.split(/\r?\n/).filter(Boolean).map(line => JSON.parse(line));
+  let rows;
+  try { rows = raw.split(/\r?\n/).filter(Boolean).map(line => JSON.parse(line)); }
+  catch { throw new DomainError('invalid-delivery-receipt', '반영 동의 기록의 JSON 형식이 손상됐습니다.'); }
+  requireThat(rows.every(row => row && typeof row === 'object' && !Array.isArray(row)),
+    'invalid-delivery-receipt', '반영 동의 기록은 JSON 객체여야 합니다.');
   const session = attempt.turns.at(-1)?.result?.sessionId;
   const receipts = rows.filter(r => r.action === 'deliver' && r.status === 'this-commit' && typeof r.id === 'string' &&
     r.preparedSession?.host === 'claude' && r.preparedSession.id === session && Date.parse(r.createdAt) >= Date.parse(attempt.startedAt) &&

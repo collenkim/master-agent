@@ -1,14 +1,12 @@
-import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { extname, join } from 'node:path';
-import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
 import { Catalog, normalizedPath } from '../catalog/catalog.mjs';
 import { requireThat, hash, now } from '../domain/contracts.mjs';
 import { findCodeAgent } from './discovery.mjs';
 import { recordObservation } from '../dashboard/history.mjs';
 
-const runFile = promisify(execFile);
+import { childEnv, execFileTree as runFile } from '../runner/process.mjs';
 const resumeCodes = new Set(['stale-request', 'unobservable', 'no-work', 'ownership-conflict', 'wait', 'needs-human', 'replan-required', 'reapproval-required', 'limit-reached', 'ready']);
 
 /** Poll timestamps advance independently of the code-agent concurrency contract. */
@@ -55,7 +53,7 @@ export async function observeProject(store, projectId, { cliPath, timeoutMs = 30
     try {
       const output = await runFile(js ? process.execPath : cliPath, [...(js ? [cliPath] : []), 'status', '--json'], {
         cwd: project.path, encoding: 'utf8', windowsHide: true, timeout: timeoutMs,
-        maxBuffer: 4 * 1024 * 1024, shell: false, env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' },
+        maxBuffer: 4 * 1024 * 1024, shell: false, env: childEnv({ GIT_OPTIONAL_LOCKS: '0' }),
       });
       stdout = output.stdout;
     } catch (error) { stdout = error.stdout ?? ''; processError = error; }

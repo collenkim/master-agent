@@ -1,38 +1,30 @@
-import { execFile, execFileSync } from 'node:child_process';
 import { mkdtempSync, rmdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { extname, join } from 'node:path';
 import { normalizedPath } from '../catalog/catalog.mjs';
 import { DomainError, requireThat } from '../domain/contracts.mjs';
+import { childEnv, execFileTree } from '../runner/process.mjs';
 
-const HOST_ENV = ['CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_PROJECT_DIR', 'CODEX_CI', 'CODEX_SANDBOX',
-  'CODEX_SANDBOX_NETWORK_DISABLED', 'CODEX_THREAD_ID', 'CODE_AGENT_MASTER_RUN', 'CODE_AGENT_CROSS'];
 const SHOWN_HASH = /^sha256:[0-9a-f]{64}$/;
 const RELEASE = /^[a-zA-Z0-9][a-zA-Z0-9.+_-]{0,199}$/;
 
 /** Public CLI only; kill the entire process tree on timeout, including install scripts. */
-export function runUpdateCli(cliPath, args, cwd, onSpawn = () => {}, timeoutMs = args[0] === 'version' ? 15000 : 120000) {
-  const env = { ...process.env, GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' };
-  for (const key of Object.keys(env)) if (HOST_ENV.includes(key.toUpperCase()) || /^CODE_AGENT_(RUNTIME|ENTRY)/i.test(key)) delete env[key];
+export async function runUpdateCli(cliPath, args, cwd, onSpawn = () => {}, timeoutMs = args[0] === 'version' ? 15000 : 120000) {
+  const env = childEnv({ GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' });
   const js = ['.js', '.mjs', '.cjs'].includes(extname(cliPath).toLowerCase());
-  return new Promise(resolveResult => {
-    let timer, timedOut = false, recordError;
-    const child = execFile(js ? process.execPath : cliPath, [...(js ? [cliPath] : []), ...args], {
-      cwd, env, shell: false, windowsHide: true, detached: process.platform !== 'win32', encoding: 'utf8', maxBuffer: 16 * 1024 * 1024,
-    }, (error, stdout, stderr) => {
-      clearTimeout(timer);
-      resolveResult({ code: recordError ? 'spawn-record-failed' : timedOut ? 'timeout' : error ? error.code ?? error.signal ?? 'failed' : 0,
-        uncertain: Boolean(recordError || timedOut || error?.signal || error?.killed), stdout, stderr: recordError?.message ?? stderr });
+  let recordError;
+  try {
+    const { stdout, stderr } = await execFileTree(js ? process.execPath : cliPath, [...(js ? [cliPath] : []), ...args], {
+      cwd, env, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, timeout: timeoutMs,
+      onSpawn(pid) { try { onSpawn(pid); } catch (error) { recordError = error; throw error; } },
     });
-    const kill = () => {
-      try {
-        if (process.platform === 'win32' && child.pid) execFileSync('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
-        else if (child.pid) process.kill(-child.pid, 'SIGKILL');
-      } catch { child.kill('SIGKILL'); }
-    };
-    timer = setTimeout(() => { timedOut = true; kill(); }, timeoutMs);
-    if (child.pid) try { onSpawn(child.pid); } catch (error) { recordError = error; kill(); }
-  });
+    return { code: 0, uncertain: false, stdout, stderr };
+  } catch (error) {
+    const timedOut = error.code === 'ETIMEDOUT';
+    return { code: recordError ? 'spawn-record-failed' : timedOut ? 'timeout' : error.code ?? error.signal ?? 'failed',
+      uncertain: Boolean(recordError || timedOut || error.signal || error.killed),
+      stdout: error.stdout ?? '', stderr: recordError?.message ?? error.stderr ?? '' };
+  }
 }
 
 export function updateError(result) {

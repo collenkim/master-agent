@@ -26,6 +26,8 @@ Codex 접수의 세션 ID는 임시 별칭일 수 있다. master는 결과의 `h
 3. 사람만 하는 동작(setup·docs·baseline·model·plugin·update·abort 등)과 master 실행이 준비하지 않은 확인 요청은 위임 대상이 아니다.
 4. 대시보드의 명시적 사람 답은 별도 `dashboard-human` 채널을 사용한다. 사용자가 `code-agent master human enable --controller <ID>`로 등록한 Ed25519 키로만 서명하며 AI grant·기존 `answer actor:human`과 구분한다. `interactions`·`interaction.respond`·`interaction.result` 계약과 지원 범위는 [공통 요청함](dashboard-interactions.md)을 따른다. 사람 전용 동의도 이 채널에서 원래 검증·적용 함수로 처리한다.
 
+자식 프로세스는 공통 실행 헬퍼에서 부모 호스트·런타임 표지를 제거한 환경으로 시작한다. 상태 조회·제어 통신·AI CLI·설치 호출은 셸 없이 인자 배열을 사용하며, 시간 또는 출력 제한으로 중단할 때 직접 시작한 자식의 프로세스 트리도 종료한다. 요청 실행기와 Git 검증 호출에도 같은 환경 정리를 적용한다.
+
 ## 명령
 
 ```powershell

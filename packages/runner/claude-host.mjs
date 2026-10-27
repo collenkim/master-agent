@@ -1,14 +1,12 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { existsSync, readFileSync } from 'node:fs';
 import { extname, join } from 'node:path';
 import { findCli, runProcess } from '../reasoning/cli-provider.mjs';
 import { parseState } from '../code-agent-adapter/observe.mjs';
-import { requireThat, hash } from '../domain/contracts.mjs';
+import { DomainError, requireThat, hash } from '../domain/contracts.mjs';
 import { dependencyBundle, contractLines } from '../verification/handoff-contracts.mjs';
 import { findCodeAgent } from '../code-agent-adapter/discovery.mjs';
 
-const runFile = promisify(execFile);
+import { childEnv, execFileTree as runFile } from './process.mjs';
 
 /** 선행 작업 증거의 요약 — 세션에 필요한 것은 어떤 검사가 통과했고 무엇을 반영했는지다. 파일 트리 스냅샷·원격 상태·검사 출력은 master 기록에 남고
  *  프롬프트에 싣지 않는다(통합 작업은 선행 증거가 여럿이라 code-agent 접수 한도를 넘는다) */
@@ -67,7 +65,7 @@ export async function inspectState(cliPath, project, expectedState, sessionId) {
   try {
     ({ stdout } = await runFile(js ? process.execPath : cliPath,
       [...(js ? [cliPath] : []), 'status', '--json', ...(expectedState ? ['--expect-state', expectedState] : []), ...(sessionId ? ['--session', sessionId] : [])],
-      { cwd: project.path, shell: false, windowsHide: true, timeout: 30000, maxBuffer: 4 * 1024 * 1024, encoding: 'utf8', env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' } }));
+      { cwd: project.path, shell: false, windowsHide: true, timeout: 30000, maxBuffer: 4 * 1024 * 1024, encoding: 'utf8', env: childEnv({ GIT_OPTIONAL_LOCKS: '0' }) }));
   } catch (e) {
     requireThat([1, 2, 3].includes(e.code) && e.stdout, 'observation-failed', 'code-agent 상태 조회 실패; 실행하지 않습니다.');
     stdout = e.stdout;
@@ -82,7 +80,11 @@ export function checkClaudeInstallation(project) {
   for (const file of ['CLAUDE.md', '.claude/skills/ca-request/SKILL.md', '.claude/skills/ca-next/SKILL.md', '.claude/settings.json']) {
     requireThat(existsSync(join(project.path, file)), 'host-not-installed', `Claude용 code-agent 설치 파일이 없습니다: ${file}`);
   }
-  const settings = JSON.parse(readFileSync(join(project.path, '.claude/settings.json'), 'utf8'));
+  let settings;
+  try { settings = JSON.parse(readFileSync(join(project.path, '.claude/settings.json'), 'utf8')); }
+  catch { throw new DomainError('host-not-installed', 'Claude 설정 파일을 읽지 못했거나 JSON 형식이 손상됐습니다.'); }
+  requireThat(settings && typeof settings === 'object' && !Array.isArray(settings),
+    'host-not-installed', 'Claude 설정 파일은 JSON 객체여야 합니다.');
   requireThat(settings.disableAllHooks !== true && ['PreToolUse', 'SessionStart', 'Stop'].every(event =>
     Array.isArray(settings.hooks?.[event]) && settings.hooks[event].some(entry => entry.hooks?.some(h => h.type === 'command' && /code-agent|cli\.js/.test(h.command ?? '')))),
   'host-not-installed', 'code-agent의 Claude hook 설정이 필요합니다.');

@@ -14,8 +14,8 @@ async function delivered(t, mutate = () => {}) {
   mkdirSync(directory, { recursive: true });
   const receipt = { id: 'fixture-consent', action: 'deliver', status: 'this-commit', createdAt: new Date().toISOString(),
     preparedSession: { host: 'claude', id: 'fixture-session' }, observed: [{ choices: ['반영'] }] };
-  mutate({ f, receipt, root });
-  writeFileSync(join(directory, 'consents.jsonl'), JSON.stringify(receipt) + '\n');
+  const receiptText = mutate({ f, receipt, root });
+  writeFileSync(join(directory, 'consents.jsonl'), receiptText ?? JSON.stringify(receipt) + '\n');
   writeFileSync(join(root, 'delivery.md'), '반영 기록\n');
   const git = args => execFileSync('git', ['-C', root, ...args], { stdio: 'pipe', encoding: 'utf8' });
   git(['add', '.']); git(['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'fixture delivery']);
@@ -99,3 +99,12 @@ test('오래된 호출 반환·변조·임대 충돌·실행 중 검증·일시 
     assert.equal(f.store.list('reconciliation').length, 0);
   });
 });
+
+for (const [kind, raw] of [['손상 JSON', '{broken-json'], ['객체가 아닌 JSON', 'null\n']]) {
+  test(`L2: ${kind} 반영 동의 기록은 도메인 오류로 거부하고 잠금을 보존한다`, async t => {
+    const f = await delivered(t, () => raw);
+    await assert.rejects(f.verifier.handoff(f.mission.id, f.attempt.id, f.host, f.options('one')), { code: 'invalid-delivery-receipt' });
+    assert.equal(f.store.list('evidence').length, 0);
+    assert.ok(f.store.lock('one'));
+  });
+}

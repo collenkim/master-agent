@@ -1,3 +1,5 @@
+import { logHostError } from '../runner/diagnostics.mjs';
+import { childEnv } from '../runner/process.mjs';
 import { randomUUID } from 'node:crypto';
 import { hostname } from 'node:os';
 import { spawn } from 'node:child_process';
@@ -13,7 +15,7 @@ import { Recovery } from './recovery.mjs';
 import { VerificationTemplates } from '../verification/templates.mjs';
 import { findCodeAgent } from '../code-agent-adapter/discovery.mjs';
 import { prepareRequest, preparationCodes } from './preparation.mjs';
-import { requireThat, string, now } from '../domain/contracts.mjs';
+import { DomainError, requireThat, string, now } from '../domain/contracts.mjs';
 import { leaseActive, localProcessAlive, HEARTBEAT_MS } from './lease.mjs';
 
 const requestLeased = record => ['running', 'launching'].includes(record.state) || record.state === 'queued' && Boolean(record.pid);
@@ -198,7 +200,10 @@ export async function runRequest(store, id, { cliPath, host, provider, workflow,
   } catch (error) {
     if (!host && preparationCodes.has(error.code)) return recordPreparation({ checkedAt: now(), state: 'waiting', checks: [], issues: [{
       projectId: record.projectIds[0], code: error.code, message: error.message, guidance: '설치·근거·제어 연결을 확인한 뒤 같은 요청에서 준비 상태를 다시 확인하세요.' }] });
-    return finish({ state: 'failed', error: { code: error.code ?? 'internal-error', message: error.message }, blockers: [error.code ?? 'internal-error'] });
+    logHostError(store, id, error, 'request-error');
+    return finish({ state: 'failed', error: { code: error.code ?? 'internal-error',
+      message: error instanceof DomainError ? error.message : '요청 실행 중 오류가 발생했습니다. 로컬 요청 로그를 확인하세요.' },
+    blockers: [error.code ?? 'internal-error'] });
   } finally { clearInterval(timer); }
 }
 
@@ -215,7 +220,7 @@ export async function launchRequest(store, id, { dbPath, cliPath } = {}) {
   requireThat(/^[0-9a-f-]{36}$/.test(id), 'invalid-input', '요청 ID 형식이 잘못됐습니다.');
   const fd = openSync(join(logDir, `${id}.log`), 'a');
   try {
-    const child = spawn(process.execPath, args, { cwd: dirname(resolve(dbPath)), detached: true, windowsHide: true, stdio: ['ignore', fd, fd] });
+    const child = spawn(process.execPath, args, { cwd: dirname(resolve(dbPath)), detached: true, shell: false, windowsHide: true, env: childEnv(), stdio: ['ignore', fd, fd] });
     await new Promise((resolve, reject) => { child.once('spawn', resolve); child.once('error', reject); });
     child.unref();
     store.transaction(() => {
@@ -224,9 +229,10 @@ export async function launchRequest(store, id, { dbPath, cliPath } = {}) {
     });
     return requestStatus(store.need('target-request', id));
   } catch (error) {
+    logHostError(store, id, error, 'worker-start-failed');
     store.transaction(() => {
       const current = store.need('target-request', id);
-      if (current.state === 'queued') store.put('target-request', { ...current, state: 'failed', error: { code: 'worker-start-failed', message: error.message }, updatedAt: now() }, current.revision);
+      if (current.state === 'queued') store.put('target-request', { ...current, state: 'failed', error: { code: 'worker-start-failed', message: '요청 실행기를 시작하지 못했습니다. 로컬 요청 로그를 확인하세요.' }, updatedAt: now() }, current.revision);
     });
     throw error;
   } finally { closeSync(fd); }

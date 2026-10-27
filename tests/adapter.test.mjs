@@ -87,3 +87,24 @@ test('응답 없는 상태 조회를 시간 초과로 분류한다', async t => 
   const result = await observeProject(store, p.id, { cliPath: cli, timeoutMs: 250 });
   assert.equal(result.status, 'timeout');
 });
+
+test('L1: 상태 조회는 호스트·런타임 표지를 제거하고 일반 환경값은 보존한다', async t => {
+  const { store, fixture, root } = setup(t), project = fixture.projects[0];
+  const values = { CLAUDECODE: '1', CLAUDE_PROJECT_DIR: '/private/parent', CLAUDE_CODE_ENTRYPOINT: 'host',
+    CODE_AGENT_MASTER_RUN: 'parent-run', CODE_AGENT_CROSS: '1', CODE_AGENT_RUNTIME_SELF: 'private-runtime',
+    CODE_AGENT_ENTRY_PATH: 'private-entry', CODEX_CI: '1', CODEX_SANDBOX: '1', CODEX_SANDBOX_NETWORK_DISABLED: '1',
+    CODEX_THREAD_ID: 'private-thread', MASTER_AGENT_ALLOWED_ENV: 'preserved' };
+  const previous = Object.fromEntries(Object.keys(values).map(key => [key, process.env[key]]));
+  Object.assign(process.env, values);
+  t.after(() => { for (const [key, value] of Object.entries(previous)) {
+    if (value === undefined) delete process.env[key]; else process.env[key] = value;
+  } });
+  const cli = fixtureCli(root, project.path, `
+    import assert from 'node:assert/strict';
+    for (const key of ${JSON.stringify(Object.keys(values).filter(key => key !== 'MASTER_AGENT_ALLOWED_ENV'))}) assert.equal(process.env[key], undefined, key);
+    assert.equal(process.env.MASTER_AGENT_ALLOWED_ENV, 'preserved');
+    assert.equal(process.env.GIT_OPTIONAL_LOCKS, '0');
+    console.log(JSON.stringify(${JSON.stringify(stateFor(project.path))}));
+  `);
+  assert.equal((await observeProject(store, project.id, { cliPath: cli })).status, 'observed');
+});

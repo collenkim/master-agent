@@ -1,17 +1,38 @@
-import { spawn, execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, writeFileSync, readFileSync, rmSync, realpathSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { existsSync, mkdtempSync, writeFileSync, readFileSync, rmSync, realpathSync, statSync } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
 import { join, dirname, basename, delimiter, isAbsolute, extname } from 'node:path';
 import { DomainError, requireThat, string } from '../domain/contracts.mjs';
+import { childEnv, killTree } from '../runner/process.mjs';
 
-export function findCli(provider, explicit) {
+function npmClaudeEntry(directory) {
+  if (!['claude', 'claude.cmd', 'claude.ps1'].some(name => existsSync(join(directory, name)))) return null;
+  for (const root of [join(directory, 'node_modules', '@anthropic-ai', 'claude-code'),
+    join(dirname(directory), 'lib', 'node_modules', '@anthropic-ai', 'claude-code')]) {
+    try {
+      const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+      if (pkg.name !== '@anthropic-ai/claude-code') continue;
+      const bin = typeof pkg.bin === 'string' ? pkg.bin : pkg.bin?.claude;
+      if (typeof bin !== 'string') continue;
+      const path = realpathSync(join(root, bin));
+      if (['.js', '.mjs', '.cjs'].includes(extname(path).toLowerCase()) && statSync(path).isFile()) return path;
+    } catch { /* 다음 설치 후보를 확인한다. */ }
+  }
+  return null;
+}
+
+export function findCli(provider, explicit, { env = process.env, platform = process.platform, home = homedir() } = {}) {
   requireThat(['codex', 'claude'].includes(provider), 'invalid-provider', 'provider는 codex 또는 claude입니다.');
   let candidates = [];
   if (explicit) { requireThat(isAbsolute(explicit), 'invalid-cli', 'AI CLI는 절대 경로로 지정하세요.'); candidates = [explicit]; }
   else {
-    const dirs = (process.env.PATH ?? process.env.Path ?? '').split(delimiter).filter(Boolean);
-    candidates = dirs.map(d => join(d, process.platform === 'win32' ? `${provider}.exe` : provider));
-    if (provider === 'claude') candidates.push(join(homedir(), '.local', 'bin', process.platform === 'win32' ? 'claude.exe' : 'claude'));
+    const dirs = (env.PATH ?? env.Path ?? '').split(delimiter).filter(Boolean);
+    candidates = dirs.map(d => join(d, platform === 'win32' ? `${provider}.exe` : provider));
+    if (provider === 'claude') {
+      candidates.push(join(home, '.local', 'bin', platform === 'win32' ? 'claude.exe' : 'claude'));
+      const npmDirs = [...dirs, ...(platform === 'win32' && env.APPDATA ? [join(env.APPDATA, 'npm')] : [])];
+      candidates.push(...[...new Set(npmDirs)].map(npmClaudeEntry).filter(Boolean));
+    }
     else candidates.push(...dirs.map(d => join(d, 'node_modules', '@openai', 'codex', 'bin', 'codex.js')));
   }
   const file = candidates.find(f => existsSync(f));
@@ -39,16 +60,13 @@ export function providerArgs(provider, { schemaPath, outputPath, schema, model }
 /** prompt는 stdin으로만 전달하고 CLI 로그는 DB/오류 메시지에 복사하지 않는다. */
 export function runProcess(executable, args, { cwd, input, timeoutMs = 180000, maxBytes = 2 * 1024 * 1024, captureExit = false }) {
   return new Promise((resolve, reject) => {
-    const child = spawn(executable, args, { cwd, shell: false, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+    const child = spawn(executable, args, { cwd, shell: false, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'], env: childEnv(), detached: process.platform !== 'win32' });
     child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8');
     let stdout = '', stderr = '', bytes = 0, failure;
     const stop = code => {
       if (failure) return;
       failure = new DomainError(code, code === 'provider-timeout' ? 'AI 응답 시간이 초과됐습니다.' : 'AI 출력 크기 제한을 넘었습니다.');
-      if (process.platform === 'win32' && child.pid && child.exitCode === null) {
-        // 직접 시작한 자식 트리만 종료한다. PID를 파일에서 불러오지 않는다.
-        try { execFileSync('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' }); } catch { child.kill(); }
-      } else child.kill('SIGKILL');
+      killTree(child);
     };
     const timer = setTimeout(() => stop('provider-timeout'), timeoutMs);
     child.stdout.on('data', data => { bytes += Buffer.byteLength(data); if (bytes > maxBytes) stop('provider-output-limit'); else stdout += data; });

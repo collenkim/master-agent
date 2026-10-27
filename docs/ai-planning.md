@@ -46,6 +46,8 @@ master-agent mission analyze <목표ID> --revision <목표버전> --provider cla
 
 CLI 경로를 자동 발견하지 못하면 `--ai-cli <절대경로>`로 `.exe` 또는 JS 진입점을 지정한다. 셸 래퍼 `.cmd`, `.bat`, `.ps1`은 받지 않는다. `--model <모델명>`을 생략하면 해당 CLI의 기본 모델을 사용하며 기록에는 cli-default로 표시한다. API 키와 인증 파일을 master DB에 복제하지 않고 기존 CLI 인증을 이용한다.
 
+Windows npm 설치의 `claude.cmd`를 찾으면 인접한 `@anthropic-ai/claude-code/package.json`의 `bin`에서 실제 JS 진입점을 찾아 Node로 실행한다. PATH와 npm 기본 설치 위치를 확인하며 셸 래퍼 자체를 실행하지 않는다. 설치 메타데이터나 진입점이 손상된 후보는 건너뛰고 다른 후보를 확인한다.
+
 프롬프트는 stdin으로 전달한다. 대상 프로젝트를 AI CLI의 작업 디렉터리로 열지 않고 별도 임시 폴더에서 수집한 context만 전달한다. Codex는 read-only·ephemeral·사용자 설정 미로딩·셸 도구 및 웹 검색 비활성화로 호출한다. Claude는 도구·스킬·사용자 설정·MCP 연결을 제외하고 세션 저장 없이 구조화 출력을 요청한다. 관리자가 적용한 CLI 정책과 인증 조건은 그대로 적용된다. 이 옵션 조합은 지원되는 CLI 버전이 필요하며 권한 우회 옵션은 사용하지 않는다.
 
 구조화 출력 연결은 공식 [Codex 비대화형 실행](https://learn.chatgpt.com/docs/non-interactive-mode)과 [Claude 프로그램 방식 실행](https://code.claude.com/docs/en/headless)에 기반한다. 설치 버전은 `--help`로 지원 옵션을 확인한다.

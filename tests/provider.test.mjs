@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { CliProvider, providerArgs, runProcess } from '../packages/reasoning/cli-provider.mjs';
+import { CliProvider, findCli, providerArgs, runProcess } from '../packages/reasoning/cli-provider.mjs';
 import { analysisSchema } from '../packages/reasoning/schema.mjs';
 import { planningSetup } from './planning-fixture.mjs';
 import { temporary } from './helpers.mjs';
@@ -61,4 +61,20 @@ test('provider 인자에 권한 우회와 워크스페이스 쓰기를 넣지 �
   assert.ok(codex.includes('--ignore-user-config')); assert.ok(codex.includes('--ephemeral'));
   assert.ok(claude.includes('--strict-mcp-config')); assert.ok(claude.includes('--no-session-persistence'));
   assert.ok(![...codex, ...claude].some(x => x.includes('dangerously') || x === 'workspace-write'));
+});
+
+test('Windows npm claude.cmd 설치를 package.json의 JS 진입점으로 탐색하고 래퍼는 실행하지 않는다', async t => {
+  const root = temporary(t), npm = join(root, 'npm'), packageRoot = join(npm, 'node_modules', '@anthropic-ai', 'claude-code');
+  mkdirSync(packageRoot, { recursive: true });
+  writeFileSync(join(npm, 'claude.cmd'), 'exit /b 99');
+  writeFileSync(join(packageRoot, 'package.json'), JSON.stringify({ name: '@anthropic-ai/claude-code', bin: { claude: 'cli.js' } }));
+  const entry = join(packageRoot, 'cli.js');
+  writeFileSync(entry, 'console.log("npm-entry");');
+  const command = findCli('claude', undefined, { env: { PATH: npm }, platform: 'win32', home: root });
+  assert.equal(command.executable, process.execPath);
+  assert.equal(command.prefix[0], realpathSync(entry));
+  assert.match((await runProcess(command.executable, command.prefix, { cwd: root, input: '' })).stdout, /npm-entry/);
+  assert.throws(() => findCli('claude', join(npm, 'claude.cmd')), e => e.code === 'invalid-cli');
+  writeFileSync(join(packageRoot, 'package.json'), '{broken');
+  assert.throws(() => findCli('claude', undefined, { env: { PATH: npm }, platform: 'win32', home: root }), e => e.code === 'provider-unavailable');
 });

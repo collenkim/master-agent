@@ -3,11 +3,9 @@ import { homedir } from 'node:os';
 import { extname } from 'node:path';
 import { DASHBOARD_CONTROLLER, validController } from '../code-agent-adapter/pairing.mjs';
 import { DomainError, requireThat } from '../domain/contracts.mjs';
+import { childEnv, killTree } from './process.mjs';
 
 const SHOWN_HASH = /^sha256:[0-9a-f]{64}$/;
-// code-agent 는 호스트 표지가 있는 셸의 화면 신뢰를 받지 않는다. 호스트 세션에서 띄운 대시보드 서버라도 서버의 호출에는 표지를 넘기지 않는다
-const HOST_ENV = ['CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_PROJECT_DIR', 'CODEX_CI', 'CODEX_SANDBOX', 'CODEX_SANDBOX_NETWORK_DISABLED', 'CODEX_THREAD_ID',
-  'CODE_AGENT_MASTER_RUN', 'CODE_AGENT_CROSS'];
 const REFUSALS = { 'stale-state': 'stale-state', conflict: 'control-trust-exists', 'policy-forbids': 'control-trust-refused' };
 let running = null;
 
@@ -18,14 +16,13 @@ function unsupported(controller) {
 /** code-agent master trust 한 번 — JSON 한 줄을 받는다. 거부는 code-agent 의 `코드: 사유` 를 대시보드 오류 코드로 옮긴다 */
 function runTrust(cliPath, controller, args, timeoutMs) {
   return new Promise((resolve, reject) => {
-    const env = { ...process.env };
-    for (const key of HOST_ENV) delete env[key];
+    const env = childEnv();
     const js = ['.js', '.mjs', '.cjs'].includes(extname(cliPath).toLowerCase());
     const child = spawn(js ? process.execPath : cliPath, [...(js ? [cliPath] : []), 'master', 'trust', '--controller', controller, ...args],
-      { cwd: homedir(), shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], env });
+      { cwd: homedir(), shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32', env });
     let stdout = '', stderr = '', done = false;
     const fail = error => { if (!done) { done = true; reject(error); } };
-    const timer = setTimeout(() => { try { child.kill(); } catch { /* 끝났다 */ } fail(new DomainError('control-unavailable', 'code-agent PC 신뢰 응답 시간이 지났습니다.')); }, timeoutMs);
+    const timer = setTimeout(() => { killTree(child); fail(new DomainError('control-unavailable', 'code-agent PC 신뢰 응답 시간이 지났습니다.')); }, timeoutMs);
     child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8');
     child.stdout.on('data', data => { stdout += data.slice(0, 256 * 1024); });
     child.stderr.on('data', data => { stderr += data.slice(0, 4000); });

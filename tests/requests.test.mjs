@@ -169,3 +169,18 @@ test('dashboard authenticates writes, edits membership and submits group/project
     assert.equal(updated.requests.find(r => r.targetType === 'group').taskNumber, 'WEB-1');
   } finally { await dashboard.close(); }
 });
+
+test('L2: 호스트 오류 원문은 요청 DB 대신 로그의 첫 줄에만 남긴다', async t => {
+  const { store, fixture, root } = setup(t), lines = [];
+  t.mock.method(console, 'error', line => lines.push(line));
+  const { request } = acceptRequest(store, { targetType: 'project', targetId: fixture.projects[0].id, goal: '오류 진단' });
+  const result = await runRequest(store, request.id, { host: {}, provider: {}, workflow: { async run() {
+    throw Object.assign(new Error('private host detail\nprivate second line'), { code: 'EHOST' });
+  } } });
+  assert.equal(result.state, 'failed'); assert.equal(result.error.code, 'EHOST');
+  assert.ok(!JSON.stringify(store.db.prepare('SELECT body FROM records').all()).includes('private'));
+  assert.deepEqual(lines, ['[EHOST] Error: private host detail']);
+  const log = readFileSync(join(root, 'request-logs', request.id + '.log'), 'utf8');
+  assert.match(log, /\[EHOST\] Error: private host detail/);
+  assert.ok(!log.includes('private second line'));
+});

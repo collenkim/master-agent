@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { setup } from './helpers.mjs';
 import { LiveExecution } from '../packages/orchestrator/live.mjs';
@@ -83,11 +83,17 @@ for (const [name, change, code] of [
 });
 
 test('호스트 오류는 unknown으로 보존하고 자동 재시도하지 않는다', async t => {
-  const f = fixture(t);
-  f.host.execute = async () => { throw new Error('timeout with secret'); };
+  const f = fixture(t), lines = [];
+  t.mock.method(console, 'error', line => lines.push(line));
+  f.host.execute = async () => { throw Object.assign(new Error('timeout with secret\nprivate second line'), { code: 'EHOST' }); };
   const m = await f.live.dispatch(f.mission.id, f.taskId, f.host, f.options);
   assert.equal(m.tasks[0].state, 'unknown'); assert.ok(f.store.lock(m.attempts[0].projectId));
   assert.ok(!JSON.stringify(m).includes('secret'));
+  assert.ok(!JSON.stringify(f.store.db.prepare('SELECT body FROM records').all()).includes('secret'));
+  assert.deepEqual(lines, ['[EHOST] Error: timeout with secret']);
+  const log = readFileSync(join(f.root, 'request-logs', m.id + '.log'), 'utf8');
+  assert.match(log, /\[EHOST\] Error: timeout with secret/);
+  assert.ok(!log.includes('private second line'));
   await assert.rejects(f.live.continue(m.id, m.attempts[0].id, f.host, { expectedRevision: m.revision, expectedState: 'v1' }), e => e.code === 'invalid-state');
 });
 
@@ -168,6 +174,10 @@ test('실제 자식 프로세스: 프로젝트 cwd·hook 유지·세션 재개·
     '--db', f.db, '--revision', String(f.mission.revision), '--expect-state', 'v1', '--cli', cli, '--host-cli', hostPath], { cwd: f.root, encoding: 'utf8' }));
   assert.equal(response.attempts[0].turns[0].result.sessionId, 'cli-test');
   assert.equal(response.tasks[0].state, 'blocked');
+  for (const raw of ['{broken-json', 'null']) {
+    writeFileSync(join(project.path, '.claude/settings.json'), raw);
+    assert.throws(() => host.checkInstallation(project), e => e.code === 'host-not-installed');
+  }
   writeFileSync(join(project.path, '.claude/settings.json'), '{"disableAllHooks":true}');
   assert.throws(() => host.checkInstallation(project), e => e.code === 'host-not-installed');
 });

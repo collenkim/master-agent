@@ -1,3 +1,4 @@
+import { childEnv } from '../runner/process.mjs';
 import { execFileSync } from 'node:child_process';
 import { readFileSync, lstatSync, realpathSync } from 'node:fs';
 import { resolve, relative, isAbsolute, sep } from 'node:path';
@@ -9,7 +10,7 @@ export function safeRelative(path) {
   requireThat(!isAbsolute(path) && !/[\\:*?\x00-\x1f]/.test(path) && path.split('/').every(p => p && p !== '.' && p !== '..' && !/[. ]$/.test(p) && p.toLowerCase() !== '.git'), 'invalid-path', '파일은 Git 루트 기준의 정확한 상대 경로로 지정하세요.');
   return path;
 }
-const git = (root, args) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, timeout: 30000, maxBuffer: 16 * 1024 * 1024, env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' } });
+const git = (root, args) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', shell: false, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, timeout: 30000, maxBuffer: 16 * 1024 * 1024, env: childEnv({ GIT_OPTIONAL_LOCKS: '0' }) });
 const normalize = path => process.platform === 'win32' ? path.toLowerCase() : path;
 
 /** Git이 추적하거나 무시하지 않는 파일 전체를 결합한다. 파일 본문은 저장하지 않는다. */

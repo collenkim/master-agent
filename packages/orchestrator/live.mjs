@@ -1,3 +1,4 @@
+import { logHostError } from '../runner/diagnostics.mjs';
 import { randomUUID } from 'node:crypto';
 import { Engine } from './engine.mjs';
 import { Knowledge } from '../knowledge/sources.mjs';
@@ -126,7 +127,10 @@ export class LiveExecution {
         this.store.event(ticket.missionId, 'host-returned', { invocationId: returned.id, attemptId: ticket.id });
       });
       state = await host.inspect(ticket.project, undefined, result.sessionId);
-    } catch (e) { error = { code: e.code ?? 'host-error', message: '호스트 실행 또는 결과 관측을 확인하지 못했습니다. 자동 재실행하지 않습니다.' }; }
+    } catch (e) {
+      logHostError(this.store, ticket.missionId, e);
+      error = { code: e.code ?? 'host-error', message: '호스트 실행 또는 결과 관측을 확인하지 못했습니다. 자동 재실행하지 않습니다.' };
+    }
     return this.record(ticket, result, state, error);
   }
   start(ticket, host, { wait = true } = {}) {
