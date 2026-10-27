@@ -57,6 +57,18 @@ master-agent project pair <프로젝트ID> --cli <경로> [--controller dashboar
 
 PC당 한 번의 신뢰 등록(대시보드 확인 화면 또는 터미널)과 프로젝트별 화면 확인 한 번으로 연동 켜기·DB 등록·사람 채널 생성을 함께 한다. 터미널 절차(`master enable`·`master human enable`·`project control`)도 그대로 쓸 수 있다. 계약은 code-agent `doc/master-control.md`(§12.1)가 기준이다. 아래는 master가 쓰는 부분의 요약이다. 페어링을 지원하지 않는 code-agent는 `hello.pairing`이 없으므로 기존 터미널 안내(`control-not-bound`)로 대신한다.
 
+화면 신뢰는 같은 OS 계정에서 대시보드를 호출할 수 있는 프로세스도 요청할 수 있다. 이 범위를 허용하지 않으면 터미널에서만 신뢰를 등록한다. 서버 계정에서 기존 신뢰 키를 찾지 못하면 같은 OS 계정·`CODE_AGENT_HOME`인지 먼저 확인하고, 키를 다시 만들어야 하면 신뢰를 해제한 뒤 다시 등록한다. 사람 채널 만료 7일 전부터 프로젝트 카드의 `다시 연결`로 토큰과 채널을 갱신한다.
+
+페어링 미지원 빌드는 프로젝트의 적용 버전·업데이트 대기를 확인한 뒤 갱신하거나 아래 터미널 절차를 사용한다. 최초 연결 때 프로젝트 폴더에서 사람이 실행하며, 토큰은 저장소 밖 파일에 둔다. 이미 제어 연결이 있으면 `master enable`을 반복하지 않고 같은 제어자 ID로 `master human enable`만 실행한다.
+
+```powershell
+code-agent master enable --controller dashboard --token-out <저장소 밖 토큰 파일>
+code-agent master human enable --controller dashboard
+master-agent project control <프로젝트ID> --controller dashboard --token-file <저장소 밖 토큰 파일> --db <기존 DB>
+```
+
+등록 뒤 대시보드 재시작은 [실행과 연결](ui.md#실행과-연결)을 따른다. 사람 채널은 명시적인 사람 답변·승인에만 사용하며 AI 위임 grant는 별도로 부여한다. 연결 상태 표시는 [대시보드](ui.md#프로젝트와-서비스-그룹)를 따른다.
+
 ```
 PC 신뢰 (code-agent, PC당 1회 — 대시보드 확인 화면 또는 터미널)
   code-agent master trust --controller dashboard        # 터미널, 확인 단어: trust
