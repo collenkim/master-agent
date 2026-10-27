@@ -4,15 +4,10 @@
 
 ## 준비와 빠른 실행
 
-Node.js 24.19 이상인 24.x와 Git이 필요하다. LangGraph 의존성을 잠금 파일 기준으로 설치하고 CLI를 등록한다.
+설치·Node 버전·기본 검사는 [설치와 빠른 확인](../README.md#설치와-빠른-확인)을 따른다.
 
 ```powershell
-cd C:\IdeaProjects\master-agent
-npm.cmd ci --ignore-scripts
-npm.cmd install -g --ignore-scripts "C:\IdeaProjects\master-agent"
-npm.cmd test
-npm.cmd run check
-npm.cmd run demo
+master-agent demo
 ```
 
 데모는 `.master-agent/master.db`에 프로젝트 세 개와 고정 계획을 등록하고 구현 모의 작업 세 개 뒤 통합 모의 작업을 수행한다. 프로젝트 디렉터리는 `.master-agent/demo-projects` 아래에 생성한다. 재실행할 때는 별도의 예제 목표를 만든다. 상태 `simulation-complete`는 오케스트레이션 모의 실행 완료이며 실제 주문·환불 기능 구현 완료가 아니다.

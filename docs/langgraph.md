@@ -4,18 +4,11 @@ master-agent의 자동 진행, AI 계획 검토, 실패 복구, 재계획과 모
 
 ## 설치와 실행
 
-Node.js 24.19 이상 24.x에서 잠금 파일 기준으로 설치합니다.
+설치·Node 버전·검사 명령은 [설치와 빠른 확인](../README.md#설치와-빠른-확인)을 따른다. 그래프의 저장 상태는 `master-agent mission graph <목표ID>`로 조회한다.
 
-```powershell
-npm.cmd ci --ignore-scripts
-npm.cmd test
-npm.cmd run check
-npm.cmd start -- mission graph <MISSION_ID>
-```
+공식 SqliteSaver에는 Node 내장 SQLite 어댑터를 전달한다. `SqliteSaver.fromConnString` 대신 저장소의 `checkpointer(store)`를 사용한다. 네이티브 의존성 대체와 `--ignore-scripts`의 이유는 설치 정본을 따른다.
 
-공식 SqliteSaver에는 Node 내장 SQLite 어댑터를 전달한다. 정적 import가 요구하는 better-sqlite3는 package.json의 overrides로 로컬 스텁에 연결한다. 스텁에는 네이티브 코드와 설치 스크립트가 없고 DB 생성자는 사용을 거부한다. `SqliteSaver.fromConnString` 대신 저장소의 `checkpointer(store)`를 사용해야 한다. 플래그 없는 `npm ci`와 공식 체크포인터 import를 함께 검증하며, 일반 설치에는 [설치와 빠른 확인](../README.md#설치와-빠른-확인)의 `--ignore-scripts` 절차를 사용한다.
-
-기존 `mission analyze`, `advance`, `drive`, `dispatch`, `continue`, `recover`, `replan` 명령과 결과 형식은 유지됩니다. `drive --provider codex|claude`는 근거 수집을 마친 received 상태에서 계획 생성도 시작합니다. 계획의 미해결 질문이나 부족한 검증 계약을 자동 승인하지 않습니다.
+근거 수집을 마친 received 목표는 `mission drive <목표ID> --control --provider codex|claude`로 계획 생성부터 시작한다. 계획의 미해결 질문이나 부족한 검증 계약을 자동 승인하지 않는다.
 
 ## 그래프와 책임
 
