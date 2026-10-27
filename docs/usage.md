@@ -32,7 +32,23 @@ master-agent group list
 
 같은 `--db`를 지정해 `dashboard status`로 서버 상태를 확인하고 `dashboard restart`로 기존 설정을 유지해 재시작한다. `dashboard stop`은 대시보드만 종료한다. 시작·재시작 명령은 해당 터미널을 유지해야 한다. 등록 창의 설치 후보는 실행 중에도 자동 갱신되므로 새 프로젝트에 code-agent를 설치한 뒤 서버를 재시작할 필요가 없다.
 
+## 환경 변수
+
+환경 변수는 master-agent를 시작하는 터미널에서 지정한다. `CODE_AGENT_CLI`보다 명령의 `--cli`가 우선하며 JS 진입점 또는 실행 파일의 절대 경로를 사용한다. 셸 래퍼를 직접 실행하지 않는다.
+
+| 변수 | 용도 | 미지정 시 기본값·동작 | 읽는 파일 |
+| --- | --- | --- | --- |
+| `CODE_AGENT_CLI` | code-agent CLI 위치를 지정한다. | PATH·npm 전역 설치·사용자 설치 경로에서 자동 탐색한다. | `packages/code-agent-adapter/discovery.mjs`, `scripts/smoke-full-flow.mjs` |
+| `CODE_AGENT_HOME` | code-agent의 PC 신뢰·제어 키·사람 채널 저장소를 지정한다. | 사용자 홈 아래 `.code-agent`를 사용한다. 프로젝트 내부 폴더와 다르다. | `packages/code-agent-adapter/discovery.mjs` |
+| `CODE_AGENT_DIST` | 계약 시험과 PC 신뢰 smoke에 사용할 code-agent 빌드 디렉터리를 지정한다. | 인접 `../code-agent/dist`를 사용한다. | `tests/code-agent-control.test.mjs`, `tests/managed-host.test.mjs`, `tests/handoff-contracts.test.mjs`, `scripts/smoke-dashboard-trust.mjs` |
+| `CODE_AGENT_SOURCE` | 업데이트 smoke가 임시 복사할 code-agent 소스 저장소를 지정한다. | `../code-agent`를 사용한다. | `scripts/smoke-dashboard-updates.mjs` |
+| `CODE_AGENT_RELEASE_HOME` | 전체 흐름 smoke에서 code-agent 릴리스 저장소 설정을 보존하고 재개 시 복원한다. | master-agent가 별도 기본값을 지정하지 않고 code-agent의 설정을 따른다. 업데이트 smoke는 격리된 임시 위치를 사용한다. | `scripts/smoke-full-flow.mjs`, `scripts/smoke-dashboard-updates.mjs` |
+| `CLAUDE_CLI` | `smoke:model`의 Claude 실행 파일을 지정한다. | 집계 명령에서는 필수다. 일반 계획·판단 명령은 이 변수를 읽지 않으며 `--ai-cli` 또는 자동 탐색을 사용한다. | `scripts/smoke.mjs`, `scripts/smoke-full-flow.mjs` |
+| `CHROME_PATH` | 브라우저 smoke의 Chrome 실행 파일을 지정한다. | `C:/Program Files/Google/Chrome/Application/chrome.exe`를 사용한다. 다른 설치 위치와 Linux에서는 명시한다. | `scripts/browser.mjs` |
+
 ## 서비스 그룹과 단일 프로젝트 요청
+
+`request run <요청ID> [--cli <경로>]`은 `queued` 상태 또는 실행 임대가 만료된 기존 요청을 현재 터미널에서 실행한다. 활성 실행기와 중복 실행하지 않으며 새 목표를 만들지 않는다. 설정·응답 보완 뒤 `waiting`·`failed` 요청을 재개할 때는 `request continue <요청ID> --revision <요청버전>`을 사용한다.
 
 요청 실행기는 프로세스를 시작하기 전에 DB에서 실행 시작을 원자적으로 예약한다. 동시에 같은 요청을 시작해도 하나만 진행하며, 운영자가 초기화한 예약의 이전 실행기가 늦게 도착하면 실행하지 않는다.
 
@@ -44,6 +60,7 @@ master-agent group list
 master-agent group request commerce "주문 취소 오류 수정" --task-number UZRF-392 --criterion "취소 회귀 통과" --host both --main claude --request-key cancel-fix-001
 master-agent project request order-api "조회 오류 수정" --task-number UZRF-393 --criterion "조회 회귀 통과" --input request-options.json
 master-agent request show <요청ID>
+master-agent request run <요청ID>
 master-agent mission progress <요청ID>
 master-agent request continue <요청ID> --revision <요청버전>
 ```

@@ -138,8 +138,11 @@ master-agent project request order-api "주문 조회 오류 수정" --task-numb
 master-agent group request commerce "결제 재시도 정책 변경" --host both --main codex --criterion "재시도 회귀 테스트 통과"
 master-agent request list
 master-agent request show <요청ID>
+master-agent request run <요청ID>
 master-agent request continue <요청ID> --revision <요청버전>
 ```
+
+`request run <요청ID> [--cli <경로>]`은 `queued` 상태 또는 실행 임대가 만료된 기존 요청을 현재 터미널에서 실행한다. 활성 실행기와 중복 실행하지 않으며 새 목표를 만들지 않는다. 설정·응답 보완 뒤 `waiting`·`failed` 요청을 재개할 때는 `request continue <요청ID> --revision <요청버전>`을 사용한다.
 
 그룹 요청은 **접수 당시 소속 프로젝트·그룹 버전·서비스 범위**를 고정합니다. 이후 그룹에서 제외한 프로젝트도 이미 접수한 요청에서는 원래 범위를 유지합니다. 같은 프로젝트가 여러 요청에 포함되면 기존 프로젝트 잠금으로 중복 개발을 막습니다.
 

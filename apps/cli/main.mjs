@@ -66,6 +66,7 @@ code-agent는 설치된 명령에서 자동 탐색합니다. --cli는 별도 빌
                                       생략하면 개발 host는 프로젝트 code-agent execution 설정, 계획·판단은 --provider(기본 claude)
   request list                        접수한 요청·실행 상태 조회
   request show <ID>                    요청 상태·대기·실패 사유 조회
+  request run <ID> [--cli <경로>]       대기·임대 만료된 기존 요청을 현재 터미널에서 실행
   request continue <ID> --revision <N> 설정·응답 보완 후 기존 목표 이어 실행
   request reset <ID> --revision <N> --confirm  요청 실행 임대 초기화(살아 있는 로컬 프로세스는 거부)
   mission create <JSON>                목표 접수 (mode: live|simulation)
