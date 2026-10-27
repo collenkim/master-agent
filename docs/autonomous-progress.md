@@ -56,8 +56,8 @@ AI 계획 입력에도 템플릿을 전달한다. drive는 현재 작업에 맞�
 사람이 code-agent에서 연동을 켜고 위임 권한을 준 프로젝트는 [code-agent 통신 계약 연동](code-agent-control.md) 경로(`--control`)를 쓴다.
 
 - code-agent 감독은 실행 세션의 질문 도구를 막고 동의는 준비까지만 하게 한다. 업무 질문은 code-agent의 영속 요청으로 발행하며, 작업 문서의 질문과도 연결할 수 있다. [공통 요청함](dashboard-interactions.md)에서 명시적으로 응답한다.
-- master 판단기는 사람이 준 권한(동작·작업 또는 임무·경로·만료·사용 횟수) 안의 routine 판단만 보낸다. ambiguous는 수정 요청이나 추가 정보 요청으로, critical과 사람만 하는 동작은 사람에게 넘긴다.
-- code-agent가 권한·준비 세션·보여 준 내용의 해시·상태 버전·중복·회수를 다시 검사하고, 사람 응답과 같은 적용 함수로 적용하며 `master-delegation`(사람 응답 아님)으로 남긴다. master는 승인 파일을 만들거나 사람 응답을 대신 기록하지 않는다.
+- routine·ambiguous·critical의 처리와 권한 검사는 [위임 판단](code-agent-control.md#위임-판단)을 따른다.
+
 - 위임 판단이 처리한 회차는 같은 세션을 자동으로 이어 간다. 그 밖의 자동 계속 조건(요구 확정·계획 승인)은 위 절과 같다.
 
 위임 계약의 범위·기록·거부 조건의 정본은 code-agent 저장소의 `doc/master-control.md` 8절이다. 실제 AI 다중 프로젝트 전체 완료 결과는 [검증 기록](verification.md), 후속 보완 항목은 [구현 현황](implementation.md)에 있다.

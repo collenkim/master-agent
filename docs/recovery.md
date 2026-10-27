@@ -29,7 +29,7 @@ master-agent request reset <요청ID> --revision <요청버전> --confirm
 | replan | 변경 이유와 권고 저장, 신규 배정 보류 |
 | needs-human | 중대한 문제의 질문·권고 저장, 판단 대기 |
 
-code-agent의 요구 확정·계획 승인·미응답 질문·동의·임대는 기존 절차를 따른다. 복구안의 실행 허용과 code-agent 동의는 별개다. 관리 실행은 사람이 준 grant 안에서 routine 동의·답변을 [위임 판단](code-agent-control.md)으로 적용한다. 권한 밖 판단은 기존 사람 응답 절차를 따른다.
+code-agent의 요구 확정·계획 승인·미응답 질문·동의·임대는 기존 절차를 따른다. 복구안의 실행 허용과 code-agent 동의는 별개다. 관리 실행의 동의·답변 분류와 권한 밖 판단 처리는 [위임 판단](code-agent-control.md#위임-판단)을 따른다.
 
 ## CLI
 
