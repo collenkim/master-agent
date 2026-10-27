@@ -42,6 +42,21 @@ M10은 code-agent의 공개 문서와 `src/agent/master/store.ts`를 먼저 확�
 각 커밋 전 전체 테스트와 check를 통과했다. 최종 `npm.cmd test`는 336건 통과, 실패·건너뜀 0건이며 `npm.cmd run check`는 소스 126개·문서 20개를 통과했다. M8·M9의 첫 전체 실행에서 기존 통신 계약 시험이 180초 제한에 걸렸으나, 코드·제한 변경 없이 개별 재검증과 전체 재실행을 통과했다. lint는 B2에서 도입하므로 아직 실행 명령이 없다. 고정한 공개 code-agent 빌드와 모의 모델을 사용했으며 실제 모델을 호출하지 않았다.
 
 
+## 2026-10-26 전면 재검토 — Phase 4 완료
+
+| 항목 | 커밋 | 처리 내용 |
+| --- | --- | --- |
+| L1·L2·L3 | `5cb8ab1` | 프로세스 트리 종료·호스트 표지 제거 공통화, 손상 JSON의 도메인 오류, 호스트 오류 진단 분리, Windows npm Claude 탐색 |
+| L4·L5 | `26d1ed0` | sending 응답 재기동 확인, 요청 시작 예약, 원격 답 타입 검증, 연결·종료 안내와 후보·필터·커서 보완 |
+| L6 | `9f4231c` | 직접 실행 제거, 관리 실행 통합, CLI --control 필수화, 공통 프롬프트·상태 조회 분리 |
+
+신규 회귀는 `tests/adapter.test.mjs` 1건, `tests/delivery-reconcile.test.mjs` 2건, `tests/requests.test.mjs` 3건, `tests/provider.test.mjs` 1건, `tests/dashboard-interactions.test.mjs` 3건, `tests/dashboard.test.mjs` 1건, `tests/live.test.mjs` 2건, `tests/cli.test.mjs` 1건으로 14건이다. 기존 직접 실행 시험 1건을 제거해 전체 건수는 13건 늘었다. 기존 개인정보 비저장·localhost 응답·관리 프롬프트 검증도 보강했다. 그룹 11개·이력 12개·요청함 27개 브라우저 checks를 통과했다.
+
+L6은 권장안 (나)를 적용했다. 재시작 뒤 실행 식별자·감독·세션 재접속을 제공하는 code-agent 관리 계약으로 통일했다. L2에서 보강한 직접 Claude 설정 JSON 검사도 직접 실행 경로와 함께 제거했다. 이를 관리 상태 조회·호스트 제한·CLI 사전 검증으로 대체했으며 건너뛴 항목은 없다.
+
+각 커밋 전 전체 테스트와 check를 통과했다. 최종 `npm.cmd test`는 349건 통과, 실패·건너뜀 0건이며 `npm.cmd run check`는 소스 127개·문서 20개를 통과했다. lint는 B2에서 도입하므로 아직 실행 명령이 없다. 고정한 공개 code-agent 빌드와 임시 프로젝트·모의 모델을 사용했고 실제 모델은 호출하지 않았다.
+
+
 ## 현재 제공 범위
 
 | 영역 | 구현 |
