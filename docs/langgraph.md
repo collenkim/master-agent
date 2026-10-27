@@ -13,7 +13,7 @@ npm.cmd run check
 npm.cmd start -- mission graph <MISSION_ID>
 ```
 
-공식 SqliteSaver에는 Node 내장 SQLite 어댑터를 전달합니다. better-sqlite3의 네이티브 바이너리를 사용하지 않으므로 설치 스크립트 실행은 필요하지 않습니다.
+공식 SqliteSaver에는 Node 내장 SQLite 어댑터를 전달한다. 정적 import가 요구하는 better-sqlite3는 package.json의 overrides로 로컬 스텁에 연결한다. 스텁에는 네이티브 코드와 설치 스크립트가 없고 DB 생성자는 사용을 거부한다. `SqliteSaver.fromConnString` 대신 저장소의 `checkpointer(store)`를 사용해야 한다. 플래그 없는 `npm ci`와 공식 체크포인터 import를 함께 검증하며, 일반 설치에는 [설치와 빠른 확인](../README.md#설치와-빠른-확인)의 `--ignore-scripts` 절차를 사용한다.
 
 기존 `mission analyze`, `advance`, `drive`, `dispatch`, `continue`, `recover`, `replan` 명령과 결과 형식은 유지됩니다. `drive --provider codex|claude`는 근거 수집을 마친 received 상태에서 계획 생성도 시작합니다. 계획의 미해결 질문이나 부족한 검증 계약을 자동 승인하지 않습니다.
 

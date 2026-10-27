@@ -13,9 +13,15 @@ import { SimulationRunner } from '../packages/runner/simulation.mjs';
 import { checkpointer, graphStatus, unlockMission } from '../packages/orchestrator/graph-runtime.mjs';
 import { LEASE_TTL_MS } from '../packages/orchestrator/lease.mjs';
 import { LiveWorkflow } from '../packages/orchestrator/drive.mjs';
+import { SqliteSaver } from '@langchain/langgraph-checkpoint-sqlite';
 
 const exec = promisify(execFile);
 const moduleUrl = name => pathToFileURL(resolve(name)).href;
+
+test('B3: 공식 체크포인터는 import되지만 네이티브 생성 경로는 거부한다', () => {
+  assert.equal(typeof SqliteSaver, 'function');
+  assert.throws(() => SqliteSaver.fromConnString(':memory:'), /node:sqlite 어댑터만 사용/);
+});
 
 test('M2: 취소한 thread는 재열기 뒤에도 checkpoint와 지연 writes를 남기지 않는다', async t => {
   const f = setup(t);

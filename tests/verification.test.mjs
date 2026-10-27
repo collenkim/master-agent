@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { writeFileSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { Knowledge } from '../packages/knowledge/sources.mjs';
 import { LiveWorkflow } from '../packages/orchestrator/drive.mjs';
 
 import { verificationFixture } from './verification-fixture.mjs';

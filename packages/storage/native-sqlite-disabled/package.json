@@ -1,0 +1,8 @@
+{
+  "name": "@master-agent/native-sqlite-disabled",
+  "version": "1.0.0",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "commonjs",
+  "main": "index.cjs"
+}

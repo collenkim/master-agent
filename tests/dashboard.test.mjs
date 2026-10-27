@@ -8,6 +8,17 @@ import { setup } from './helpers.mjs';
 import { dashboardSnapshot, createMonitor } from '../packages/dashboard/monitor.mjs';
 import { startDashboard } from '../packages/dashboard/server.mjs';
 
+
+test('B2: cross-site 요청은 같은 Host에서도 거부한다', async t => {
+  const { db, store } = setup(t), dashboard = await startDashboard({ dbPath: db, port: 0, observe: false });
+  try {
+    const before = store.list('mission').map(m => [m.id, m.revision]);
+    const response = await fetch(dashboard.url + '/api/overview', { headers: { 'Sec-Fetch-Site': 'cross-site' } });
+    assert.equal(response.status, 403);
+    assert.deepEqual(store.list('mission').map(m => [m.id, m.revision]), before);
+  } finally { await dashboard.close(); }
+});
+
 function state(project, extra = {}) {
   return { schema: 'code-agent.state', schemaVersion: 1, observedAt: new Date().toISOString(), stateVersion: 'v1',
     repo: { root: project.path }, work: { id: 'CA-1', phase: 'implement' }, resume: { code: 'needs-human', reasons: [{ code: 'questions-open', detail: '질문 Q1' }] },

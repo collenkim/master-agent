@@ -2,6 +2,7 @@
   "name": "master-agent",
   "version": "0.1.0",
   "private": true,
+  "license": "UNLICENSED",
   "type": "module",
   "description": "목표 기반 다중 프로젝트 AI 오케스트레이션 실행 기반",
   "engines": {
@@ -14,11 +15,22 @@
     "start": "node apps/cli/main.mjs",
     "demo": "node apps/cli/main.mjs demo",
     "test": "node --test --test-concurrency=4 tests/*.test.mjs",
-    "check": "node scripts/check.mjs"
+    "check": "node scripts/check.mjs",
+    "lint": "eslint apps packages scripts tests eslint.config.mjs",
+    "smoke:browser": "node scripts/smoke.mjs browser",
+    "smoke:code-agent": "node scripts/smoke.mjs code-agent",
+    "smoke:model": "node scripts/smoke.mjs model"
   },
   "dependencies": {
     "@langchain/core": "1.2.17",
     "@langchain/langgraph": "1.5.0",
-    "@langchain/langgraph-checkpoint-sqlite": "1.1.0"
+    "@langchain/langgraph-checkpoint-sqlite": "1.1.0",
+    "better-sqlite3": "file:./packages/storage/native-sqlite-disabled"
+  },
+  "overrides": {
+    "better-sqlite3": "$better-sqlite3"
+  },
+  "devDependencies": {
+    "eslint": "10.13.0"
   }
 }

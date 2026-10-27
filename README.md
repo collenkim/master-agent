@@ -54,6 +54,8 @@ npm.cmd install -g --ignore-scripts "C:\IdeaProjects\master-agent"
 master-agent help
 ```
 
+`--ignore-scripts`는 의존성의 설치 스크립트를 실행하지 않기 위한 옵션이다. 공식 체크포인터의 전이 의존성인 `better-sqlite3`는 원래 네이티브 설치를 시도하지만, 이 저장소는 `node:sqlite` 어댑터를 사용한다. `overrides`로 해당 의존성을 설치 스크립트가 없는 로컬 스텁으로 대체하므로 플래그 없는 `npm ci`도 네이티브 빌드 없이 설치된다. 스텁은 체크포인터 import만 지원하며 직접 DB를 생성하려 하면 오류를 낸다. 일반 설치와 CI에는 설치 스크립트를 생략하는 기존 명령을 유지한다.
+
 개발 중에는 전역 설치 대신 저장소에서 `npm.cmd link --ignore-scripts`로 연결할 수 있습니다. Windows 실행 정책이 `.ps1` 실행을 막으면 `master-agent.cmd`를 사용합니다. 명령을 찾지 못하면 npm 전역 설치 경로(`npm.cmd prefix -g`)가 PATH에 있는지 확인합니다.
 
 **데이터 위치는 명령을 실행한 디렉터리 기준** `.master-agent/master.db`입니다. 여러 터미널에서 같은 현황을 보려면 같은 작업 디렉터리에서 실행하거나 동일한 절대 `--db` 경로를 지정합니다. 설치 폴더를 작업 디렉터리로 사용할 필요는 없습니다.
@@ -65,6 +67,20 @@ master-agent mission list --db .master-agent/demo.db
 ```
 
 데모는 세 프로젝트의 고정 계획을 모의 실행하고 `simulation-complete`로 끝납니다. 실제 프로젝트 개발 완료와 구분합니다. 소스 검증은 저장소에서 `npm.cmd test`, `npm.cmd run check`로 수행합니다. 소스 변경은 연결된 명령에 반영됩니다. master-agent 전용 `init`·`doctor`·`update`와 단일 실행 파일 배포는 아직 없으며, 제거는 `npm.cmd uninstall -g master-agent`로 합니다. 대상 프로젝트의 code-agent 설치·초기화는 별도로 수행합니다.
+
+## 개발 검사와 선택 실행
+
+기본 검사는 `npm.cmd run check`, `npm.cmd run lint`, `npm.cmd test` 순서로 실행한다. lint는 미사용 변수·import와 미정의 이름을 검사한다. CI는 Windows·Ubuntu와 Node 24.x에서 `npm ci --ignore-scripts` 후 같은 검사를 실행한다. 외부 code-agent 빌드가 필요한 계약 시험은 해당 빌드가 없는 환경에서 건너뛴다.
+
+다음 smoke는 CI에서 실행하지 않으며 각 묶음을 순차 실행한다. `-- --list`를 붙이면 실행할 스크립트만 조회한다.
+
+| 명령 | 실행 전제와 범위 |
+| --- | --- |
+| `npm.cmd run smoke:browser` | Chrome이 필요하며 `CHROME_PATH`로 실행 파일을 지정한다. Windows 기본 위치는 `C:/Program Files/Google/Chrome/Application/chrome.exe`다. `smoke-dashboard-*.mjs`를 순차 실행한다. 업데이트·PC 신뢰 시험에는 빌드된 code-agent와 Git·npm도 필요하다. |
+| `npm.cmd run smoke:code-agent` | 빌드된 code-agent CLI를 자동 탐색하거나 `CODE_AGENT_CLI`로 지정한다. 상태 계약·실제 요청함 전송·지원 계약을 검사한다. 요청함 시험에는 Chrome과 code-agent 테스트 대역이 포함된 공개 빌드가 필요하다. |
+| `npm.cmd run smoke:model` | `CLAUDE_CLI`와 빌드된 code-agent가 필요하다. 전체 흐름 준비→실행→보고, 답변 문맥, 계획 분석을 차례로 검사하며 실제 모델 사용료가 발생한다. 전체 흐름 보고가 실패하면 다음 시험을 실행하지 않는다. |
+
+라이선스는 아직 정하지 않아 패키지를 `UNLICENSED`로 표시한다. 저장소 URL도 확정 후 등록한다.
 
 ## 전체 현황 대시보드
 
