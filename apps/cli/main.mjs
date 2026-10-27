@@ -62,8 +62,7 @@ code-agent는 설치된 명령에서 자동 탐색합니다. --cli는 별도 빌
   group remove <ID> <프로젝트ID> --revision <N> 그룹에서 프로젝트 제외
   group request <ID> <요청내용> [--host claude|codex|both [--main claude|codex]] [--task-number <TASK번호>] [--criterion <완료조건>] [--input <JSON>] 그룹 요청·실행
   project request <ID> <요청내용> [--host claude|codex|both [--main claude|codex]] [--task-number <TASK번호>] [--criterion <완료조건>] [--input <JSON>] 단일 요청·실행
-                                      --host: 이번 요청의 개발 host와 계획·판단 AI(both는 --main이 개발·계획하고 다른 host가 교차 검증)
-                                      생략하면 개발 host는 프로젝트 code-agent execution 설정, 계획·판단은 --provider(기본 claude)
+                                      host 판단·실행 규칙: docs/ai-planning.md, docs/code-agent-control.md
   request list                        접수한 요청·실행 상태 조회
   request show <ID>                    요청 상태·대기·실패 사유 조회
   request run <ID> [--cli <경로>]       대기·임대 만료된 기존 요청을 현재 터미널에서 실행

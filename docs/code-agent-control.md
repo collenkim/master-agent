@@ -6,9 +6,11 @@ code-agent가 제공하는 master 통신 계약(`code-agent.master` v1, code-age
 
 관리 실행의 호스트는 요청에서 고른 host다. master는 요청의 host(`claude`·`codex`, `both`면 주 host와 교차 검증)를 새 실행 접수(`submit mode:start`)의 `execution`으로 보내고, code-agent는 그 실행에만 적용한다. 프로젝트의 `execution.json`은 바꾸지 않는다. code-agent는 실행이 연 작업에 이 선택을 고정한다. 같은 작업의 이어 실행·새 실행과 교차 검증·단독 호스트 판정은 작업이 끝날 때까지 같은 선택을 따른다. 이어 실행(`continue`)에는 `execution`을 보내지 않는다. 실행 파일·모델·권한은 사람이 `master enable --host <JSON 파일>`로 등록한 그 host의 설정(없으면 제한된 기본값)을 code-agent가 주입한다.
 
-host를 고르지 않은 요청은 프로젝트의 `execution claude|codex`·`execution both --main claude|codex`를 따르고, `auto` 또는 main 없는 `both`는 등록된 기본 호스트를 사용한다. 고른 host는 master의 계획·판단 AI도 정한다. 단독이면 그 CLI 하나, both면 주 host가 만들고 다른 host가 승인한 결과만 쓴다([AI 계획](ai-planning.md#요청-host와-교차-검증)). host를 고르지 않은 요청의 `--provider`·`--model`은 계획·판단 설정이며 관리 개발 호스트를 덮어쓰지 않는다.
+그룹 요청은 범위 안의 모든 프로젝트에 같은 host 선택을 적용한다. 단독 선택은 그 host가 개발하며, `both`는 주 host가 개발하고 다른 host가 code-agent의 계획·코드 리뷰를 교차 검증한다.
 
-새 프로젝트 등록의 기본 기능은 `code-agent:managed`다. 기존 `code-agent:claude`와 명시적 `code-agent:codex` 등록·계획도 관리 경로에서 받으며 실제 호스트는 code-agent가 선택한다. 준비 점검은 설치 마커·지원 프로토콜/호스트·제어권·인증을 확인한다. 선택된 호스트의 설치·권한·Codex 프로젝트/hook 신뢰 판정은 code-agent의 접수·감독을 따른다. master는 권한 설정이나 신뢰를 자동 변경하지 않는다.
+host를 고르지 않은 요청은 프로젝트의 `execution claude|codex`·`execution both --main claude|codex`를 따르고, `auto` 또는 main 없는 `both`는 등록된 기본 호스트를 사용한다. 계획·판단의 host 선택은 [요청 host와 교차 검증](ai-planning.md#요청-host와-교차-검증)을 따른다. host를 고르지 않은 요청의 `--provider`·`--model`은 계획·판단 설정이며 관리 개발 호스트를 덮어쓰지 않는다.
+
+새 프로젝트 등록의 기본 기능은 `code-agent:managed`다. 기존 `code-agent:claude`와 명시적 `code-agent:codex` 등록·계획도 관리 경로에서 받으며 실제 호스트는 code-agent가 선택한다. 준비 점검은 설치 마커·지원 프로토콜/호스트·제어권·인증을 확인한다. 선택된 호스트의 설치·권한·Codex 프로젝트/hook 신뢰 판정은 code-agent의 접수·감독을 따른다. master는 권한 설정이나 신뢰를 자동 변경하지 않는다. Codex 프로젝트에 Claude 설치를 일괄 요구하지 않는다.
 
 관리 실행의 지시문은 `.claude` 경로를 지정하지 않고 주입된 호스트 지침과 `code-agent flow advance --json`이 반환한 `procedure`·`instruction`·`agent`·`contextFile`을 따른다. 결과 기록 후 `resume`으로 이어가고 `human`·`wait`는 대기로 남긴다. master-agent가 Claude 개발 프로세스를 직접 시작하는 경로는 제공하지 않는다.
 
@@ -97,6 +99,8 @@ master 쪽 동작(`packages/runner/control-pairing.mjs`, 어댑터 `packages/cod
 
 PC 신뢰는 사람이 화면(확인 단어 `trust`)에서, 페어링은 사람이 화면(확인 체크) 또는 TTY(`project pair`, 확인 단어 `pair`)에서 확인할 때만 한다. 요청 실행기·AI 계획·복구·백그라운드 순회는 hello로 상태를 읽기만 한다. 준비 점검은 연결이 없을 때 원인을 `control-pairing-available`·`control-trust-missing`·`control-owned-by-other`·`control-enabled-unbound`로 나누고, 미지원 code-agent는 기존 `control-not-bound` 안내를 낸다. host를 고른 요청은 `managedHost.runSelection`이 없으면 `host-selection-unsupported`(프로젝트 설정으로 대신 실행하지 않는다), 고른 방식이 `modes`에 없으면 `host-not-installed`를 낸다. `modes`는 설치된 실행 방식일 뿐 실행 준비가 아니다 — code-agent가 실행 방식별 준비 `managedHost.runReadiness`(`claude`·`codex`·`both.<주 host>`마다 `ready`·`state`·`blocking[{host, code, message}]`)를 알리면 고른 방식의 `ready === true`만 통과하고, 그 밖(설치 확인 필요·프로젝트 신뢰 필요·hook 검토 필요·준비 확인 실패·준비 확인 중, 알리지 않은 방식 포함)은 `host-not-ready`와 상태별 조치(Codex 신뢰·`/hooks` 검토 뒤 `code-agent doctor --host codex`)를 낸다. `runReadiness`가 없는 옛 code-agent는 고른 주 host의 `hosts.<host>.ready === false`일 때만 `host-not-ready`다. host 없이 접수된 요청은 `managedHost.ready === false`면 `host-not-ready`를 낸다. 프로젝트 카드의 '요청별 host 선택'과 요청 창은 실행 방식마다 준비 상태와 차단 이유를 보인다. 관측한 저장소에 커밋이 없으면 `repository-no-commit`(안내: `code-agent setup baseline`)을 함께 낸다.
 
+교차 검증 host는 Codex 프로젝트 신뢰를 요구하지 않는다. `both`의 준비 상태는 주 host 선택별로 구분한다.
+
 ## 실행 — 원자적 접수와 관찰
 
 1. 배정·계속 실행은 기존과 같이 판단·시도·잠금을 한 트랜잭션으로 저장한 뒤 시작한다.
@@ -116,7 +120,7 @@ master가 결과를 받기 전에 멈추면 시도가 `running`으로 남는다.
 
 ## 위임 판단
 
-drive는 code-agent 통신 계약 호스트에서 판단기(`--provider`)가 있으면, 판단을 기다리는 시도(`waiting-decision`, 반영 동의는 `verified`)의 확인 요청·업무 질문을 먼저 위임 판단으로 처리한다. 업무 질문의 판단 자료에는 그 질문과 배정·목표에 더해 같은 작업에서 이미 답한 질문(답과 출처 — 사람 답인지 위임 판단인지)이 실린다. 뒤 질문은 앞 답을 전제로 묻고(예: 사람 답을 반영하려 앞 단계로 되감을지), 판단기는 사람이 정한 답을 뒤집거나 넓히지 않는다. 요청에서 both를 고르면 판단기는 주 host가 만든 판단을 다른 host가 검토하는 교차 판단기다. 검토가 반려하면 보내지 않고 검토 지적을 사유로 사람에게 넘긴다(`mission escalations`).
+drive는 code-agent 통신 계약 호스트에서 판단기(`--provider`)가 있으면, 판단을 기다리는 시도(`waiting-decision`, 반영 동의는 `verified`)의 확인 요청·업무 질문을 먼저 위임 판단으로 처리한다. 업무 질문의 판단 자료에는 그 질문과 배정·목표에 더해 같은 작업에서 이미 답한 질문(답과 출처 — 사람 답인지 위임 판단인지)이 실린다. 뒤 질문은 앞 답을 전제로 묻고(예: 사람 답을 반영하려 앞 단계로 되감을지), 판단기는 사람이 정한 답을 뒤집거나 넓히지 않는다. 교차 검토의 반려 처리는 [요청 host와 교차 검증](ai-planning.md#요청-host와-교차-검증)을 따른다.
 
 | 분류 | 처리 |
 | --- | --- |

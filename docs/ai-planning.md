@@ -54,6 +54,8 @@ Windows npm 설치의 `claude.cmd`를 찾으면 인접한 `@anthropic-ai/claude-
 
 ## 요청 host와 교차 검증
 
+CLI에서는 `--host claude|codex|both`로 선택하며 `both`에는 `--main claude|codex`가 필요하다. `--host`와 `--provider`는 함께 지정하지 않는다. host를 생략하면 계획·판단은 `--provider`(기본 claude)를 따른다. 개발 실행의 선택·준비·세션 유지 규칙은 [관리 실행](code-agent-control.md#역할과-적용-조건)을 따른다.
+
 `request` 경로의 계획·판단 AI는 요청에서 고른 host가 정한다. host 하나(`claude`·`codex`)를 고르면 그 CLI 하나가 계획·복구·위임 판단을 만든다. `both`를 고르면 주 host(`--main`)가 결과를 만들고, 다른 host가 같은 지시와 그 결과를 받아 독립 검토한다. 기록의 provider는 `claude+codex`처럼 주 host+검토 host 순서다. 검토는 근거와 맞지 않는 주장, 빠진 요구·완료 조건, 범위 밖 변경, 사람 승인 대행, 근거 없는 확정만 반려하고 표현 차이는 문제로 보지 않는다.
 
 | 경로 | 반려 처리 |
