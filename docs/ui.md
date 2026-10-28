@@ -213,7 +213,6 @@ code-agent의 보류는 원래 요청을 보류 상태로 만들며 다시 열�
 | 후속 기능 | 연결할 기존 기능·조건 |
 | --- | --- |
 | 계획 그래프·재계획 비교·조건별 증거 상세 | [LangGraph](langgraph.md), [재계획](replanning.md), [검증 계약](live-verification.md) |
-| 질문과 무관한 웹 작업 중지·취소 | [code-agent 통신 계약](code-agent-control.md)의 실행 식별·정지 확인 |
 | 분석 취소·실패 복구·검증 중단 대조 | [중단 처리](interruption.md), [복구](recovery.md), [반영 대조](delivery-reconciliation.md) |
 | 사용자 지정 범위의 추가 탐색·프로젝트 설정 변경 | 탐색 범위 제한, 경로 중복과 기존 실행의 일치 확인 |
 | 여러 그룹/선택 프로젝트 요청·프로젝트별 지시·실시간 로그 | 접수 대상 고정, 중복 방지, 기존 잠금·검증 규칙 유지 |

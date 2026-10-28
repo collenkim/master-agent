@@ -117,4 +117,4 @@ master-agent mission run <목표ID> --simulate
 
 `node scripts/smoke-planner.mjs --provider claude` 또는 `--provider codex`는 합성 정책·코드로 실제 CLI 계획 생성을 확인한다. 실제 모델 사용량이 발생하며 테스트 저장소와 계획·보고서는 `.master-agent/ai-smoke-*/`에 남는다. 일반 `npm test`는 모델을 호출하지 않는다.
 
-개발 호스트 설정·배정·관측과 grant 범위의 위임 판단은 [code-agent 통신 계약](code-agent-control.md), 실제 테스트 검증·자동 후행 배정은 [실제 검증과 자동 진행](live-verification.md), 실패 분석·수정은 [자동 복구](recovery.md)를 따른다. [재계획 인계](replanning.md)는 종료된 실패 작업을 최신 근거의 새 계획에 연결한다. [대시보드](ui.md)는 로컬 관제·그룹/단일 요청·공통 질문 및 승인 처리를 제공한다. 질문과 무관한 웹 실행 중지는 후속 범위다.
+개발 호스트 설정·배정·관측과 grant 범위의 위임 판단은 [code-agent 통신 계약](code-agent-control.md), 실제 테스트 검증·자동 후행 배정은 [실제 검증과 자동 진행](live-verification.md), 실패 분석·수정은 [자동 복구](recovery.md)를 따른다. [재계획 인계](replanning.md)는 종료된 실패 작업을 최신 근거의 새 계획에 연결한다. [대시보드](ui.md)는 로컬 관제·그룹/단일 요청·공통 질문 및 승인 처리를 제공한다. 웹 화면의 후속 범위는 [남은 작업](implementation.md#남은-작업)을 따른다.
