@@ -1,4 +1,4 @@
-import { execFile, execFileSync } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import { extname } from 'node:path';
 import { requireThat } from '../domain/contracts.mjs';
 
@@ -22,30 +22,39 @@ export function killTree(child) {
   } catch { try { return child.kill('SIGKILL'); } catch { return false; } }
 }
 
-/** 상태 조회도 시간·출력 제한 때 하위 프로세스를 함께 종료한다. */
-export function execFileTree(file, args, { timeout = 0, maxBuffer = 1024 * 1024, onSpawn, ...options } = {}) {
+/** 시간·출력 제한 때 하위 프로세스를 함께 종료하고 제한된 출력만 보관한다. */
+export function execFileTree(file, args, { timeout = 0, maxBuffer = 1024 * 1024, encoding = 'utf8', onSpawn, ...options } = {}) {
   return new Promise((resolve, reject) => {
     let timer, failure;
-    const child = execFile(file, args, { ...options, env: childEnv(options.env), shell: false, windowsHide: true,
-      detached: process.platform !== 'win32', maxBuffer: Infinity }, (error, stdout, stderr) => {
-      clearTimeout(timer);
-      if (failure || error) {
-        const result = failure ?? error;
-        Object.assign(result, { stdout, stderr });
-        reject(result);
-      } else resolve({ stdout, stderr });
-    });
+    // execFile does not forward detached to spawn, so it cannot create a POSIX process group.
+    const child = spawn(file, args, { ...options, env: childEnv(options.env), shell: false, windowsHide: true,
+      detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'] });
     const stop = code => {
       if (failure) return;
       failure = Object.assign(new Error(code), { code, killed: true });
       killTree(child);
     };
+    const capture = stream => {
+      const chunks = []; let bytes = 0;
+      stream.on('data', chunk => {
+        if (bytes < maxBuffer) chunks.push(chunk.subarray(0, maxBuffer - bytes));
+        bytes += chunk.length;
+        if (bytes > maxBuffer) stop('ERR_CHILD_PROCESS_STDIO_MAXBUFFER');
+      });
+      return () => { const buffer = Buffer.concat(chunks); return encoding && encoding !== 'buffer' ? buffer.toString(encoding) : buffer; };
+    };
+    const stdout = capture(child.stdout), stderr = capture(child.stderr);
+    child.on('error', error => { failure ??= error; clearTimeout(timer); });
+    child.on('close', (code, signal) => {
+      clearTimeout(timer);
+      const output = { stdout: stdout(), stderr: stderr() };
+      if (!failure && (code !== 0 || signal)) failure = Object.assign(new Error(`Process exited (${signal ?? code})`),
+        { code, signal, killed: child.killed });
+      if (failure) reject(Object.assign(failure, output));
+      else resolve(output);
+    });
     if (timeout > 0) timer = setTimeout(() => stop('ETIMEDOUT'), timeout);
     if (child.pid && onSpawn) try { onSpawn(child.pid); } catch (error) { failure = error; killTree(child); }
-    for (const stream of [child.stdout, child.stderr]) {
-      let bytes = 0;
-      stream?.on('data', chunk => { bytes += Buffer.byteLength(chunk); if (bytes > maxBuffer) stop('ERR_CHILD_PROCESS_STDIO_MAXBUFFER'); });
-    }
   });
 }
 

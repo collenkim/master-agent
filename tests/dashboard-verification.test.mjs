@@ -12,6 +12,9 @@ import { gradlePresets, artifactSuggestions, verificationPaths } from '../packag
 import { validateRecipe } from '../packages/verification/live-verification.mjs';
 import { runProcess } from '../packages/reasoning/cli-provider.mjs';
 
+// Allow cold PowerShell startup while the Windows CI runner executes other tests.
+const launcherTimeoutMs = process.platform === 'win32' ? 30000 : 10000;
+
 test('Gradle configuration recommends test without assuming extra plugin tasks or an installed launcher', t => {
   const root = temporary(t);
   assert.deepEqual(gradlePresets(root), []);
@@ -33,9 +36,9 @@ test('standard Gradle wrapper suggestions run in the project folder and preserve
   const [preset] = gradlePresets(project);
   assert.match(preset.command, /gradlew/); assert.ok(preset.executable);
   validateRecipe({ schemaVersion: 1, taskId: 'test', allowedPaths: [], artifacts: [], checks: [
-    { ...preset, id: 'check-1', criterionIds: ['tests'], timeoutMs: 10000 },
+    { ...preset, id: 'check-1', criterionIds: ['tests'], timeoutMs: launcherTimeoutMs },
   ] }, { id: 'test', criteria: ['tests'], outputs: [] });
-  const output = await runProcess(preset.executable, preset.args, { cwd: project, input: '', timeoutMs: 10000, captureExit: true });
+  const output = await runProcess(preset.executable, preset.args, { cwd: project, input: '', timeoutMs: launcherTimeoutMs, captureExit: true });
   assert.equal(output.exitCode, 7, output.stderr); assert.match(output.stdout, /wrapper-task=test/);
 });
 
@@ -46,7 +49,7 @@ test('project Gradle script takes precedence over the standard wrapper', async t
     ? "Write-Output ('script-task=' + $args[0]); exit 0\n" : 'echo script-task="$1"\nexit 0\n');
   const [preset] = gradlePresets(root);
   assert.match(preset.command, /^scripts\/gradle/);
-  const output = await runProcess(preset.executable, preset.args, { cwd: root, input: '', timeoutMs: 10000, captureExit: true });
+  const output = await runProcess(preset.executable, preset.args, { cwd: root, input: '', timeoutMs: launcherTimeoutMs, captureExit: true });
   assert.equal(output.exitCode, 0, output.stderr); assert.match(output.stdout, /script-task=test/);
 });
 

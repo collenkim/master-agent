@@ -7,7 +7,7 @@ import { pendingHumanResponse } from '../code-agent-adapter/interactions.mjs';
 import { validateProject, requireThat, string, strings, now, object } from '../domain/contracts.mjs';
 
 export function normalizedPath(path) {
-  const actual = realpathSync(resolve(path));
+  const actual = realpathSync.native(resolve(path));
   requireThat(statSync(actual).isDirectory(), 'invalid-path', '프로젝트 경로는 디렉터리여야 합니다.');
   return pathKey(actual);
 }

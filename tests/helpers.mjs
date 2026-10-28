@@ -8,8 +8,8 @@ import { demoDefinition } from '../packages/simulation/demo.mjs';
 const cleanups = new WeakMap();
 export function cleanup(t, fn) { cleanups.get(t).push(fn); }
 export function temporary(t) {
-  const parent = realpathSync(tmpdir());
-  const root = realpathSync(mkdtempSync(join(parent, 'master-agent-test-')));
+  const parent = realpathSync.native(tmpdir());
+  const root = realpathSync.native(mkdtempSync(join(parent, 'master-agent-test-')));
   cleanups.set(t, []);
   t.after(() => {
     for (const fn of cleanups.get(t).reverse()) fn();

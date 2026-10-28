@@ -15,8 +15,9 @@ const git = (root, args) => execFileSync('git', ['-C', root, ...args], { encodin
 
 /** Git이 추적하거나 무시하지 않는 파일 전체를 결합한다. 파일 본문은 저장하지 않는다. */
 export function snapshotTree(path) {
-  const root = realpathSync(path);
-  requireThat(pathKey(realpathSync(git(root, ['rev-parse', '--show-toplevel']).trim())) === pathKey(root), 'invalid-repository', '등록 경로가 Git 저장소 루트여야 합니다.');
+  // Native resolution expands Windows 8.3 aliases just as Git and fs.promises.realpath do.
+  const root = realpathSync.native(path);
+  requireThat(pathKey(realpathSync.native(git(root, ['rev-parse', '--show-toplevel']).trim())) === pathKey(root), 'invalid-repository', '등록 경로가 Git 저장소 루트여야 합니다.');
   let head;
   try { head = git(root, ['rev-parse', '--verify', 'HEAD']).trim(); }
   catch { requireThat(false, 'repository-no-commit', 'Git 저장소에 커밋이 없습니다. code-agent setup baseline 또는 직접 첫 커밋을 만든 뒤 다시 확인하세요.'); }
@@ -33,7 +34,7 @@ export function snapshotTree(path) {
       requireThat(!stat.isSymbolicLink(), 'unsupported-tree', '링크·junction이 포함된 작업 트리는 지원하지 않습니다.');
     }
     if (missing) continue; // 추적 파일 삭제는 이전 스냅샷과의 차이로 남는다.
-    const stat = lstatSync(current), rel = relative(root, realpathSync(current));
+    const stat = lstatSync(current), rel = relative(root, realpathSync.native(current));
     requireThat(stat.isFile() && rel && rel !== '..' && !isAbsolute(rel) && !rel.startsWith(`..${sep}`), 'unsupported-tree', '일반 파일만 검증할 수 있습니다. submodule은 별도 계약이 필요합니다.');
     bytes += stat.size;
     requireThat(stat.size <= 32 * 1024 * 1024 && bytes <= 256 * 1024 * 1024, 'snapshot-limit', '파일 스냅샷 크기 제한을 넘었습니다.');
