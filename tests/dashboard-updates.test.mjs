@@ -8,10 +8,11 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { installationFingerprint } from '../packages/dashboard/installation.mjs';
 import { hostname } from 'node:os';
 import { setup } from './helpers.mjs';
-import { createUpdates, runUpdateCli } from '../packages/dashboard/updates.mjs';
+import { createUpdates } from '../packages/dashboard/updates.mjs';
+import { runUpdateCli } from '../packages/dashboard/source-update.mjs';
 import { startDashboard } from '../packages/dashboard/server.mjs';
 import { findCodeAgent } from '../packages/code-agent-adapter/discovery.mjs';
-import { SimulationRunner } from '../packages/runner/simulation.mjs';
+import { SimulationRunner } from '../packages/simulation/runner.mjs';
 
 function fixture(t) {
   const f = setup(t), pkg = join(f.root, 'code-agent'), cliPath = join(pkg, 'dist/agent/cli.js');

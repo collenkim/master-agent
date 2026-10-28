@@ -4,21 +4,19 @@ import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { startDashboard, validateDashboardOptions } from './server.mjs';
 import { requireThat } from '../domain/contracts.mjs';
+import { alive } from '../runner/process.mjs';
 
 const read = path => {
   try { return JSON.parse(readFileSync(path, 'utf8')); }
   catch (error) { if (error.code === 'ENOENT') return null; throw error; }
 };
-function alive(pid) {
-  if (!Number.isInteger(pid) || pid <= 0) return true;
-  try { process.kill(pid, 0); return true; } catch (error) { return error.code !== 'ESRCH'; }
-}
+const held = record => !Number.isSafeInteger(record.pid) || record.pid <= 0 || alive(record.pid);
 function removeOwned(path, id) { if (read(path)?.id === id) unlinkSync(path); }
 // Windows에서는 mode: 0o600으로 접근 권한을 제한할 수 없으므로 저장 위치의 계정 ACL을 따른다.
 function claim(path, id) {
   const previous = read(path);
   if (previous) {
-    requireThat(!alive(previous.pid), 'dashboard-busy', '대시보드가 실행 중이거나 시작·종료 중입니다. dashboard status 또는 restart를 사용하세요.');
+    requireThat(!held(previous), 'dashboard-busy', '대시보드가 실행 중이거나 시작·종료 중입니다. dashboard status 또는 restart를 사용하세요.');
     removeOwned(path, previous.id);
   }
   try { writeFileSync(path, JSON.stringify({ id, pid: process.pid }), { flag: 'wx', mode: 0o600 }); }
@@ -48,7 +46,7 @@ export async function dashboardCommand(action, supplied = {}) {
   const statePath = `${dbPath}.dashboard.json`, lockPath = `${dbPath}.dashboard.lock`;
   const previous = read(statePath), lock = read(lockPath);
   const sameRecord = previous && lock?.id === previous.id;
-  const locked = lock && alive(lock.pid);
+  const locked = lock && held(lock);
   if (action === 'status') {
     let state = locked ? 'unreachable' : 'stopped';
     if (locked && sameRecord) { try { state = (await control(previous, 'status')).state; } catch { /* Preserve uncertain ownership. */ } }

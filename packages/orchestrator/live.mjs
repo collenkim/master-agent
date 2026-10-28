@@ -1,6 +1,6 @@
 import { logHostError } from '../runner/diagnostics.mjs';
 import { randomUUID } from 'node:crypto';
-import { Engine } from './engine.mjs';
+import { Engine, taskState } from './engine.mjs';
 import { Knowledge } from '../knowledge/sources.mjs';
 import { hash, now, requireThat, string } from '../domain/contracts.mjs';
 import { snapshotTree } from '../verification/tree.mjs';
@@ -9,10 +9,8 @@ import { predecessorContracts } from '../verification/handoff-contracts.mjs';
 import { taskHeld, relevantSource } from './scope.mjs';
 import { remoteStateSummary } from './remote-state.mjs';
 
-const taskState = (m, id) => m.tasks.find(t => t.id === id);
-
 // other-work 는 지금 작업이 아닌(끝난) 작업의 임대다 — code-agent 도 다음 진행 명령에서 넘겨받는다(lease.ts leaseDecision)
-export function ownsLease(state, sessionId) {
+function ownsLease(state, sessionId) {
   const lease = state.ownership?.lease;
   return ['none', 'released', 'other-work'].includes(lease?.state) || (sessionId && lease?.host === 'claude' && lease.session === sessionId && ['held', 'idle'].includes(lease.state));
 }

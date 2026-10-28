@@ -1,4 +1,6 @@
 import { execFile, execFileSync } from 'node:child_process';
+import { extname } from 'node:path';
+import { requireThat } from '../domain/contracts.mjs';
 
 const HOST_ENV = new Set(['CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_PROJECT_DIR', 'CODEX_CI', 'CODEX_SANDBOX',
   'CODEX_SANDBOX_NETWORK_DISABLED', 'CODEX_THREAD_ID', 'CODE_AGENT_MASTER_RUN', 'CODE_AGENT_CROSS']);
@@ -45,4 +47,20 @@ export function execFileTree(file, args, { timeout = 0, maxBuffer = 1024 * 1024,
       stream?.on('data', chunk => { bytes += Buffer.byteLength(chunk); if (bytes > maxBuffer) stop('ERR_CHILD_PROCESS_STDIO_MAXBUFFER'); });
     }
   });
+}
+
+export function alive(pid) {
+  if (!Number.isSafeInteger(pid) || pid <= 0) return false;
+  try { process.kill(pid, 0); return true; }
+  // EPERM은 다른 사용자 프로세스 등의 조회 권한 부족이므로 임대 회수나 중복 실행의 근거가 아니다.
+  catch (error) { return error.code === 'EPERM'; }
+}
+
+export function spawnArgs(cliPath) {
+  requireThat(typeof cliPath === 'string' && cliPath.length > 0 &&
+    !['.cmd', '.bat', '.ps1', '.sh'].includes(extname(cliPath).toLowerCase()),
+  'invalid-cli', '셸 래퍼 대신 실행 파일 또는 JS 진입점을 지정하세요.');
+  return ['.js', '.mjs', '.cjs'].includes(extname(cliPath).toLowerCase())
+    ? { executable: process.execPath, prefix: [cliPath] }
+    : { executable: cliPath, prefix: [] };
 }

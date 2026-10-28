@@ -3,7 +3,6 @@ import { validateShape } from './schema.mjs';
 import { DomainError, requireThat } from '../domain/contracts.mjs';
 
 export const HOSTS = ['claude', 'codex'];
-const LABEL = { claude: 'Claude', codex: 'Codex' };
 
 /**
  * 요청의 실행 host — 이번 요청의 code-agent 개발 host와 master 계획·판단 AI를 함께 정한다.
@@ -21,13 +20,7 @@ export function hostSelection(value) {
   return { mode, main };
 }
 export const mainHost = selection => selection.mode === 'both' ? selection.main : selection.mode;
-export const reviewerHost = selection => selection.mode === 'both' ? HOSTS.find(h => h !== selection.main) : null;
-export function hostText(selection) {
-  if (!selection) return '프로젝트 실행 방식';
-  const reviewer = reviewerHost(selection);
-  return reviewer ? `${LABEL[selection.main]} 주 · ${LABEL[reviewer]} 교차 검증` : `${LABEL[selection.mode]} 단독`;
-}
-
+const reviewerHost = selection => selection.mode === 'both' ? HOSTS.find(h => h !== selection.main) : null;
 const text = { type: 'string' };
 export const crossReviewSchema = { type: 'object', additionalProperties: false, required: ['verdict', 'issues'], properties: {
   verdict: { type: 'string', enum: ['approve', 'reject'] },

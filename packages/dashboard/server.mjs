@@ -27,6 +27,7 @@ export async function startDashboard({ dbPath, port = 4310, cliPath, intervalMs 
   const assets = new Map([
     ['/', ['text/html; charset=utf-8', 'index.html']],
     ['/app.mjs', ['text/javascript; charset=utf-8', 'app.mjs']],
+    ['/common.mjs', ['text/javascript; charset=utf-8', 'common.mjs']],
     ['/interactions.mjs', ['text/javascript; charset=utf-8', 'interactions.mjs']],
     ['/verification.mjs', ['text/javascript; charset=utf-8', 'verification.mjs']],
     ['/history.mjs', ['text/javascript; charset=utf-8', 'history.mjs']],

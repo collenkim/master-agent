@@ -20,6 +20,8 @@ master-agent의 자동 진행, AI 계획 검토, 실패 복구, 재계획과 모
 | 재계획 | inspect-settlement → preserve-and-refresh → analyze |
 | 모의 실행 | select → prepare → execute → accept → after → select, 또는 complete |
 
+모의 실행의 그래프·실행 수용·완료 판정·재시도와 고정 runner·demo는 `packages/simulation/`에서 관리한다. Engine의 기존 메서드와 `demo` 명령은 이 모듈을 호출한다. 실패가 확인된 모의 작업의 재시도는 현재 revision·계획·근거를 다시 확인하며 실제 목표의 복구와 구분한다.
+
 자동 진행의 분기와 반복은 LangGraph가 담당합니다. `drive --control`은 배정 가능한 대기 작업부터 접수합니다. dispatch·continue는 code-agent의 접수와 실행 ID 저장 후 반환하고, reattach는 같은 invocationId의 결과를 한 번 조회합니다. 아직 실행 중이면 다른 작업을 선택하고, 처리할 일이 없고 실행만 남았으면 poll-wait에서 잠시 기다린 뒤 다시 조회합니다. 독립 프로젝트의 외부 실행은 겹치지만 DB 변경·위임 판단·독립 검사는 순차 처리합니다. 같은 프로젝트의 잠금과 의존성 검사는 계속 적용합니다.
 
 ## 상태 저장

@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { isAbsolute, extname } from 'node:path';
-import { Engine } from '../orchestrator/engine.mjs';
+import { Engine, taskState } from '../orchestrator/engine.mjs';
 import { hash, now, requireThat, string, strings } from '../domain/contracts.mjs';
 import { runCheck } from './command.mjs';
+import { sealOf, assertSealed } from './seal.mjs';
 import { snapshotTree, safeRelative, changesBetween, checkpointsCurrent, allowedChange } from './tree.mjs';
 import { Knowledge } from '../knowledge/sources.mjs';
 import { relevantSource } from '../orchestrator/scope.mjs';
@@ -11,9 +12,6 @@ import { validateDelivery, verifyDelivery, inspectDelivery } from './delivery.mj
 import { validateExports, bindExports, verifyContractDocuments } from './handoff-contracts.mjs';
 
 const activePlan = m => m.plans.at(-1);
-const taskState = (m, id) => m.tasks.find(t => t.id === id);
-const sealOf = value => { const { seal, revision, ...body } = value; return hash(body); };
-const assertSealed = value => requireThat(value.seal === sealOf(value), 'invalid-evidence', '검증 증거의 내용이 변경됐습니다.');
 
 export function validateRecipe(recipe, task) {
   requireThat(recipe?.schemaVersion === 1 && recipe.taskId === task.id, 'invalid-recipe', '현재 작업의 검증 계약이 필요합니다.');

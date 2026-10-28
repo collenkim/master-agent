@@ -1,6 +1,4 @@
-const $ = id => document.getElementById(id);
-const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-const date = value => value ? new Date(value).toLocaleString('ko-KR') : '시각 미확인';
+import { esc as escape, $, date } from './common.mjs';
 const phase = work => [work?.phase, work?.stage, work?.task].filter(Boolean).join(' / ') || '작업 없음';
 const result = passed => passed === true ? '통과' : passed === false ? '미통과' : '미확인';
 

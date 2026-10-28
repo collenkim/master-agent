@@ -1,9 +1,9 @@
 import { spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, writeFileSync, readFileSync, rmSync, realpathSync, statSync } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
-import { join, dirname, basename, delimiter, isAbsolute, extname } from 'node:path';
+import { join, dirname, basename, delimiter, isAbsolute } from 'node:path';
 import { DomainError, requireThat, string } from '../domain/contracts.mjs';
-import { childEnv, killTree } from '../runner/process.mjs';
+import { childEnv, killTree, spawnArgs } from '../runner/process.mjs';
 
 function npmClaudeEntry(directory) {
   if (!['claude', 'claude.cmd', 'claude.ps1'].some(name => existsSync(join(directory, name)))) return null;
@@ -15,7 +15,7 @@ function npmClaudeEntry(directory) {
       const bin = typeof pkg.bin === 'string' ? pkg.bin : pkg.bin?.claude;
       if (typeof bin !== 'string') continue;
       const path = realpathSync(join(root, bin));
-      if (['.js', '.mjs', '.cjs'].includes(extname(path).toLowerCase()) && statSync(path).isFile()) return path;
+      if (spawnArgs(path).prefix.length > 0 && statSync(path).isFile()) return path;
     } catch { /* 다음 설치 후보를 확인한다. */ }
   }
   return null;
@@ -37,9 +37,7 @@ export function findCli(provider, explicit, { env = process.env, platform = proc
   }
   const file = candidates.find(f => existsSync(f));
   requireThat(file, 'provider-unavailable', `${provider} CLI가 없습니다. --ai-cli로 지정하세요.`);
-  const extension = extname(file).toLowerCase();
-  requireThat(!['.cmd', '.bat', '.ps1', '.sh'].includes(extension), 'invalid-cli', '셸 래퍼 대신 실행 파일 또는 JS 진입점을 지정하세요.');
-  return ['.js', '.cjs', '.mjs'].includes(extension) ? { executable: process.execPath, prefix: [file] } : { executable: file, prefix: [] };
+  return spawnArgs(file);
 }
 
 export function providerArgs(provider, { schemaPath, outputPath, schema, model }) {

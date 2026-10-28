@@ -1,13 +1,15 @@
 import { realpathSync, statSync } from 'node:fs';
 import { resolve, isAbsolute } from 'node:path';
 import { hostname } from 'node:os';
+import { alive } from '../runner/process.mjs';
+import { pathKey } from '../domain/paths.mjs';
 import { pendingHumanResponse } from '../code-agent-adapter/interactions.mjs';
 import { validateProject, requireThat, string, strings, now, object } from '../domain/contracts.mjs';
 
 export function normalizedPath(path) {
   const actual = realpathSync(resolve(path));
   requireThat(statSync(actual).isDirectory(), 'invalid-path', '프로젝트 경로는 디렉터리여야 합니다.');
-  return process.platform === 'win32' ? actual.toLowerCase() : actual;
+  return pathKey(actual);
 }
 export class Catalog {
   constructor(store) { this.store = store; }
@@ -48,7 +50,7 @@ export class Catalog {
       const updating = this.store.list('agent-update').some(batch => {
         if (batch.state !== 'running' || !batch.projects.some(p => p.id === id && ['ready', 'running'].includes(p.state))) return false;
         if (batch.host !== hostname()) return true;
-        try { process.kill(batch.pid, 0); return true; } catch (error) { return error.code !== 'ESRCH'; }
+        return alive(batch.pid);
       });
       requireThat(!updating, 'project-busy', '이 프로젝트를 포함한 일괄 업데이트가 진행 중입니다. 완료 후 삭제하세요.');
       const groups = this.groups().filter(g => g.projectIds.includes(id));

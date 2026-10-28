@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { SimulationRunner } from '../packages/runner/simulation.mjs';
+import { SimulationRunner } from '../packages/simulation/runner.mjs';
 import { planningSetup, answerFor, blockedAnswer } from './planning-fixture.mjs';
 import { validateAnalysis } from '../packages/reasoning/planner.mjs';
 import { DomainError } from '../packages/domain/contracts.mjs';

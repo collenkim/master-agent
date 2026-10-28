@@ -1,12 +1,11 @@
 import { hostname } from 'node:os';
+import { alive } from '../runner/process.mjs';
 
 export const LEASE_TTL_MS = 10 * 60 * 1000;
 export const HEARTBEAT_MS = 30 * 1000;
 
 export function localProcessAlive(pid, host) {
-  if (host !== hostname() || !Number.isSafeInteger(pid) || pid <= 0) return false;
-  try { process.kill(pid, 0); return true; }
-  catch (error) { return error.code === 'EPERM'; }
+  return host === hostname() && alive(pid);
 }
 
 export function leaseActive({ pid, host, heartbeatAt, startedAt }, time = Date.now()) {

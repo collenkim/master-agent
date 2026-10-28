@@ -1,7 +1,7 @@
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { SimulationRunner } from './simulation.mjs';
+import { SimulationRunner } from './runner.mjs';
 
 export function demoDefinition(root, prefix = randomUUID()) {
   const domains = ['order', 'payment', 'coupon'];

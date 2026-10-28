@@ -4,9 +4,9 @@ import { DASHBOARD_CONTROLLER, connectionState, controlProbe, findTrustKey, sign
 import { pendingHumanResponse } from '../code-agent-adapter/interactions.mjs';
 import { bindControl } from './control-host.mjs';
 import { hash, now, requireThat, string } from '../domain/contracts.mjs';
+import { pathKey } from '../domain/paths.mjs';
 
 const UNSETTLED = ['sending', 'unknown', 'bind-failed'];
-const sameRoot = (a, b) => process.platform === 'win32' ? resolve(a).toLowerCase() === resolve(b).toLowerCase() : resolve(a) === resolve(b);
 const inside = (root, path) => { const rel = relative(resolve(root), resolve(path)); return rel === '' || !rel.startsWith('..') && !isAbsolute(rel); };
 const failure = error => ({ code: error.code ?? 'control-pairing-failed', message: String(error.message ?? '').slice(0, 500) });
 const inflight = new Map();
@@ -78,7 +78,7 @@ export async function pairControl(store, projectId, { cliPath, controller = DASH
   const client = new OpenControlClient({ cliPath, projectPath: project.path, timeoutMs, retries: 0 });
   const challenge = await client.result('pair.challenge', { payload: { controller } });
   requireThat(typeof challenge?.challengeId === 'string' && typeof challenge.nonce === 'string' && challenge.controller === controller &&
-    typeof challenge.projectRoot === 'string' && sameRoot(challenge.projectRoot, project.path) && Date.parse(challenge.expiresAt) > Date.now(),
+    typeof challenge.projectRoot === 'string' && pathKey(challenge.projectRoot) === pathKey(project.path) && Date.parse(challenge.expiresAt) > Date.now(),
     'control-pairing-invalid', '연결 확인 값(challenge)이 이 프로젝트·제어자와 맞지 않습니다.');
   requireThat(!challenge.project?.handover && (!challenge.project?.owner || challenge.project.owner === controller), 'control-owned-by-other', '다른 제어자가 소유 중입니다. 정식 인계 절차를 따르세요.');
   const signed = { actor: approval.actor, approvedAt: approval.approvedAt ?? now(), shownHash: approval.shownHash };

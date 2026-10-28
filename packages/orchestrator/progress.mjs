@@ -1,4 +1,5 @@
 import { hostname } from 'node:os';
+import { alive } from '../runner/process.mjs';
 
 const actions = {
   completed: 'none', cancelled: 'none', paused: 'resume', running: 'wait-for-host',
@@ -11,7 +12,7 @@ const actions = {
 };
 function processing(activity) {
   if (activity?.state !== 'processing' || activity.host !== hostname()) return false;
-  try { process.kill(activity.pid, 0); return true; } catch { return false; }
+  return alive(activity.pid);
 }
 
 /** Presentation only: never replaces the persisted states used by safety gates. */

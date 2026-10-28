@@ -1,7 +1,8 @@
 import { setTimeout as delay } from 'node:timers/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { ControlClient, ControlError, validCli } from '../code-agent-adapter/control.mjs';
+import { ControlClient, ControlError } from '../code-agent-adapter/control.mjs';
+import { findCodeAgent } from '../code-agent-adapter/discovery.mjs';
 import { hostPrompt, inspectState } from './host-context.mjs';
 import { hash, now, requireThat, string } from '../domain/contracts.mjs';
 
@@ -98,7 +99,7 @@ export class ControlHost {
   name = 'code-agent';
   transport = 'code-agent-master';
   constructor(store, { cliPath, pollMs = 2000, followTimeoutMs = 4 * 3600 * 1000, callTimeoutMs = 60000, sleep } = {}) {
-    this.store = store; this.cliPath = validCli(cliPath); this.pollMs = pollMs; this.followTimeoutMs = followTimeoutMs; this.callTimeoutMs = callTimeoutMs;
+    this.store = store; this.cliPath = findCodeAgent(cliPath); this.pollMs = pollMs; this.followTimeoutMs = followTimeoutMs; this.callTimeoutMs = callTimeoutMs;
     this.model = 'code-agent-configured'; this.sleep = sleep ?? (ms => delay(ms));
   }
   binding(projectId) {

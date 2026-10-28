@@ -1,7 +1,7 @@
-const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+import { esc, $ } from './common.mjs';
 const lines = value => value.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
 let setup;
-const root = () => document.getElementById('interaction-verification');
+const root = () => $('interaction-verification');
 const presetIndex = (task, check) => task.presets.findIndex(p => p.executable === check.executable && JSON.stringify(p.args) === JSON.stringify(check.args));
 const checkLabel = (task, check, index) => task.presets[presetIndex(task, check)]?.label ?? `직접 지정한 검사 ${index + 1}`;
 function readCheck(row) {

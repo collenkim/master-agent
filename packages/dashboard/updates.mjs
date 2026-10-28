@@ -9,12 +9,8 @@ import { pendingHumanResponse } from '../code-agent-adapter/interactions.mjs';
 import { hash, now, requireThat } from '../domain/contracts.mjs';
 import { findCodeAgent } from '../code-agent-adapter/discovery.mjs';
 import { createSourceInstaller, runUpdateCli, updateError, applicationOutput } from './source-update.mjs';
-export { runUpdateCli } from './source-update.mjs';
+import { alive } from '../runner/process.mjs';
 
-const alive = pid => {
-  if (!Number.isInteger(pid) || pid <= 0) return false;
-  try { process.kill(pid, 0); return true; } catch (error) { return error.code !== 'ESRCH'; }
-};
 const abandoned = record => record.host === hostname() && !alive(record.pid);
 const clip = value => String(value ?? '').slice(-8000);
 

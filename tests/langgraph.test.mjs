@@ -9,7 +9,7 @@ import { hostname } from 'node:os';
 import { setup, cleanup } from './helpers.mjs';
 import { Store } from '../packages/storage/store.mjs';
 import { Engine } from '../packages/orchestrator/engine.mjs';
-import { SimulationRunner } from '../packages/runner/simulation.mjs';
+import { SimulationRunner } from '../packages/simulation/runner.mjs';
 import { checkpointer, graphStatus, unlockMission } from '../packages/orchestrator/graph-runtime.mjs';
 import { LEASE_TTL_MS } from '../packages/orchestrator/lease.mjs';
 import { LiveWorkflow } from '../packages/orchestrator/drive.mjs';

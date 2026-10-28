@@ -1,26 +1,19 @@
 import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { extname, isAbsolute } from 'node:path';
+import { isAbsolute } from 'node:path';
 import { DomainError, requireThat, string } from '../domain/contracts.mjs';
 import { findCodeAgent } from './discovery.mjs';
-import { childEnv, killTree } from '../runner/process.mjs';
+import { childEnv, killTree, spawnArgs } from '../runner/process.mjs';
 
 /** code-agent 의 master 통신 계약(code-agent/doc/master-control.md). 같은 PC 의 CLI 호출 한 번이 요청 한 건이다. */
 export const PROTOCOL = 'code-agent.master';
 export const PROTOCOL_VERSION = 1;
 const MUTATING = new Set(['submit', 'pause', 'cancel', 'resume', 'decide', 'answer', 'handover', 'reconcile', 'policy', 'revoke', 'interaction.respond', 'pair']);
-// 실행을 지금 시작하지 않았다고 확정할 수 있는 거부 — 통신 실패와 구분한다
-export const TERMINAL_RUN_STATES = new Set(['completed', 'blocked', 'failed', 'cancelled', 'paused', 'abandoned', 'unknown']);
-
-export function validCli(cliPath) {
-  return findCodeAgent(cliPath);
-}
-
 /** 요청 한 건 → 응답 한 건. 프로세스가 응답 JSON 을 내지 못하면 통신 실패(control-unavailable)다 — 명령의 실패가 아니다 */
 export function callOnce(cliPath, projectPath, request, { timeoutMs = 60000 } = {}) {
   return new Promise((resolve, reject) => {
-    const js = ['.js', '.mjs', '.cjs'].includes(extname(cliPath).toLowerCase());
-    const child = spawn(js ? process.execPath : cliPath, [...(js ? [cliPath] : []), 'master', 'call'],
+    const { executable, prefix } = spawnArgs(cliPath);
+    const child = spawn(executable, [...prefix, 'master', 'call'],
       { cwd: projectPath, shell: false, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'], env: childEnv({ GIT_OPTIONAL_LOCKS: '0' }), detached: process.platform !== 'win32' });
     let stdout = '', stderr = '', done = false;
     const fail = (message) => { if (!done) { done = true; reject(new DomainError('control-unavailable', message)); } };
@@ -71,7 +64,7 @@ async function exchange(client, type, request) {
  */
 export class OpenControlClient {
   constructor({ cliPath, projectPath, timeoutMs = 30000, retries = 2 }) {
-    this.cliPath = validCli(cliPath); this.projectPath = string(projectPath, 'projectPath');
+    this.cliPath = findCodeAgent(cliPath); this.projectPath = string(projectPath, 'projectPath');
     this.timeoutMs = timeoutMs; this.retries = retries; this.lastResponse = undefined;
   }
   async request(type, { commandId, payload } = {}) {
@@ -88,7 +81,7 @@ export class OpenControlClient {
  */
 export class ControlClient {
   constructor({ cliPath, projectPath, controller, tokenFile, generation, timeoutMs = 60000, retries = 2 }) {
-    this.cliPath = validCli(cliPath); this.projectPath = string(projectPath, 'projectPath');
+    this.cliPath = findCodeAgent(cliPath); this.projectPath = string(projectPath, 'projectPath');
     this.controller = string(controller, 'controller'); this.tokenFile = string(tokenFile, 'tokenFile');
     requireThat(isAbsolute(tokenFile), 'invalid-input', '토큰 파일은 절대 경로입니다.');
     this.generation = generation; this.timeoutMs = timeoutMs; this.retries = retries;

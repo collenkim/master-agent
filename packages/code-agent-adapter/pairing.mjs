@@ -14,8 +14,6 @@ export const validController = value => typeof value === 'string' && /^[A-Za-z0-
 const text = (value, limit = 500) => typeof value === 'string' ? value.slice(0, limit) : null;
 const legacyGuidance = projectId => `프로젝트 폴더에서 code-agent master enable --controller dashboard --token-out <저장소 밖 토큰 파일>을 직접 실행하세요. 기존 연결이 있으면 enable을 반복하지 마세요.\n대시보드 요청은 요청 창에서 고른 host(claude·codex·both)로 실행합니다. host를 고르지 않은 실행은 code-agent execution claude|codex 또는 both --main claude|codex 설정을 따르고, 미선택 상태는 등록된 기본 호스트를 따릅니다. host별 실행 파일·모델·권한을 지정하려면 enable에 --host <호스트 설정 JSON>을 사용하세요.\nmaster-agent project control ${projectId} --controller <기존 제어자 ID> --token-file <토큰 파일 절대경로> --db <현재 대시보드 DB>\n질문·승인을 웹에서 처리하려면 code-agent master human enable --controller <제어자 ID>도 실행하세요. 토큰 내용은 답변에 입력하지 마세요.`;
 
-export const trustStoreDir = codeAgentStoreDir;
-
 /** code-agent master trust 가 만든 PC 신뢰 개인 키의 경로. 링크·큰 파일은 쓰지 않는다. 키 내용은 서명할 때만 읽는다 */
 export function findTrustKey(controller, directory = join(codeAgentStoreDir(), 'master-trust')) {
   if (!validController(controller) || !isAbsolute(directory)) return null;
@@ -26,12 +24,12 @@ export function findTrustKey(controller, directory = join(codeAgentStoreDir(), '
   } catch { return null; }
 }
 
-export const pairingSupported = hello => hello?.pairing?.supported === true && hello.pairing.version === 1 &&
+const pairingSupported = hello => hello?.pairing?.supported === true && hello.pairing.version === 1 &&
   (hello.pairing.domain === undefined || hello.pairing.domain === PAIR_DOMAIN) && (hello.pairing.signature === undefined || hello.pairing.signature === 'Ed25519');
 
 const problemsOf = value => (Array.isArray(value) ? value : []).slice(0, 20).map(p => ({ code: text(p?.code, 64) ?? 'unknown', message: text(p?.message) ?? '' }));
 /** code-agent 실행 준비 상태 — 설치 누락·프로젝트 미신뢰·hook 검토 필요·조회 실패·확인 중·준비 완료. ready 가 true 인 것만 실행할 수 있다 */
-export const READINESS_STATES = ['not-installed', 'project-untrusted', 'hooks-review', 'query-failed', 'checking', 'ready'];
+const READINESS_STATES = ['not-installed', 'project-untrusted', 'hooks-review', 'query-failed', 'checking', 'ready'];
 const HOSTS = ['claude', 'codex'];
 const stateOf = value => READINESS_STATES.includes(value) ? value : null;
 const modeReadinessOf = value => value && typeof value === 'object' ? {
@@ -81,7 +79,7 @@ const READINESS_GUIDANCE = {
   'query-failed': 'Codex 준비 상태를 확인하지 못했습니다. 프로젝트에서 code-agent doctor --host codex로 확인한 뒤 다시 점검하세요. 확인되기 전에는 실행하지 않습니다.',
   checking: 'code-agent가 Codex 준비 상태를 확인하는 중입니다. 잠시 뒤 다시 점검하세요. 계속되면 프로젝트에서 code-agent doctor --host codex로 확인하세요.',
 };
-export const READINESS_LABEL = { 'not-installed': '설치 확인 필요', 'project-untrusted': '프로젝트 신뢰 필요', 'hooks-review': 'hook 검토 필요',
+const READINESS_LABEL = { 'not-installed': '설치 확인 필요', 'project-untrusted': '프로젝트 신뢰 필요', 'hooks-review': 'hook 검토 필요',
   'query-failed': '준비 확인 실패', checking: '준비 확인 중', ready: '준비 완료' };
 
 /**
@@ -164,7 +162,7 @@ export function connectionState({ projectId, probe, binding, controller = DASHBO
 }
 
 /** 서명 대상 — code-agent doc/master-control.md 의 pair 계약 */
-export function pairMessage({ challenge, controller, commandId, approval }) {
+function pairMessage({ challenge, controller, commandId, approval }) {
   return canonicalInteraction({ domain: PAIR_DOMAIN, challengeId: challenge.challengeId, nonce: challenge.nonce, projectRoot: challenge.projectRoot, controller, commandId, approval });
 }
 

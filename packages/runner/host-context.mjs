@@ -1,9 +1,9 @@
 import { existsSync } from 'node:fs';
-import { extname, join } from 'node:path';
+import { join } from 'node:path';
 import { parseState } from '../code-agent-adapter/observe.mjs';
 import { requireThat } from '../domain/contracts.mjs';
 import { dependencyBundle, contractLines } from '../verification/handoff-contracts.mjs';
-import { childEnv, execFileTree as runFile } from './process.mjs';
+import { childEnv, spawnArgs, execFileTree as runFile } from './process.mjs';
 
 /** 선행 작업 증거의 요약 — 세션에 필요한 것은 어떤 검사가 통과했고 무엇을 반영했는지다. 파일 트리 스냅샷·원격 상태·검사 출력은 master 기록에 남고
  *  프롬프트에 싣지 않는다(통합 작업은 선행 증거가 여럿이라 code-agent 접수 한도를 넘는다) */
@@ -51,11 +51,11 @@ ${JSON.stringify(context, null, 2)}`;
 /** code-agent status --json 읽기 조회 — 관리 실행 호스트가 쓴다 */
 export async function inspectState(cliPath, project, expectedState, sessionId) {
   requireThat(existsSync(join(project.path, '.code-agent/version')), 'not-installed', 'code-agent 설치가 필요합니다.');
-  const js = ['.js', '.mjs', '.cjs'].includes(extname(cliPath).toLowerCase());
+  const { executable, prefix } = spawnArgs(cliPath);
   let stdout;
   try {
-    ({ stdout } = await runFile(js ? process.execPath : cliPath,
-      [...(js ? [cliPath] : []), 'status', '--json', ...(expectedState ? ['--expect-state', expectedState] : []), ...(sessionId ? ['--session', sessionId] : [])],
+    ({ stdout } = await runFile(executable,
+      [...prefix, 'status', '--json', ...(expectedState ? ['--expect-state', expectedState] : []), ...(sessionId ? ['--session', sessionId] : [])],
       { cwd: project.path, shell: false, windowsHide: true, timeout: 30000, maxBuffer: 4 * 1024 * 1024, encoding: 'utf8', env: childEnv({ GIT_OPTIONAL_LOCKS: '0' }) }));
   } catch (e) {
     requireThat([1, 2, 3].includes(e.code) && e.stdout, 'observation-failed', 'code-agent 상태 조회 실패; 실행하지 않습니다.');

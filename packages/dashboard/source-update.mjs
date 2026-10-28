@@ -1,9 +1,9 @@
 import { mkdtempSync, rmdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { extname, join } from 'node:path';
+import { join } from 'node:path';
 import { normalizedPath } from '../catalog/catalog.mjs';
 import { DomainError, requireThat } from '../domain/contracts.mjs';
-import { childEnv, execFileTree } from '../runner/process.mjs';
+import { childEnv, execFileTree, spawnArgs } from '../runner/process.mjs';
 
 const SHOWN_HASH = /^sha256:[0-9a-f]{64}$/;
 const RELEASE = /^[a-zA-Z0-9][a-zA-Z0-9.+_-]{0,199}$/;
@@ -11,10 +11,10 @@ const RELEASE = /^[a-zA-Z0-9][a-zA-Z0-9.+_-]{0,199}$/;
 /** Public CLI only; kill the entire process tree on timeout, including install scripts. */
 export async function runUpdateCli(cliPath, args, cwd, onSpawn = () => {}, timeoutMs = args[0] === 'version' ? 15000 : 120000) {
   const env = childEnv({ GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' });
-  const js = ['.js', '.mjs', '.cjs'].includes(extname(cliPath).toLowerCase());
+  const { executable, prefix } = spawnArgs(cliPath);
   let recordError;
   try {
-    const { stdout, stderr } = await execFileTree(js ? process.execPath : cliPath, [...(js ? [cliPath] : []), ...args], {
+    const { stdout, stderr } = await execFileTree(executable, [...prefix, ...args], {
       cwd, env, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, timeout: timeoutMs,
       onSpawn(pid) { try { onSpawn(pid); } catch (error) { recordError = error; throw error; } },
     });

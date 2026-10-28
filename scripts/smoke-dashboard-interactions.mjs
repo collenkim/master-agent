@@ -31,6 +31,8 @@ let browser;
 try {
   browser = await openBrowser(dashboard.url, artifacts);
   const { send, evaluate, waitFor, errors } = browser;
+  const shared = await evaluate(`import('/common.mjs').then(ui => ({ escaped: ui.esc('<img src="x">&'), date: ui.date(null), blocked: ui.labels.blocked, failed: ui.labels.failed, unknown: ui.labels.unknown, launching: ui.labels.launching, queued: ui.labels.queued, completed: ui.labels.completed }))`);
+  assert.deepEqual(shared, { escaped: '&lt;img src=&quot;x&quot;&gt;&amp;', date: '기록 없음', blocked: '점검 필요', failed: '실패', unknown: '결과 미확인', launching: '실행 시작 중', queued: '접수·시작 대기', completed: '완료' });
   const waitList = () => waitFor(`document.getElementById('interaction-items')?.getAttribute('aria-busy') === 'false'`);
   await waitFor('document.querySelectorAll("#interaction-items .project").length === 4');
   assert.equal(await evaluate('Boolean(window.injected || document.querySelector("#interaction-items img"))'), false);
@@ -193,7 +195,7 @@ try {
   await waitFor(`document.getElementById('connection').textContent === '연결 끊김'`);
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ passed: true, producer: 'synthetic', actualCodeAgentResponses: false,
-    checks: ['recommendation-no-auto-submit', 'draft-poll-reopen', 'defer', 'explicit-submit', 'poll-submit-race', 'success-not-stale', 'live-response-history', 'answered-reopen', 'next-question', 'wait-other-answers', 'single-launch', 'stale-view-preserves-input', 'full-approval-unchecked', 'unsupported-disabled', 'XSS', 'remote-number-attributes', 'mobile', 'preparation-legacy-failure', 'preparation-default-no-auto-submit', 'preparation-same-task-recheck', 'archive-pagination', 'server-pagination', 'GET-read-only', 'public-projection', 'archive-search', 'archive-read-only', 'disconnect'], artifacts }));
+    checks: ['shared-ui-helpers', 'recommendation-no-auto-submit', 'draft-poll-reopen', 'defer', 'explicit-submit', 'poll-submit-race', 'success-not-stale', 'live-response-history', 'answered-reopen', 'next-question', 'wait-other-answers', 'single-launch', 'stale-view-preserves-input', 'full-approval-unchecked', 'unsupported-disabled', 'XSS', 'remote-number-attributes', 'mobile', 'preparation-legacy-failure', 'preparation-default-no-auto-submit', 'preparation-same-task-recheck', 'archive-pagination', 'server-pagination', 'GET-read-only', 'public-projection', 'archive-search', 'archive-read-only', 'disconnect'], artifacts }));
 } finally {
   await browser?.close();
   await dashboard.close();

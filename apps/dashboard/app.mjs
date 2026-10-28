@@ -1,23 +1,6 @@
+import { esc as escape, $, date, labels } from './common.mjs';
 import { renderInteractions } from './interactions.mjs';
 import { renderHistory, renderStageDetails } from './history.mjs';
-const $ = id => document.getElementById(id);
-const labels = {
-  completed: '완료', cancelled: '취소', paused: '일시 정지', running: '실행 중',
-  'approval-processing': '승인 처리 중', 'approval-pending': '승인 처리 대기', 'human-input': '사람 답 필요',
-  blocked: '장애·점검 필요', 'verification-pending': '검증 대기', verifying: '검증 중', 'handoff-pending': '인계 대기',
-  ready: '진행 가능', waiting: '선행 작업 대기', analyzing: '분석 중', planning: '계획 준비',
-  observed: '조회 성공', unobserved: '미조회', 'not-installed': '미설치', timeout: '조회 시간 초과',
-  'process-error': '조회 실패', 'invalid-json': '응답 오류', 'invalid-state': '상태 오류', 'wrong-project': '프로젝트 불일치',
-  'unsupported-version': '지원하지 않는 버전', unobservable: '관측 불가',
-  'no-work': '현재 작업 없음', 'needs-human': '사람 판단 필요', 'ownership-conflict': '소유권 충돌',
-  'replan-required': '재계획 필요', 'reapproval-required': '재승인 필요', 'limit-reached': '한도 도달',
-  'stale-request': '요청 상태 변경', wait: '대기',
-  'setup-required': '실행 준비 필요',
-  queued: '접수·시작 대기', launching: '실행 시작 중', failed: '실행 오류', interrupted: '실행기 중단',
-  skipped: '건너뜀', 'needs-attention': '결과 확인 필요',
-};
-const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-const date = value => value ? new Date(value).toLocaleString('ko-KR') : '기록 없음';
 const attention = p => p.attention;
 const unavailable = p => p.observation.status !== 'observed' || p.observation.stale;
 const badge = status => `<span class="badge ${['blocked', 'human-input', 'process-error', 'timeout'].includes(status) ? 'danger' : ['completed', 'observed'].includes(status) ? 'success' : ''}">${escape(labels[status] ?? status)}</span>`;

@@ -1,12 +1,12 @@
 import { existsSync } from 'node:fs';
-import { extname, join } from 'node:path';
+import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Catalog, normalizedPath } from '../catalog/catalog.mjs';
 import { requireThat, hash, now } from '../domain/contracts.mjs';
 import { findCodeAgent } from './discovery.mjs';
 import { recordObservation } from '../dashboard/history.mjs';
 
-import { childEnv, execFileTree as runFile } from '../runner/process.mjs';
+import { childEnv, spawnArgs, execFileTree as runFile } from '../runner/process.mjs';
 const resumeCodes = new Set(['stale-request', 'unobservable', 'no-work', 'ownership-conflict', 'wait', 'needs-human', 'replan-required', 'reapproval-required', 'limit-reached', 'ready']);
 
 /** Poll timestamps advance independently of the code-agent concurrency contract. */
@@ -35,7 +35,6 @@ export function parseState(stdout, projectPath) {
 /** 지원된 읽기 전용 명령만 호출한다. 개발 실행과 승인 전달은 제공하지 않는다. */
 export async function observeProject(store, projectId, { cliPath, timeoutMs = 30000 } = {}) {
   cliPath = findCodeAgent(cliPath);
-  const extension = extname(cliPath).toLowerCase();
   requireThat(Number.isInteger(timeoutMs) && timeoutMs > 0, 'invalid-input', '조회 시간 제한은 양의 정수여야 합니다.');
   const project = new Catalog(store).active(projectId);
   const observedAt = now();
@@ -48,10 +47,10 @@ export async function observeProject(store, projectId, { cliPath, timeoutMs = 30
   if (!existsSync(join(project.path, '.code-agent', 'version'))) {
     result = { status: 'not-installed', error: '.code-agent/version 설치 마커가 없습니다.' };
   } else {
-    const js = ['.js', '.mjs', '.cjs'].includes(extension);
+    const { executable, prefix } = spawnArgs(cliPath);
     let stdout = '', processError;
     try {
-      const output = await runFile(js ? process.execPath : cliPath, [...(js ? [cliPath] : []), 'status', '--json'], {
+      const output = await runFile(executable, [...prefix, 'status', '--json'], {
         cwd: project.path, encoding: 'utf8', windowsHide: true, timeout: timeoutMs,
         maxBuffer: 4 * 1024 * 1024, shell: false, env: childEnv({ GIT_OPTIONAL_LOCKS: '0' }),
       });

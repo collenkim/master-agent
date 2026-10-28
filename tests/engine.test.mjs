@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Store } from '../packages/storage/store.mjs';
 import { Engine } from '../packages/orchestrator/engine.mjs';
-import { SimulationRunner } from '../packages/runner/simulation.mjs';
+import { SimulationRunner } from '../packages/simulation/runner.mjs';
 import { setup, cleanup, temporary } from './helpers.mjs';
 import { execFile } from 'node:child_process';
 import { join, resolve } from 'node:path';
@@ -311,4 +311,11 @@ const s = new Store(${JSON.stringify(db)}); s.transaction(() => s.put('probe', {
   holder.db.exec('COMMIT');
   assert.equal(await child, 'ok');
   assert.equal(holder.get('probe', 'p').id, 'p');
+});
+
+test('C4: 실제 목표는 모의 재시도 경로로 되돌리지 않는다', t => {
+  const { engine, store, fixture } = setup(t);
+  const live = engine.create({ ...fixture.mission, requestKey: 'live-retry-guard', mode: 'live' });
+  assert.throws(() => engine.control(live.id, 'retry', live.revision, 'task'), { code: 'wrong-mode' });
+  assert.deepEqual(store.need('mission', live.id), live);
 });

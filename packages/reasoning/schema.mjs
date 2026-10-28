@@ -4,7 +4,7 @@ const texts = array(text);
 const choice = values => ({ type: 'string', enum: values });
 const obj = properties => ({ type: 'object', properties, required: Object.keys(properties), additionalProperties: false });
 
-export const planSchema = obj({
+const planSchema = obj({
   schemaVersion: { type: 'integer', enum: [1] }, summary: text, unresolved: texts,
   tasks: array(obj({
     id: text, projectId: text, domain: text, kind: choice(['analysis', 'contract', 'implementation', 'verification', 'integration']),

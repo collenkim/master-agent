@@ -1,13 +1,13 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import { watch } from 'node:fs';
-import { basename, dirname, extname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { hash, requireThat } from '../domain/contracts.mjs';
+import { spawnArgs } from '../runner/process.mjs';
 
 const cache = new Map();
 const byteLimit = 256 * 1024 * 1024;
-const isScript = cli => ['.js', '.mjs', '.cjs'].includes(extname(cli).toLowerCase());
-const roots = cli => isScript(cli) ? ['package.json', 'dist', 'template'].map(name => join(resolve(cli, '../../..'), name)) : [resolve(cli)];
+const roots = cli => spawnArgs(cli).prefix.length > 0 ? ['package.json', 'dist', 'template'].map(name => join(resolve(cli, '../../..'), name)) : [resolve(cli)];
 const signature = stat => [String(stat.size), String(stat.mtimeNs), String(stat.ctimeNs), String(stat.ino)];
 
 async function inventory(cli) {
@@ -27,7 +27,7 @@ async function inventory(cli) {
 export async function installationFingerprint(cliPath) {
   const cli = resolve(cliPath), before = await inventory(cli);
   if (cache.get(cli)?.key === before.key) return cache.get(cli).digest;
-  if (isScript(cli)) {
+  if (spawnArgs(cli).prefix.length > 0) {
     let pkg;
     try { pkg = JSON.parse(await fs.readFile(roots(cli)[0], 'utf8')); } catch { requireThat(false, 'invalid-cli', 'code-agent 패키지 정보를 읽을 수 없습니다.'); }
     requireThat(pkg.name === 'code-agent', 'invalid-cli', 'code-agent 패키지 진입점이 필요합니다.');
@@ -62,7 +62,7 @@ export function watchInstallation(cliPath) {
   }
   const close = () => { for (const watcher of watchers) watcher.close(); };
   try {
-    if (isScript(cli)) {
+    if (spawnArgs(cli).prefix.length > 0) {
       const root = resolve(cli, '../../..');
       add(dirname(root), false, name => name === basename(root));
       add(root, false, name => ['package.json', 'dist', 'template'].includes(name));

@@ -5,7 +5,8 @@ import { basename, dirname, join } from 'node:path';
 import { generateKeyPairSync } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { setup, temporary } from './helpers.mjs';
-import { connectionState, controlProbe, findTrustKey, trustStoreDir } from '../packages/code-agent-adapter/pairing.mjs';
+import { codeAgentStoreDir } from '../packages/code-agent-adapter/discovery.mjs';
+import { connectionState, controlProbe, findTrustKey } from '../packages/code-agent-adapter/pairing.mjs';
 import { pairControl, pairingPreview, retryPairing } from '../packages/runner/control-pairing.mjs';
 import { trustDashboard, trustPreview } from '../packages/runner/control-trust.mjs';
 import { dashboardSnapshot } from '../packages/dashboard/monitor.mjs';
@@ -140,8 +141,8 @@ test('the trust key is a regular file in the code-agent store named by a valid c
   assert.equal(findTrustKey('dashboard', dir), join(dir, 'dashboard.pem'));
   for (const name of ['../dashboard', 'other', 'big', '']) assert.equal(findTrustKey(name, dir), null);
   assert.equal(findTrustKey('dashboard', 'relative'), null);
-  assert.equal(trustStoreDir({ env: { CODE_AGENT_HOME: join(root, 'home') }, home: 'unused' }), join(root, 'home'));
-  assert.equal(trustStoreDir({ env: {}, home: root }), join(root, '.code-agent'));
+  assert.equal(codeAgentStoreDir({ env: { CODE_AGENT_HOME: join(root, 'home') }, home: 'unused' }), join(root, 'home'));
+  assert.equal(codeAgentStoreDir({ env: {}, home: root }), join(root, '.code-agent'));
 });
 
 test('an explicit confirmation pairs once and stores only the token path with the human channel expiry', async t => {

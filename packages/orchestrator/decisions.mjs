@@ -12,7 +12,7 @@ import { hash, now, requireThat, string } from '../domain/contracts.mjs';
  * 사람에게 넘긴다. 사람만 하는 동작·master 실행이 준비하지 않은 동의·AI 판단기가 없는 경우도 사람에게 넘긴다.
  * deliver(반영)는 master 의 독립 검증(verified)이 끝난 시도에서만 판단한다.
  */
-export const consentJudgmentSchema = {
+const consentJudgmentSchema = {
   type: 'object', additionalProperties: false, required: ['category', 'verdict', 'reason', 'evidence'],
   properties: {
     category: { type: 'string', enum: ['routine', 'ambiguous', 'critical'] },
@@ -21,7 +21,7 @@ export const consentJudgmentSchema = {
     evidence: { type: 'array', minItems: 1, maxItems: 20, items: { type: 'string', minLength: 1, maxLength: 500 } },
   },
 };
-export const answerJudgmentSchema = {
+const answerJudgmentSchema = {
   type: 'object', additionalProperties: false, required: ['category', 'answer', 'reason', 'evidence'],
   properties: {
     category: { type: 'string', enum: ['routine', 'ambiguous', 'critical'] },

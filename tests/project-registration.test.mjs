@@ -5,7 +5,7 @@ import { join, dirname } from 'node:path';
 import { hostname } from 'node:os';
 import { setup } from './helpers.mjs';
 import { startDashboard } from '../packages/dashboard/server.mjs';
-import { SimulationRunner } from '../packages/runner/simulation.mjs';
+import { SimulationRunner } from '../packages/simulation/runner.mjs';
 import { acceptRequest } from '../packages/orchestrator/requests.mjs';
 
 async function dashboardFixture(t) {

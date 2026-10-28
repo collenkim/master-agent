@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname, basename } from 'node:path';
 import { Store } from '../packages/storage/store.mjs';
 import { Engine } from '../packages/orchestrator/engine.mjs';
-import { demoDefinition } from '../packages/runner/demo.mjs';
+import { demoDefinition } from '../packages/simulation/demo.mjs';
 
 const cleanups = new WeakMap();
 export function cleanup(t, fn) { cleanups.get(t).push(fn); }

@@ -1,6 +1,6 @@
 import { Annotation, StateGraph, START, END, interrupt } from '@langchain/langgraph';
 import { requireThat } from '../domain/contracts.mjs';
-import { checkpointer, invokeGraph } from './graph-runtime.mjs';
+import { checkpointer, invokeGraph } from '../orchestrator/graph-runtime.mjs';
 
 const State = Annotation.Root({ missionId: Annotation(), ticket: Annotation(), outcome: Annotation(), result: Annotation(), route: Annotation() });
 export async function simulate(engine, id, runner, all) {

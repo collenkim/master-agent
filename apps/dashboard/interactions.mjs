@@ -1,12 +1,6 @@
-const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+import { esc, $, date, labels } from './common.mjs';
 import { renderVerification, verificationRecipes, verificationReviewed } from './verification.mjs';
-const $ = id => document.getElementById(id);
-const date = value => value ? new Date(value).toLocaleString('ko-KR') : '기록 없음';
 const same = (a, b) => String(a ?? '').replace(/\s+/g, ' ').trim() === String(b ?? '').replace(/\s+/g, ' ').trim();
-const labels = { open: '응답 대기', pending: '응답 미접수·대기', deferred: '보류', answered: '답변 적용', expired: '만료', closed: '대기 종료·결과 미확인',
-  received: '접수', applied: '적용', 'not-requested': '재개 요청 없음', launching: '재개 접수·실행 확인 필요',
-  requested: '재개 실행기 요청됨', resumed: '기존 처리기 재개 확인', 'waiting-answers': '다른 답변 대기', manual: 'CLI 재개 필요', failed: '실패',
-  sending: '전송 중', unknown: '수신 여부 미확인', reopened: '다시 열림', 'waiting-host': '원래 세션 소비 대기', queued: '재개 대기', started: '원래 세션 재개됨', blocked: '재개 후 추가 조치 필요', completed: '요청 완료', cancelled: '취소' };
 let data, post, refresh, actions = {}, opened, pending = false, lastSubmission;
 let listPage = 1;
 const pageSize = 25;

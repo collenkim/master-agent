@@ -4,6 +4,7 @@ import { readFileSync, lstatSync, realpathSync } from 'node:fs';
 import { resolve, relative, isAbsolute, sep } from 'node:path';
 import { createHash } from 'node:crypto';
 import { hash, requireThat, string } from '../domain/contracts.mjs';
+import { pathKey } from '../domain/paths.mjs';
 
 export function safeRelative(path) {
   string(path, 'path');
@@ -11,12 +12,11 @@ export function safeRelative(path) {
   return path;
 }
 const git = (root, args) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', shell: false, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, timeout: 30000, maxBuffer: 16 * 1024 * 1024, env: childEnv({ GIT_OPTIONAL_LOCKS: '0' }) });
-const normalize = path => process.platform === 'win32' ? path.toLowerCase() : path;
 
 /** Git이 추적하거나 무시하지 않는 파일 전체를 결합한다. 파일 본문은 저장하지 않는다. */
 export function snapshotTree(path) {
   const root = realpathSync(path);
-  requireThat(normalize(realpathSync(git(root, ['rev-parse', '--show-toplevel']).trim())) === normalize(root), 'invalid-repository', '등록 경로가 Git 저장소 루트여야 합니다.');
+  requireThat(pathKey(realpathSync(git(root, ['rev-parse', '--show-toplevel']).trim())) === pathKey(root), 'invalid-repository', '등록 경로가 Git 저장소 루트여야 합니다.');
   let head;
   try { head = git(root, ['rev-parse', '--verify', 'HEAD']).trim(); }
   catch { requireThat(false, 'repository-no-commit', 'Git 저장소에 커밋이 없습니다. code-agent setup baseline 또는 직접 첫 커밋을 만든 뒤 다시 확인하세요.'); }

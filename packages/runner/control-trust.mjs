@@ -1,9 +1,8 @@
 import { spawn } from 'node:child_process';
 import { homedir } from 'node:os';
-import { extname } from 'node:path';
 import { DASHBOARD_CONTROLLER, validController } from '../code-agent-adapter/pairing.mjs';
 import { DomainError, requireThat } from '../domain/contracts.mjs';
-import { childEnv, killTree } from './process.mjs';
+import { childEnv, killTree, spawnArgs } from './process.mjs';
 
 const SHOWN_HASH = /^sha256:[0-9a-f]{64}$/;
 const REFUSALS = { 'stale-state': 'stale-state', conflict: 'control-trust-exists', 'policy-forbids': 'control-trust-refused' };
@@ -17,8 +16,8 @@ function unsupported(controller) {
 function runTrust(cliPath, controller, args, timeoutMs) {
   return new Promise((resolve, reject) => {
     const env = childEnv();
-    const js = ['.js', '.mjs', '.cjs'].includes(extname(cliPath).toLowerCase());
-    const child = spawn(js ? process.execPath : cliPath, [...(js ? [cliPath] : []), 'master', 'trust', '--controller', controller, ...args],
+    const { executable, prefix } = spawnArgs(cliPath);
+    const child = spawn(executable, [...prefix, 'master', 'trust', '--controller', controller, ...args],
       { cwd: homedir(), shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32', env });
     let stdout = '', stderr = '', done = false;
     const fail = error => { if (!done) { done = true; reject(error); } };

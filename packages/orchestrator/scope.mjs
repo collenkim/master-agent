@@ -1,4 +1,4 @@
-export function inputProjects(mission, taskId) {
+function inputProjects(mission, taskId) {
   const tasks = mission.plans.at(-1)?.proposal.tasks ?? [], visited = new Set(), projects = new Set();
   const visit = id => { if (visited.has(id)) return; visited.add(id); const t = tasks.find(t => t.id === id); if (!t) return; projects.add(t.projectId); t.dependsOn.forEach(visit); };
   visit(taskId);
