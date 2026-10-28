@@ -1,21 +1,8 @@
 # master-agent
 
-여러 프로젝트의 code-agent를 연결해 목표를 분석하고, 작업을 배정·검증·인계하는 CLI 오케스트레이터입니다. `master-agent` 명령으로 실행하고 `master-agent dashboard`로 등록 프로젝트 전체를 감시합니다. LangGraph JS가 실행 흐름을 제어하고 SQLite에 판단·증거·체크포인트를 저장합니다.
-
-현재 대시보드에서 프로젝트 등록·삭제·서비스 그룹 관리·TASK 번호를 포함한 그룹/단일 요청·code-agent 일괄 업데이트, **공통 질문·승인 요청함과 단계별 타임라인**을 제공합니다. 실제 Claude로 두 프로젝트의 병렬 개발·계약 인계·통합 완료를 검증했으며, 최신 자동 회귀와 브라우저 시험의 결과·범위는 [검증 기록](docs/verification.md)에 정리했습니다.
-
-종료한 목표의 체크포인트 정리와 `mission events prune`의 30일 보존 기준은 [기록 보존과 정리](docs/langgraph.md#기록-보존과-정리)를 따른다.
+여러 프로젝트의 code-agent를 연결해 목표를 분석하고 작업을 배정·검증·인계하는 CLI 오케스트레이터다. LangGraph JS가 실행 흐름을 제어하고 SQLite에 판단·증거·체크포인트를 저장한다. 대시보드는 프로젝트·서비스 그룹·요청·공통 질문과 승인·단계별 이력·일괄 업데이트를 제공한다. 실제 모델과 자동 회귀의 검증 결과는 [검증 기록](docs/verification.md)을 따른다.
 
 ## 실행 프로세스
-
-| 단계 | master-agent | code-agent |
-| --- | --- | --- |
-| 1. 프로젝트 준비 | 프로젝트·도메인·정책 근거 등록, 제어자 연결 | 설정·검증 명령·계약 문서 출력 위치 준비, 사용자가 연동과 위임 권한 부여 |
-| 2. 목표·계획 | 목표·완료 조건·허용 범위를 받아 AI 계획 생성 및 근거·의존성 검사 | 기존 작업·상태·소유권 제공 |
-| 3. 검증 계약 | 허용 파일·독립 검사·산출물·반영 조건 및 함수·입력·오류 계약(`exports`) 등록 또는 템플릿 연결 | 프로젝트 자체 검사 설정 유지 |
-| 4. 개발 | 판단·잠금 저장 → 독립 프로젝트 접수 → 실행별 결과 조회·같은 세션 이어 실행 | 요구 확정 → 분석 → 영향 조사 → 설계 → 계획·검토 → 구현 → 테스트 → 리뷰 → 깨끗한 작업 트리 통합 검증 |
-| 5. 판단·반영 | 권한 범위의 routine 승인·답변, 반영 전 독립 검사, 반영 커밋·영수증과 반영 후 검사 대조 | 권한·동의 내용·상태를 검증하고 승인 적용 및 로컬 반영 |
-| 6. 인계·통합 완료 | 소스·계약 문서·검사·커밋 대조 → 잠금 해제·`inputContracts` 전달 → 통합 조건 대조 후 `succeeded` | 후속 작업의 첫 담당 배정 전에 `planning contracts`로 근거 등록 → 담당 입력·입력 해시에 연결 |
 
 ```mermaid
 flowchart TD
@@ -34,139 +21,94 @@ flowchart TD
     K --> C
 ```
 
-- **판단:** 분류·권한·사람 이관·기록은 [위임 판단](docs/code-agent-control.md#위임-판단)을 따른다.
-- **완료:** 모델의 완료 메시지나 호스트 종료만으로 성공 처리하지 않습니다. 파일 범위·검사 결과·현재 트리·반영 계약을 대조합니다. 로컬 완료가 원격 push·배포 완료를 뜻하지는 않습니다.
-- **실패·중단:** 확인된 실패는 범위 내 복구·재계획으로 연결합니다. 실행 여부가 불명확하면 `unknown`으로 보존하고 중복 제출하지 않습니다. 재시작 시 같은 실행에 재부착합니다.
-- **실행 순서:** `drive --control`은 독립 프로젝트를 먼저 접수하고 실행 결과를 차례로 조회합니다. 외부 개발 실행은 겹칠 수 있고, 도메인 기록·판단·검사는 순차 처리합니다. 동일 프로젝트 잠금과 선행 작업 인계 조건은 유지합니다. 개별 `dispatch/continue/reattach` 명령은 관리 실행의 종료를 기다린다.
-- **진행 표시:** 저장된 `state`는 기존 제어 규칙을 유지합니다. `mission progress` 또는 `mission show`의 `progress`에서 실행 중, 승인 처리 대기·처리 중, 사람 답 필요, 실제 장애를 구분합니다.
-- **계약 등록:** `exports[].documentPath`가 있으면 커밋된 문서의 원문·해시를 code-agent가 다시 검증해 세부 담당에게 전달합니다. 해당 문서는 작업 범위와 code-agent의 단계 출력 위치에 미리 포함해야 합니다. 계약 등록 명령을 지원하는 code-agent 빌드가 필요합니다.
+master는 목표·범위·의존성·독립 검증과 전체 완료를 관리한다. code-agent는 프로젝트 안의 개발 절차·승인 조건·호스트 실행을 관리한다. 독립 프로젝트의 개발은 병행할 수 있으며 같은 프로젝트의 잠금과 선행 작업 인계 조건을 유지한다.
+
+완료는 모델의 문장이나 호스트 종료만으로 판정하지 않고 파일·검사·현재 트리·반영 계약을 대조한다. 로컬 완료가 원격 push·배포 완료를 뜻하지 않는다. 판단·사람 이관은 [위임 판단](docs/code-agent-control.md#위임-판단), 검증·문서 계약 인계는 [실제 검증](docs/live-verification.md), 실패·중단은 [복구](docs/recovery.md)와 [중단 처리](docs/interruption.md)를 따른다.
 
 ## 설치와 빠른 확인
 
-Node.js **24.19 이상 24.x**와 Git이 필요합니다. 실제 개발에는 빌드된 code-agent와 요청에서 고른 host의 CLI(Claude, Codex 또는 둘 다)가 필요합니다. 실제 모델 전체 흐름 검증은 Claude로 수행했습니다.
-
-소스 저장소에서 의존성을 준비한 뒤 로컬 패키지를 전역 명령으로 등록합니다. 현재 공개 npm 배포는 제공하지 않습니다.
+Node.js **24.19 이상 24.x**와 Git이 필요하다. 실제 개발에는 빌드된 code-agent와 선택한 host의 CLI(Claude·Codex 또는 둘 다)가 필요하다. 소스 저장소에서 의존성을 설치한 뒤 로컬 패키지를 전역 명령으로 등록한다.
 
 ```powershell
-cd C:\IdeaProjects\master-agent
+cd C:\workspace\master-agent
 npm.cmd ci --ignore-scripts
-npm.cmd install -g --ignore-scripts "C:\IdeaProjects\master-agent"
+npm.cmd install -g --ignore-scripts .
 master-agent help
 ```
 
-`--ignore-scripts`는 의존성의 설치 스크립트를 실행하지 않기 위한 옵션이다. 공식 체크포인터의 전이 의존성인 `better-sqlite3`는 원래 네이티브 설치를 시도하지만, 이 저장소는 `node:sqlite` 어댑터를 사용한다. `overrides`로 해당 의존성을 설치 스크립트가 없는 로컬 스텁으로 대체하므로 플래그 없는 `npm ci`도 네이티브 빌드 없이 설치된다. 스텁은 체크포인터 import만 지원하며 직접 DB를 생성하려 하면 오류를 낸다. 일반 설치와 CI에는 설치 스크립트를 생략하는 기존 명령을 유지한다.
+`--ignore-scripts`는 의존성의 설치 스크립트를 생략한다. 공식 체크포인터의 전이 의존성인 `better-sqlite3`는 원래 네이티브 설치를 시도하지만 master-agent는 `node:sqlite` 어댑터를 사용한다. `overrides`로 해당 의존성을 설치 스크립트가 없는 로컬 스텁에 연결하므로 플래그 없는 `npm ci`도 네이티브 빌드 없이 설치된다. 스텁은 체크포인터 import만 지원하며 직접 DB 생성은 거부한다. 일반 설치와 CI에는 기존 `--ignore-scripts` 명령을 유지한다.
 
-개발 중에는 전역 설치 대신 저장소에서 `npm.cmd link --ignore-scripts`로 연결할 수 있습니다. Windows 실행 정책이 `.ps1` 실행을 막으면 `master-agent.cmd`를 사용합니다. 명령을 찾지 못하면 npm 전역 설치 경로(`npm.cmd prefix -g`)가 PATH에 있는지 확인합니다.
+개발 중에는 전역 설치 대신 `npm.cmd link --ignore-scripts`를 사용할 수 있다. Windows 실행 정책이 `.ps1`을 막으면 `master-agent.cmd`를 사용한다. 명령을 찾지 못하면 `npm.cmd prefix -g`가 PATH에 있는지 확인한다. 제거는 `npm.cmd uninstall -g master-agent`로 한다. 대상 프로젝트의 code-agent 설치·초기화는 별도로 수행한다.
 
-**데이터 위치는 명령을 실행한 디렉터리 기준** `.master-agent/master.db`입니다. 여러 터미널에서 같은 현황을 보려면 같은 작업 디렉터리에서 실행하거나 동일한 절대 `--db` 경로를 지정합니다. 설치 폴더를 작업 디렉터리로 사용할 필요는 없습니다.
+기본 DB는 **명령을 실행한 디렉터리의 `.master-agent/master.db`**다. 여러 터미널과 대시보드는 같은 작업 디렉터리 또는 동일한 절대 `--db` 경로를 사용한다. 설치 폴더에서 실행할 필요는 없다.
 
 ```powershell
-# 별도 작업 디렉터리에서 설치 확인용 모의 실행
 master-agent demo --db .master-agent/demo.db
 master-agent mission list --db .master-agent/demo.db
 ```
 
-데모는 세 프로젝트의 고정 계획을 모의 실행하고 `simulation-complete`로 끝납니다. 실제 프로젝트 개발 완료와 구분합니다. 소스 검증은 저장소에서 `npm.cmd test`, `npm.cmd run check`로 수행합니다. 소스 변경은 연결된 명령에 반영됩니다. master-agent 전용 `init`·`doctor`·`update`와 단일 실행 파일 배포는 아직 없으며, 제거는 `npm.cmd uninstall -g master-agent`로 합니다. 대상 프로젝트의 code-agent 설치·초기화는 별도로 수행합니다.
+데모는 세 프로젝트의 고정 계획을 모의 실행해 `simulation-complete`로 끝난다. 실제 프로젝트 개발 완료와 구분한다. 설치·진단·배포 기능의 제공 범위는 [구현 현황](docs/implementation.md)을 따른다.
 
 ## 개발 검사와 선택 실행
 
-기본 검사는 `npm.cmd run check`, `npm.cmd run lint`, `npm.cmd test` 순서로 실행한다. lint는 미사용 변수·import와 미정의 이름을 검사한다. CI는 Windows·Ubuntu와 Node 24.x에서 `npm ci --ignore-scripts` 후 같은 검사를 실행한다. 외부 code-agent 빌드가 필요한 계약 시험은 해당 빌드가 없는 환경에서 건너뛴다.
+기본 검사는 `npm.cmd run check`, `npm.cmd run lint`, `npm.cmd test`로 실행한다. check는 구문·문서 링크와 앵커를, lint는 미사용 변수·import와 미정의 이름을 검사한다. 테스트 파일은 프로세스·파일 경합을 줄이기 위해 최대 4개씩 실행한다. CI는 Windows·Ubuntu의 Node 24.x에서 `npm ci --ignore-scripts` 후 같은 검사를 실행한다. 외부 code-agent 빌드가 필요한 계약 시험은 빌드가 없는 환경에서 건너뛴다.
 
-다음 smoke는 CI에서 실행하지 않으며 각 묶음을 순차 실행한다. `-- --list`를 붙이면 실행할 스크립트만 조회한다.
+다음 smoke는 CI에서 실행하지 않으며 묶음 안의 스크립트를 순차 실행한다. `-- --list`는 실행 목록만 조회한다.
 
 | 명령 | 실행 전제와 범위 |
 | --- | --- |
-| `npm.cmd run smoke:browser` | Chrome이 필요하며 `CHROME_PATH`로 실행 파일을 지정한다. Windows 기본 위치는 `C:/Program Files/Google/Chrome/Application/chrome.exe`다. `smoke-dashboard-*.mjs`를 순차 실행한다. 업데이트·PC 신뢰 시험에는 빌드된 code-agent와 Git·npm도 필요하다. |
-| `npm.cmd run smoke:code-agent` | 빌드된 code-agent CLI를 자동 탐색하거나 `CODE_AGENT_CLI`로 지정한다. 상태 계약·실제 요청함 전송·지원 계약을 검사한다. 요청함 시험에는 Chrome과 code-agent 테스트 대역이 포함된 공개 빌드가 필요하다. |
-| `npm.cmd run smoke:model` | `CLAUDE_CLI`와 빌드된 code-agent가 필요하다. 전체 흐름 준비→실행→보고, 답변 문맥, 계획 분석을 차례로 검사하며 실제 모델 사용료가 발생한다. 전체 흐름 보고가 실패하면 다음 시험을 실행하지 않는다. |
+| `npm.cmd run smoke:browser` | Chrome이 필요하며 `CHROME_PATH`로 지정한다. Windows 기본 위치는 `C:/Program Files/Google/Chrome/Application/chrome.exe`다. `smoke-dashboard-*.mjs`를 실행하며 업데이트·PC 신뢰 시험에는 code-agent 빌드와 Git·npm도 필요하다. |
+| `npm.cmd run smoke:code-agent` | code-agent CLI를 자동 탐색하거나 `CODE_AGENT_CLI`로 지정한다. 상태·요청함 전송·지원 계약을 검사한다. 요청함 시험에는 Chrome과 테스트 대역을 포함한 code-agent 공개 빌드가 필요하다. |
+| `npm.cmd run smoke:model` | `CLAUDE_CLI`와 code-agent 빌드가 필요하다. 전체 흐름 준비→실행→보고, 답변 문맥, 계획 분석을 검사하며 실제 모델 사용료가 발생한다. 전체 흐름 보고가 실패하면 다음 시험을 실행하지 않는다. |
 
-라이선스는 아직 정하지 않아 패키지를 `UNLICENSED`로 표시한다. 저장소 URL도 확정 후 등록한다.
+라이선스는 미정이므로 `UNLICENSED`로 표시하고 저장소 URL은 확정 후 등록한다.
 
 ## 전체 현황 대시보드
 
-대시보드 실행·재시작·상태 확인·종료와 옵션은 [실행과 연결](docs/ui.md#실행과-연결)을 따른다.
+실행·재시작·상태 확인·종료와 옵션은 [실행과 연결](docs/ui.md#실행과-연결)을 따른다. 같은 DB의 등록 프로젝트 전체를 관측하며 master 목표가 없는 독립 code-agent 작업도 포함한다. 화면에서 프로젝트·그룹·요청·작업 단계·질문·승인·이력을 확인한다.
 
-- 같은 DB에 등록된 **모든 프로젝트**를 조회합니다. master 목표에 연결되지 않은 독립 code-agent 작업도 포함합니다. 등록 창에서는 알려진 작업 위치의 code-agent 설치 프로젝트를 찾아 선택할 수 있습니다.
-- 등록 창을 열 때 설치 프로젝트 목록을 조회하고 이후에는 `목록 새로고침`으로 갱신한다. 입력 중인 내용은 유지하며 후보 선택·등록 후 프로젝트 상태 관제도 자동으로 포함한다.
-- 프로젝트별 상위/세부 단계·담당 작업, 브랜치·실행 시도·계획 실행 내역·검증 결과·리뷰 회수를 표시합니다. 승인·질문 대기와 목표별 진행 상태도 함께 확인할 수 있습니다.
-- **단계별 타임라인**에서 프로젝트·그룹·TASK/작업/실행 ID로 이력을 검색하고 이전 기록을 조회합니다. 독립 실행 작업의 상태 변화도 누적 저장하며, 제어 연결이 있으면 code-agent 이벤트를 별도 커서로 이어 읽습니다. 재시작·반복 조회로 같은 기록을 중복 생성하지 않습니다. 질문·승인의 발행 상태 변화는 공통 요청함과 연결합니다.
-- 설치된 code-agent의 `status --json`을 자동 조회합니다. 설치를 찾지 못하거나 `--saved`로 실행하면 저장된 관측과 master 기록을 표시합니다. 조회 실패·오래된 관측·이전 작업을 구분하고 프로세스 생존을 추정하지 않습니다.
-- 프로젝트 수동 등록, 서비스 그룹 생성·구성원 편집, 그룹·단일 프로젝트 요청과 기존 요청 이어 실행을 화면에서 제공합니다. 질문·승인은 [공통 요청함](#공통-질문승인-요청함)에서 처리합니다. 웹 실행 조작의 후속 범위는 [남은 작업](docs/implementation.md#남은-작업)을 따른다. code-agent 제어 토큰과 원본 모델 입력은 화면 API에 보내지 않습니다.
-- 프로젝트 등록 해제·그룹 삭제 조건은 [프로젝트와 그룹 삭제](docs/ui.md#프로젝트와-그룹-삭제)를 따른다.
-- 설치 확인·프로젝트 적용·버전 대조와 중단 점검은 [일괄 업데이트](docs/ui.md#code-agent-일괄-업데이트)를 따른다.
-
-타임라인은 수집한 관측과 이벤트의 이력입니다. 상태 조회 사이에 지나간 단계나 code-agent에서 이미 삭제된 이벤트를 복원하지 않으며 누락 구간을 표시합니다. 단계별 산출물 전문·실시간 개발 로그 조회는 후속 범위입니다.
+- 등록·편집·삭제는 [프로젝트와 서비스 그룹](docs/ui.md#프로젝트와-서비스-그룹)을 따른다.
+- 관측과 타임라인의 표시·수집 범위는 [요청과 진행 관제](docs/ui.md#요청과-진행-관제)를 따른다.
+- 설치·프로젝트별 적용 확인과 중단 점검은 [code-agent 일괄 업데이트](docs/ui.md#code-agent-일괄-업데이트)를 따른다.
 
 ## 서비스 그룹과 유지보수 요청
 
-프로젝트 등록·그룹 생성·구성 편집·삭제는 [프로젝트와 서비스 그룹](docs/ui.md#프로젝트와-서비스-그룹)을 따른다.
-
-폴더 경로는 대시보드가 실행 중인 PC를 기준으로 합니다. **그룹에 요청** 또는 **이 프로젝트에 요청**에서 선택 항목인 **작업 TASK 번호**, 요청 내용·완료 조건을 입력합니다. 실행기는 기본 근거를 수집하고 설치·제어 연결을 점검한 뒤 계획·개발을 시작합니다. 준비가 부족하면 공통 요청함에 필요한 조치와 **준비 다시 확인 · 기존 요청 재개**를 표시합니다. 빈 그룹은 프로젝트를 추가한 뒤 요청할 수 있습니다.
-
-CLI에서도 같은 작업을 제공합니다. 아래 예시는 기본 DB를 사용합니다. 앞의 대시보드 예시처럼 별도 DB를 사용했다면 **각 명령에 같은 `--db C:\workspace\control\master.db`를 추가**해야 같은 프로젝트·그룹을 조회하고 변경할 수 있습니다. `order-api`와 `payment-api`는 미리 등록한 프로젝트 ID입니다.
+프로젝트를 등록한 뒤 그룹 또는 단일 프로젝트에 요청한다. 아래 `order-api`는 등록된 프로젝트 ID이며 별도 DB를 쓰면 모든 명령에 같은 `--db <절대경로>`를 붙인다.
 
 ```powershell
 master-agent group create commerce "커머스 서비스" --description "주문·결제 유지보수"
 master-agent group add commerce order-api --revision 1
-master-agent group add commerce payment-api --revision 2
-master-agent group remove commerce payment-api --revision 3
-master-agent group show commerce
-
 master-agent group request commerce "주문 취소 오류 수정" --task-number UZRF-392 --criterion "취소 회귀 테스트 통과"
-master-agent project request order-api "주문 조회 오류 수정" --task-number UZRF-393 --criterion "조회 테스트 통과"
-master-agent group request commerce "결제 재시도 정책 변경" --host both --main codex --criterion "재시도 회귀 테스트 통과"
+master-agent project request order-api "조회 오류 수정" --host both --main codex --criterion "조회 회귀 통과"
 master-agent request list
 master-agent request show <요청ID>
 master-agent request run <요청ID>
 master-agent request continue <요청ID> --revision <요청버전>
 ```
 
-`request run <요청ID> [--cli <경로>]`은 `queued` 상태 또는 실행 임대가 만료된 기존 요청을 현재 터미널에서 실행한다. 활성 실행기와 중복 실행하지 않으며 새 목표를 만들지 않는다. 설정·응답 보완 뒤 `waiting`·`failed` 요청을 재개할 때는 `request continue <요청ID> --revision <요청버전>`을 사용한다.
+요청 ID는 목표 ID다. 별도 실행기가 준비 점검·계획·개발·검증·인계를 진행하므로 대시보드를 닫아도 계속된다. `request run`은 접수 대기 또는 만료된 실행 임대의 기존 요청을 현재 터미널에서 실행한다. 설정·응답 보완 뒤에는 `request continue`로 같은 목표를 이어간다. 세부 조건과 입력 JSON은 [요청 사용법](docs/usage.md#서비스-그룹과-단일-프로젝트-요청)을 따른다.
 
-그룹 요청은 **접수 당시 소속 프로젝트·그룹 버전·서비스 범위**를 고정합니다. 이후 그룹에서 제외한 프로젝트도 이미 접수한 요청에서는 원래 범위를 유지합니다. 같은 프로젝트가 여러 요청에 포함되면 기존 프로젝트 잠금으로 중복 개발을 막습니다.
-
-TASK 번호의 형식·전달·중복·취소 후 재사용 규칙은 [사용법](docs/usage.md#task-번호)을 따른다.
-
-요청 ID는 목표 ID와 같다. 요청은 별도 백그라운드 실행기에서 `AI 계획 → 검증 계약 연결 → code-agent 개발 → 독립 검증·인계`를 진행하며 대시보드를 닫아도 계속된다. 재전송 중복 방지는 `--request-key`로 지정한다. host 선택은 [판단 규칙](docs/ai-planning.md#요청-host와-교차-검증)과 [개발 실행 규칙](docs/code-agent-control.md#역할과-적용-조건)을 따른다.
-
-요청 경로는 README·빌드 설정과 `src`·`tests`·`test`의 관련 구현 파일을 제한된 범위에서 자동 수집합니다. 수집할 파일이 없으면 실제 최상위 폴더 목록을 근거로 사용하며 기존 구현·정책이 있다고 가정하지 않습니다. 기존에 지정한 정책·코드 근거는 유지하며 읽기 실패를 빈 근거로 바꾸지 않습니다. 수집 규칙은 [AI 계획](docs/ai-planning.md)을 따릅니다.
-
-code-agent 설치와 위임 권한 설정은 별도로 필요하며 [제어 연결](#code-agent-제어-연결)을 따른다. 실행 준비 조건은 [관리 실행 규칙](docs/code-agent-control.md#역할과-적용-조건)을 따른다. 준비를 보완한 뒤 같은 TASK로 재점검할 수 있다. 독립 검증 계약은 화면의 검증 계약 설정 또는 `--input <JSON>`의 `templates`로 전달하며 [사용법](docs/usage.md)을 따른다.
+TASK 번호는 [사용법](docs/usage.md#task-번호), host 선택은 [판단 규칙](docs/ai-planning.md#요청-host와-교차-검증)과 [개발 실행 규칙](docs/code-agent-control.md#역할과-적용-조건), 근거 수집은 [AI 계획](docs/ai-planning.md#근거-수집)을 따른다. 독립 검증은 [검증 계약·템플릿](docs/live-verification.md)을 준비한다.
 
 ## 실제 실행과 조회
 
-먼저 [사용법](docs/usage.md)에 따라 프로젝트를 등록하고 근거를 수집한다. 연결은 [제어 연결(페어링)](docs/code-agent-control.md#제어-연결페어링)을 따른다. `mode: live` 목표를 접수하고 계획 및 검증 계약을 준비합니다. 명령·JSON 형식은 [AI 계획](docs/ai-planning.md), [검증 계약](docs/live-verification.md), [통신 계약](docs/code-agent-control.md)을 따릅니다.
+직접 만든 live 목표는 [사용법](docs/usage.md)에 따라 프로젝트·근거·연결·계획·검증 계약을 준비한 뒤 실행한다.
 
 ```powershell
-# 연결·목표·검증 계약을 준비한 뒤 실제 실행
 master-agent mission drive <목표ID> --control --provider claude
-
-# 다른 터미널에서 진행·판단·체크포인트 조회
 master-agent mission progress <목표ID>
 master-agent mission show <목표ID>
 master-agent mission escalations <목표ID>
 master-agent mission graph <목표ID>
 ```
 
-`mission pause`는 새 배정을 멈춥니다. 이미 실행 중인 호스트의 정지는 `mission stop <목표ID> <시도ID> --mode pause`를 사용합니다. 재개·정지·사람 답 전달 조건은 [통신 계약](docs/code-agent-control.md)에 있습니다.
+`progress`는 마지막 저장 관측에서 실행·승인 처리·사람 응답·장애를 구분한다. 작업별 상태와 `counts`를 함께 확인한다. 재부착·정지·사람 답 전달은 [통신 계약](docs/code-agent-control.md)을 따른다.
 
-잘못 접수한 목표는 `mission cancel <목표ID> --revision <버전> [--reason <사유>]`로 취소한다. 실행 중 시도는 먼저 종료하며, 취소한 목표의 TASK 번호 재사용과 잠금 정리는 [사용법](docs/usage.md)을 따른다.
-
-재계획 인계 이후 파일·HEAD가 바뀌면 `mission replan-refresh <목표ID> --revision <버전>`으로 변경 내역을 보존하고 재분석한다. [재동기화 절차](docs/replanning.md)를 따른다.
-
-`npm test`는 프로세스·파일 검증의 경합을 줄이기 위해 테스트 파일을 최대 4개씩 실행한다. 모든 테스트 항목과 각 검증 조건은 그대로 실행한다.
-
-다른 호스트나 중단된 실행기가 남긴 임대는 기본 10분 TTL 이후 회수한다. 운영자용 `mission unlock`·`request reset`의 확인 조건은 [실행 임대 복구](docs/recovery.md)를 따른다.
-
-`progress.tasks`에는 `status`, `phase`, `reason`, `runId`, `lastProgressAt`, `nextAction`이 있습니다. `approval-pending`은 위임 판단 전, `approval-processing`은 판단·전송 중, `human-input`은 사람 응답 필요, `blocked`는 실패·미확인 등 점검 필요 상태입니다. 여러 작업이 병행되므로 목표의 요약 상태와 함께 `counts`와 작업별 상태를 확인하세요. 이 조회는 마지막 저장 관측을 표시하며 원격 조회를 새로 수행하지 않습니다.
-
-두 격리 프로젝트의 실제 전체 흐름은 `scripts/smoke-full-flow.mjs`, 앞선 답의 판단 회귀는 `scripts/smoke-answer-context.mjs`로 재현합니다. 실제 모델 호출과 임시 Git 커밋을 수행하므로 일반 `npm test`에 포함하지 않습니다. 로컬 CLI 경로와 실행 방법은 [검증 기록](docs/verification.md)에 정리했습니다.
+잘못 접수한 목표는 `mission cancel <목표ID> --revision <버전> [--reason <사유>]`로 취소한다. 실행 중 시도는 먼저 종료하며 상세 조건은 [사용법](docs/usage.md#일시-정지와-재개)을 따른다. 재계획 인계 뒤 트리 변경은 `mission replan-refresh`와 [재동기화 절차](docs/replanning.md)를 사용한다. 임대 회수·운영자 리셋은 [복구](docs/recovery.md), 체크포인트·이벤트 정리는 [기록 보존](docs/langgraph.md#기록-보존과-정리)을 따른다.
 
 ## code-agent 제어 연결
 
-PC 신뢰·프로젝트 페어링·기존 터미널 연결은 [제어 연결(페어링)](docs/code-agent-control.md#제어-연결페어링)을 따른다.
-
-연결 상태 배지와 표시 조건은 [프로젝트 연결 상태](docs/ui.md#프로젝트-연결-상태)를 따른다.
+PC 신뢰·프로젝트 페어링·기존 터미널 연결은 [제어 연결(페어링)](docs/code-agent-control.md#제어-연결페어링), 연결 상태 배지는 [프로젝트 연결 상태](docs/ui.md#프로젝트-연결-상태)를 따른다.
 
 ## 공통 질문·승인 요청함
 
@@ -174,16 +116,19 @@ PC 신뢰·프로젝트 페어링·기존 터미널 연결은 [제어 연결(페
 
 ## 현재 경계와 문서
 
-웹 실행 조작·원격 러너·운영 예산의 후속 범위는 [남은 작업](docs/implementation.md#남은-작업)을 따른다. Codex 관리 실행은 확정된 thread ID로 같은 세션을 재개하며, 독립 세션의 재개는 code-agent의 기능 협상과 요청별 계약을 따릅니다. 후속 우선순위는 [구현 현황](docs/implementation.md#남은-작업), 실제 모델 시험의 범위는 [검증 기록](docs/verification.md#미검증-범위)을 따릅니다.
+후속 기능과 미검증 범위의 정본은 [남은 작업](docs/implementation.md#남은-작업), 수행한 시험의 결과와 재현 방법은 [검증 기록](docs/verification.md)을 따른다.
 
 | 문서 | 내용 |
 | --- | --- |
 | [구현 현황과 다음 작업](docs/implementation.md) | 현재 기능·보완 우선순위 |
-| [검증 기록](docs/verification.md) | 최신 결과·재현 방법·증거·미검증 범위 |
-| [CLI 사용법](docs/usage.md) | 등록·목표·실행·조회 명령 |
-| [LangGraph 구조](docs/langgraph.md) | 그래프·SQLite·재시작 규칙 |
-| [code-agent 통신 계약](docs/code-agent-control.md) | 위임 판단·이벤트·재부착·정지·제어권 인계 |
-| [복구](docs/recovery.md) / [재계획](docs/replanning.md) / [반영 대조](docs/delivery-reconciliation.md) / [중단 처리](docs/interruption.md) | 실패·중단별 처리 경계 |
-| [로컬 대시보드](docs/ui.md) | 연결 오류 해결·등록·그룹·요청·관측·HTTP 계약·후속 범위 |
-| [공통 요청함 구현·인계](docs/dashboard-interactions.md) | 실제 API·사람 채널·응답 보존·단계별 지원·제한·재현 방법 |
+| [검증 기록](docs/verification.md) | 최신 결과·재현 방법·증거 |
+| [CLI 사용법](docs/usage.md) | 등록·목표·실행·조회 명령·환경 변수 |
+| [LangGraph 구조](docs/langgraph.md) | 그래프·SQLite·재시작·기록 보존 |
+| [AI 계획](docs/ai-planning.md) | 근거 수집·계획·교차 검증 |
+| [실제 검증](docs/live-verification.md) | 검증 계약·템플릿·인계 |
+| [자동 진행](docs/autonomous-progress.md) | 작업별 보류·승인 후 재개 |
+| [code-agent 통신 계약](docs/code-agent-control.md) | 연결·위임·이벤트·재부착·정지·제어권 인계 |
+| [복구](docs/recovery.md) / [재계획](docs/replanning.md) / [반영 대조](docs/delivery-reconciliation.md) / [중단 처리](docs/interruption.md) | 실패·중단별 처리 |
+| [로컬 대시보드](docs/ui.md) | 실행·등록·그룹·요청·관측·HTTP 계약 |
+| [공통 요청함](docs/dashboard-interactions.md) | 지원·사람 채널·응답 보존·재현 |
 | [요구사항](docs/requirements.md) / [설계](docs/architecture.md) / [오케스트레이션](docs/orchestration.md) | 제품 목표와 확장 설계 |
