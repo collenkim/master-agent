@@ -1,6 +1,6 @@
 # master-agent
 
-여러 프로젝트의 code-agent를 연결해 목표를 분석하고 작업을 배정·검증·인계하는 CLI 오케스트레이터다. LangGraph JS가 실행 흐름을 제어하고 SQLite에 판단·증거·체크포인트를 저장한다. 대시보드는 프로젝트·서비스 그룹·요청·공통 질문과 승인·단계별 이력·일괄 업데이트를 제공한다. 실제 모델과 자동 회귀의 검증 결과는 [검증 기록](docs/verification.md)을 따른다.
+여러 프로젝트의 code-agent를 연결해 목표를 분석하고 작업을 배정·검증·인계하는 CLI 오케스트레이터다. LangGraph JS가 실행 흐름을 제어하고 SQLite에 판단·증거·체크포인트를 저장한다. 대시보드는 프로젝트·서비스 그룹·요청·공통 질문과 승인·단계별 이력·일괄 업데이트를 제공한다. 검사 방법과 확인 범위는 [검증 기준](docs/verification.md)을 따른다.
 
 ## 실행 프로세스
 
@@ -118,12 +118,12 @@ PC 신뢰·프로젝트 페어링·기존 터미널 연결은 [제어 연결(페
 
 ## 현재 경계와 문서
 
-후속 기능과 미검증 범위의 정본은 [남은 작업](docs/implementation.md#남은-작업), 수행한 시험의 결과와 재현 방법은 [검증 기록](docs/verification.md)을 따른다.
+후속 기능과 미검증 범위의 정본은 [남은 작업](docs/implementation.md#남은-작업), 수행한 시험의 결과와 재현 방법은 [검증 기준](docs/verification.md)을 따른다.
 
 | 문서 | 내용 |
 | --- | --- |
 | [구현 현황과 다음 작업](docs/implementation.md) | 현재 기능·보완 우선순위 |
-| [검증 기록](docs/verification.md) | 최신 결과·재현 방법·증거 |
+| [검증 기준](docs/verification.md) | 현재 검사 결과·재현 방법 |
 | [CLI 사용법](docs/usage.md) | 등록·목표·실행·조회 명령·환경 변수 |
 | [LangGraph 구조](docs/langgraph.md) | 그래프·SQLite·재시작·기록 보존 |
 | [AI 계획](docs/ai-planning.md) | 근거 수집·계획·교차 검증 |
@@ -133,4 +133,5 @@ PC 신뢰·프로젝트 페어링·기존 터미널 연결은 [제어 연결(페
 | [복구](docs/recovery.md) / [재계획](docs/replanning.md) / [반영 대조](docs/delivery-reconciliation.md) / [중단 처리](docs/interruption.md) | 실패·중단별 처리 |
 | [로컬 대시보드](docs/ui.md) | 실행·등록·그룹·요청·관측·HTTP 계약 |
 | [공통 요청함](docs/dashboard-interactions.md) | 지원·사람 채널·응답 보존·재현 |
-| [요구사항](docs/requirements.md) / [설계](docs/architecture.md) / [오케스트레이션](docs/orchestration.md) | 설계 문서(현 구현과 다를 수 있음) |
+| [요구사항](docs/requirements.md) | 제품 목표·수용 기준(미구현 범위 포함) |
+| [시스템 구조](docs/architecture.md) / [오케스트레이션](docs/orchestration.md) | 현재 코드 구성·실행 계약 |

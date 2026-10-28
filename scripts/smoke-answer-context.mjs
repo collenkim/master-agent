@@ -52,7 +52,7 @@ const report = {
   schema: 'master-agent.answer-context-smoke', startedAt: new Date().toISOString(),
   kind: '실제 Claude 판단 + 실제 code-agent CLI 질문 적용; 전체 개발 사이클 아님',
   emulated: ['연동 enable/grant TTY', 'master의 대기 중 시도와 code-agent 작업 연결', '질문 문서', '앞선 사람 답(합성 relay, 실제 사용자 답 아님)'],
-  scenario: '2026-10-15 run6의 Q1 답 누락 결함을 재구성한 집중 회귀 시험(당시 전체 입력의 완전 재생은 아님)',
+  scenario: '앞선 사람 답의 반영·문맥 누락·정책 충돌을 구분하는 합성 질문 회귀 시험',
   provider: 'claude', requestedModel: 'cli-default', node: process.version,
   cliVersion: execFileSync(claudeCommand.executable, [...claudeCommand.prefix, '--version'], { encoding: 'utf8', windowsHide: true, shell: false, env: childEnv() }).trim(),
   masterCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8', windowsHide: true }).trim(),
@@ -80,7 +80,7 @@ for (const definition of definitions) {
     const tokenFile = join(caseRoot, 'controller.token');
     tty(() => masterEnable(project, { controller: 'answer-context', tokenOut: tokenFile }));
     const engine = new Engine(store);
-    engine.catalog.register({ id: 'price-core', name: '할인 질문 시험', path: project, domains: ['price'], capabilities: ['code-agent:claude'], constraints: [], currentPlans: [], references: ['synthetic-run6'] });
+    engine.catalog.register({ id: 'price-core', name: '할인 질문 시험', path: project, domains: ['price'], capabilities: ['code-agent:claude'], constraints: [], currentPlans: [], references: ['synthetic-answer-context'] });
     let mission = engine.create({ mode: 'live', goal: '할인 함수를 구현하고 검증한다. 사람이 답한 입력 정책을 존중하며 기존 검토·승인 절차를 따른다.', requestKey: definition.id,
       scope: { projectIds: ['price-core'], groupIds: [] }, criteria: [{ id: 'discount', description: '음수 amount 및 0~100 범위 밖 percent는 RangeError로 거부하고 할인 계산을 검증한다.' }] });
     const workId = `ANSWER-${definition.id}`, attemptId = randomUUID(), turnId = randomUUID();
