@@ -36,7 +36,7 @@ code-agent의 `consentReceipts.ts`에 정의된 커밋 내 기록 형식을 읽�
 호스트 호출마다 `invocationId`를 새로 부여한다. CLI가 정상 결과를 반환하면 원격 상태를 조회하기 전에 `host-return`을 영속 저장한다. 늦게 도착한 이전 호출의 결과는 새 호출에 적용하지 않는다.
 
 ```powershell
-master-agent mission reconcile <목표ID> <시도ID> --revision <현재버전> --expect-state <상태버전> --cli C:/IdeaProjects/code-agent/dist/agent/cli.js --control
+master-agent mission reconcile <목표ID> <시도ID> --revision <현재버전> --expect-state <상태버전> --control
 ```
 
 대상은 unknown 상태이고 배정 기준·검증 계약을 가진 시도다. 프로세스 중단으로 running만 남았다면 기존 `mission unknown`으로 먼저 미확인 상태를 기록한다. 이는 프로세스 종료를 증명하지 않는다.

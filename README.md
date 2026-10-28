@@ -131,4 +131,4 @@ PC 신뢰·프로젝트 페어링·기존 터미널 연결은 [제어 연결(페
 | [복구](docs/recovery.md) / [재계획](docs/replanning.md) / [반영 대조](docs/delivery-reconciliation.md) / [중단 처리](docs/interruption.md) | 실패·중단별 처리 |
 | [로컬 대시보드](docs/ui.md) | 실행·등록·그룹·요청·관측·HTTP 계약 |
 | [공통 요청함](docs/dashboard-interactions.md) | 지원·사람 채널·응답 보존·재현 |
-| [요구사항](docs/requirements.md) / [설계](docs/architecture.md) / [오케스트레이션](docs/orchestration.md) | 제품 목표와 확장 설계 |
+| [요구사항](docs/requirements.md) / [설계](docs/architecture.md) / [오케스트레이션](docs/orchestration.md) | 설계 문서(현 구현과 다를 수 있음) |

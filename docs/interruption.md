@@ -27,7 +27,7 @@ started·unknown 기록은 프로세스 종료 증거로 취급하지 않는다.
 
 ```powershell
 master-agent mission unknown <목표ID> <시도ID> --revision <현재버전>
-master-agent mission reconcile-verification <목표ID> <시도ID> --revision <갱신된버전> --expect-state <상태버전> --cli C:/IdeaProjects/code-agent/dist/agent/cli.js --control
+master-agent mission reconcile-verification <목표ID> <시도ID> --revision <갱신된버전> --expect-state <상태버전> --control
 ```
 
 프로세스 중단으로 verifying 상태가 남았다면 unknown으로 기록한다. 이미 unknown이면 첫 명령은 생략한다. unknown 표시는 종료 확인을 대신하지 않는다.

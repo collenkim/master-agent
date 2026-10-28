@@ -84,11 +84,11 @@ code-agent 답은 원래 producer가 소비한다. 살아 있는 세션의 consu
 ```powershell
 npm.cmd test
 npm.cmd run check
-node scripts/check-interaction-support.mjs C:/IdeaProjects/code-agent/dist/agent/cli.js
+node scripts/check-interaction-support.mjs
 node scripts/smoke-dashboard-interactions.mjs
 node scripts/smoke-dashboard-verification.mjs
-node scripts/smoke-interactions-live.mjs C:/IdeaProjects/code-agent/dist/agent/cli.js
-node scripts/smoke-interactions-live.mjs C:/IdeaProjects/code-agent/dist/agent/cli.js --browser --browser-only
+node scripts/smoke-interactions-live.mjs
+node scripts/smoke-interactions-live.mjs --browser --browser-only
 ```
 
 실제 API 시험은 code-agent의 빌드된 시험 fixture를 사용하며 테스트 키·토큰을 저장소 밖 임시 디렉터리에 둔다. 브라우저 시험은 Windows Chrome을 사용하고 `CHROME_PATH`로 진입점을 바꿀 수 있다. 관리 프로젝트·code-agent 소스는 수정하지 않는다. 결과 JSON·화면은 `.master-agent`의 무시된 로컬 증거이며, 필요한 최신 결과만 [검증 기록](verification.md)에 요약한다.

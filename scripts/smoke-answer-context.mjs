@@ -5,21 +5,27 @@ import { join, resolve } from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { parseArgs } from 'node:util';
+import { fileURLToPath } from 'node:url';
 import { Store } from '../packages/storage/store.mjs';
 import { Engine } from '../packages/orchestrator/engine.mjs';
 import { DecisionDelegation } from '../packages/orchestrator/decisions.mjs';
 import { ControlHost, bindControl } from '../packages/runner/control-host.mjs';
-import { CliProvider } from '../packages/reasoning/cli-provider.mjs';
+import { CliProvider, findCli } from '../packages/reasoning/cli-provider.mjs';
+import { childEnv } from '../packages/runner/process.mjs';
 
 // Opt-in live-model regression, not part of npm test. Setup and the prior human
 // answer are explicitly synthetic. The model, CLI transport, answer application,
 // provenance ledger and master decision persistence are real production paths.
 const { values } = parseArgs({ options: {
-  'code-agent-dist': { type: 'string', default: 'C:/IdeaProjects/code-agent/dist' },
-  'ai-cli': { type: 'string', default: 'C:/Users/kai/.local/bin/claude.exe' },
+  'code-agent-dist': { type: 'string' },
+  'ai-cli': { type: 'string' },
   'prepare-only': { type: 'boolean', default: false },
 } });
-const dist = resolve(values['code-agent-dist']);
+values['ai-cli'] = values['ai-cli']?.trim() || process.env.CLAUDE_CLI?.trim();
+assert.ok(values['ai-cli'], 'CLAUDE_CLI 또는 --ai-cli에 실제 Claude CLI 경로를 지정해야 답변 문맥 시험을 실행할 수 있습니다.');
+values['ai-cli'] = resolve(values['ai-cli']);
+const claudeCommand = findCli('claude', values['ai-cli']);
+const dist = resolve(values['code-agent-dist'] ?? process.env.CODE_AGENT_DIST ?? fileURLToPath(new URL('../../code-agent/dist', import.meta.url)));
 const require = createRequire(import.meta.url);
 const { masterEnable, masterGrant } = require(join(dist, 'agent/master/admin.js'));
 const { writeWorkBinding } = require(join(dist, 'agent/master/store.js'));
@@ -48,7 +54,7 @@ const report = {
   emulated: ['연동 enable/grant TTY', 'master의 대기 중 시도와 code-agent 작업 연결', '질문 문서', '앞선 사람 답(합성 relay, 실제 사용자 답 아님)'],
   scenario: '2026-10-15 run6의 Q1 답 누락 결함을 재구성한 집중 회귀 시험(당시 전체 입력의 완전 재생은 아님)',
   provider: 'claude', requestedModel: 'cli-default', node: process.version,
-  cliVersion: execFileSync(values['ai-cli'], ['--version'], { encoding: 'utf8', windowsHide: true }).trim(),
+  cliVersion: execFileSync(claudeCommand.executable, [...claudeCommand.prefix, '--version'], { encoding: 'utf8', windowsHide: true, shell: false, env: childEnv() }).trim(),
   masterCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8', windowsHide: true }).trim(),
   harnessSourceHash: digest(readFileSync(new URL(import.meta.url), 'utf8')),
   decisionsSourceHash: digest(readFileSync(new URL('../packages/orchestrator/decisions.mjs', import.meta.url), 'utf8')),

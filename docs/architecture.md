@@ -19,12 +19,12 @@ master-agent의 목적은 여러 프로젝트에 걸친 사용자 목표를 AI�
 | 실행 조정 | 실행 가능한 노드 배정, 예산·동시성·소유권 검사 |
 | 피드백과 재계획 | 발견·실패 분류, 계획 버전 갱신, 영향받는 후행 작업 재평가 |
 | 목표 달성 검증 | 개별 검증과 통합 검증을 완료 조건별로 대조 |
-| 설치된 프로젝트 목록 관리 | 경로 등록, 지정 폴더의 후보 탐색, 설치 확인, 이름 수정, 보관 처리 |
+| 설치된 프로젝트 목록 관리 | 경로 등록·알려진 작업 위치의 후보 탐색·설치 확인. 이름 수정·사용자 지정 탐색·보관 처리는 확장 설계다. |
 | 프로젝트 그룹 관리 | 그룹 생성·수정·삭제, 다중 소속, 구성원 추가·제외 |
 | 특정 프로젝트 명령 | 프로젝트 상세에서 대상이 고정된 명령 작성 |
-| 여러 프로젝트 명령 | 목록의 체크박스로 선택하고 공통 명령 작성 |
+| 여러 프로젝트 명령 | 체크박스 다중 선택과 공통 명령 작성은 확장 설계다. |
 | 그룹 명령 | 그룹을 선택한 뒤 실제 대상과 제외 항목 확인 |
-| 개별 명령 | 프로젝트마다 서로 다른 지시 또는 공통 지시의 개별 보완 설정 |
+| 개별 명령 | 프로젝트별 추가·대체 지시(overrides)는 확장 설계다. |
 | 외부에서 시작한 작업 | code-agent 상태를 관측하되 master 실행 이력과 구별 |
 | 진행 상황 | 프로젝트별 단계, 실행 로그, 차단 사유, 질문과 승인 상태 |
 | 실패 처리 | 실패한 프로젝트만 새 시도로 재시도하고 기존 결과 보존 |
@@ -64,26 +64,26 @@ master-agent의 목적은 여러 프로젝트에 걸친 사용자 목표를 AI�
 
 초기 그룹은 사용자가 편집하는 평면 목록입니다. 예를 들어 `주문 서비스`에 API·관리자·배치 프로젝트를, `공통 라이브러리 변경`에 관련 프로젝트들을 묶습니다. 하나의 프로젝트를 여러 그룹에 넣을 수 있습니다. 조직 소유권과 접근 권한은 그룹 태그와 별도 모델로 확장합니다.
 
-그룹 삭제는 소속 관계만 지웁니다. 이력에서 참조하는 프로젝트는 보관 처리하며, 실행 중인 대상의 경로 변경·등록 해제는 막습니다.
+현재 그룹 삭제·프로젝트 등록 해제는 [대시보드 규칙](ui.md#프로젝트와-그룹-삭제)을 따른다. 프로젝트 이름·경로 변경과 별도 보관 상태는 확장 설계다.
 
 ## 4. 보조 명령과 실행 단위
 
-주 실행 계층은 `Mission → PlanVersion → Task → Attempt`입니다. Task는 분석·계약 정리·프로젝트 구현·통합 검증 등 계획의 작업 노드이며, 한 프로젝트에 여러 Task를 배정할 수 있습니다. Command는 직접 조회·개별·그룹 명령을 받는 보조 입력입니다. 개발 Command는 Mission과 계획으로 정규화하고, 읽기 전용 조회는 Mission 없이 동일 러너를 이용할 수 있습니다.
+주 실행 계층은 `Mission → PlanVersion → Task → Attempt`다. Task는 분석·계약 정리·프로젝트 구현·통합 검증 등 계획의 작업 노드이며 한 프로젝트에 여러 Task를 배정할 수 있다. Command는 직접 조회·개별·그룹 명령을 받는 확장 설계다. 현재 요청 접수는 target-request 기록을 사용하며 아래 Command 모델 전체를 구현한 API는 제공하지 않는다. 확장 설계에서는 개발 Command를 Mission과 계획으로 정규화하고 읽기 전용 조회는 Mission 없이 동일 러너를 이용한다.
 
 | 필드 | 의미 |
 | --- | --- |
 | commandId | 보조 명령 접수 ID. 개발 요청은 missionId와 연결 |
-| scope | project / selection / group |
+| scope | project / group. selection(체크박스 다중 선택)은 확장 설계다. |
 | targetSnapshot | 실행 시 확정한 프로젝트 ID·실행 경로·그룹 버전 |
 | mode | broadcast / coordinated |
 | instruction | 공통 지시 |
-| overrides | 프로젝트별 추가 지시 또는 명시적인 대체 지시 |
+| overrides | 프로젝트별 추가·대체 지시를 위한 확장 설계다. |
 | action | 상태 조회 / 설치 점검 / 개발 요청 / 지원되는 재개 동작 |
 | taskId | 계획의 한 작업. 실행 위치와 영향을 받는 프로젝트를 구분 |
 | attemptId | 해당 작업의 한 번의 실행 시도 |
 | idempotencyKey | 같은 접수 요청의 중복 생성 방지 |
 
-공통 지시의 프로젝트별 보완은 기본적으로 추가 지시입니다. 완전히 대체할 때는 화면에 이를 명시하고 최종 지시 전문을 미리 보여 줍니다.
+확장 설계의 overrides는 공통 지시에 추가하거나 명시적으로 대체하는 방식이다. 구현할 때 최종 지시 전문을 미리 보여 주어야 한다.
 
 ### 같은 명령을 여러 프로젝트에 실행
 
@@ -137,41 +137,19 @@ Task 상태는 `queued → running → succeeded / failed / cancelled`를 기본
 
 ## 7. 저장소와 API 설계
 
-아래 모델과 API 표는 확장 설계다. 현재 구현한 로컬 HTTP 경로·입력·보호 조건은 [대시보드 HTTP 계약](ui.md#로컬-http-계약)을 기준으로 한다.
+아래 저장 모델은 확장 후보를 포함한 개념 설계다. 현재 구현한 로컬 HTTP 경로·입력·보호 조건은 [대시보드 HTTP 계약](ui.md#로컬-http-계약)을 기준으로 한다.
 
 로컬 영속 저장소에는 Mission, AcceptanceCriterion, ScopeSnapshot, PlanVersion, Task, Dependency, Attempt, Artifact, Evidence, Decision, Finding, Budget, Event, StateObservation을 둡니다. 카탈로그는 Project, Group, GroupMember, ServiceContract, KnowledgeReference로 구성하고 보조 명령은 Command로 기록합니다. 계획 버전과 작업·의존 관계의 활성화는 하나의 트랜잭션으로 처리합니다. 실행 시작 의도는 프로세스를 띄우기 전에 저장하고, 시작 직후 중단된 경우 복구 시 대조합니다.
 
-| API 초안 | 역할 |
-| --- | --- |
-| POST /api/missions | 목표·완료 조건·허용 범위·예산 접수 |
-| GET /api/missions/:id | 목표별 계획·진행·근거·차단 이유 |
-| GET /api/missions/:id/plans | 계획 버전·의존 관계·재계획 차이 |
-| POST /api/missions/:id/decisions | 현재 계획·질문 버전에 묶인 판단 전달 |
-| POST /api/missions/:id/pause | 새 배정 중단 요청. 실행 중 작업은 별도 상태로 추적 |
-| POST /api/missions/:id/resume | 상태·계획·소유권을 다시 대조한 뒤 재개 |
-| GET /api/projects | 목록과 마지막 관측 상태 |
-| POST /api/project-candidates | 사용자가 지정한 루트의 설치 후보 탐색 |
-| POST /api/projects | 선택한 후보 또는 직접 경로 등록 |
-| PATCH /api/projects/:id | 이름·연결 설정 변경 또는 보관 |
-| POST /api/projects/:id/observe | 상태 재조회 |
-| GET, POST /api/groups | 그룹 목록과 생성 |
-| PATCH, DELETE /api/groups/:id | 그룹·소속 변경과 삭제 |
-| POST /api/commands/preview | 대상 확정과 프로젝트별 실행 미리보기 |
-| POST /api/commands | 미리보기 버전과 중복 방지 키로 접수 |
-| GET /api/commands/:id | 전체 실행과 프로젝트별 결과 |
-| POST /api/tasks/:id/retry | 선택한 실패 작업의 새 시도 |
-| POST /api/tasks/:id/cancel | 취소 요청 |
-| GET /api/events | 마지막 이벤트 ID 이후 진행 이벤트 구독 |
-
-질문 응답·승인 전달 API는 기존 호스트의 검증 경로와 연결을 검증한 뒤 추가합니다. UI에 승인 버튼을 먼저 만들고 상태 파일만 바꾸는 구현은 하지 않습니다.
+목표별 계획 조회·판단·정지 API와 Command 미리보기·접수 API는 미구현 확장 후보다. 현재 프로젝트·그룹·요청·공통 요청함 API와 혼동하지 않도록 별도 경로 초안은 유지하지 않는다. `POST /api/project-candidates`는 알려진 작업 위치를 탐색하며 요청 본문으로 탐색 경로를 받지 않는다. 현재 응답·승인 전달은 [공통 요청함 계약](dashboard-interactions.md)을 따른다.
 
 로컬 서버는 loopback에 바인딩하고 Origin·Host 검증과 요청 토큰을 적용합니다. 브라우저가 임의 셸 명령을 서버에 전달하는 API는 두지 않습니다. 프로세스는 명시된 실행 파일과 인자 배열로 시작하고, 자연어는 명령 문자열에 보간하지 않습니다. 토큰·로그 접근은 로컬 사용자 범위로 제한합니다.
 
 ## 8. 참고 소스
 
-- 구상: `C:\Users\kai\Desktop\blog\master-agent\article.html`
-- 현재 조회 계약: `C:\IdeaProjects\code-agent\src\agent\stateView.ts`
-- CLI 연결: `C:\IdeaProjects\code-agent\src\agent\cliMain.ts`
-- 호스트 설치 정보: `C:\IdeaProjects\code-agent\src\agent\hosts.ts`
+- 조회 계약: code-agent 저장소의 `src/agent/stateView.ts`
+- CLI 연결: code-agent 저장소의 `src/agent/cliMain.ts`
+- 호스트 설치 정보: code-agent 저장소의 `src/agent/hosts.ts`
+- 관리 통신 계약: code-agent 저장소의 `doc/master-control.md`
 
-위 참고 소스의 확인 기준은 2026년 10월 14일입니다. 현재 수동 등록은 기존 디렉터리와 카탈로그 입력을 검사하고, code-agent 설치·JSON 호환성은 후속 상태 조회에서 확인합니다.
+수동 등록은 기존 디렉터리와 카탈로그 입력을 검사하고 code-agent 설치·JSON 호환성은 후속 상태 조회에서 확인한다.

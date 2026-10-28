@@ -9,20 +9,24 @@ import { Engine } from '../packages/orchestrator/engine.mjs';
 import { LiveWorkflow } from '../packages/orchestrator/drive.mjs';
 import { LiveVerification } from '../packages/verification/live-verification.mjs';
 import { ControlHost, bindControl } from '../packages/runner/control-host.mjs';
-import { CliProvider } from '../packages/reasoning/cli-provider.mjs';
+import { CliProvider, findCli } from '../packages/reasoning/cli-provider.mjs';
 import { Knowledge } from '../packages/knowledge/sources.mjs';
+import { findCodeAgent } from '../packages/code-agent-adapter/discovery.mjs';
 
 // Opt-in live two-project execution. Only project onboarding TTY is emulated.
 // Task approvals/questions, development, verification and delivery use production paths.
 const [action, location] = process.argv.slice(2);
 assert.ok(['setup', 'drive', 'status', 'report', 'stop'].includes(action), 'setup | drive <root> | status <root> | report <root> | stop <root>');
-const root = action === 'setup' ? resolve('.master-agent', `full-flow-${randomUUID()}`) : resolve(location);
 const save = (file, value) => { mkdirSync(dirname(file), { recursive: true }); writeFileSync(file, JSON.stringify(value, null, 2) + '\n'); };
 const write = (file, value) => { mkdirSync(dirname(file), { recursive: true }); writeFileSync(file, value); };
 const git = (path, args) => execFileSync('git', ['-C', path, ...args], { encoding: 'utf8', windowsHide: true, stdio: 'pipe' }).trim();
 const hashFile = file => createHash('sha256').update(readFileSync(file)).digest('hex');
-const cli = resolve(process.env.CODE_AGENT_CLI ?? 'C:/IdeaProjects/code-agent/dist/agent/cli.js');
-const claude = resolve(process.env.CLAUDE_CLI ?? 'C:/Users/kai/.local/bin/claude.exe');
+const claudePath = process.env.CLAUDE_CLI?.trim();
+if (action === 'setup') assert.ok(claudePath, 'CLAUDE_CLI에 실제 Claude CLI 경로를 지정해야 전체 흐름 시험을 준비할 수 있습니다.');
+const claude = action === 'setup' ? resolve(claudePath) : null;
+const claudeCommand = action === 'setup' ? findCli('claude', claude) : null;
+const cli = action === 'setup' ? findCodeAgent() : null;
+const root = action === 'setup' ? resolve('.master-agent', `full-flow-${randomUUID()}`) : resolve(location);
 const configFile = join(root, 'experiment.json');
 const runtimeSnapshot = executable => {
   const file = resolve(dirname(executable), '../../snapshot.json');
@@ -119,7 +123,7 @@ if (action === 'setup') {
       const outside = join(root, 'control', p.id), tokenFile = join(outside, 'controller.token');
       mkdirSync(outside, { recursive: true });
       const hostFile = join(outside, 'host.json'), grantFile = join(outside, 'grant.json');
-      save(hostFile, { command: [claude], permissionMode: 'acceptEdits', allowedTools: [...DEFAULT_ALLOWED_TOOLS, 'Agent', `Bash(node ${cli} *)`, `PowerShell(node ${cli} *)`, 'Bash(node --test*)', 'Bash(node --check*)', 'Bash(npm test*)'] });
+      save(hostFile, { command: [claudeCommand.executable, ...claudeCommand.prefix], permissionMode: 'acceptEdits', allowedTools: [...DEFAULT_ALLOWED_TOOLS, 'Agent', `Bash(node ${cli} *)`, `PowerShell(node ${cli} *)`, 'Bash(node --test*)', 'Bash(node --check*)', 'Bash(npm test*)'] });
       tty(() => masterEnable(p.path, { controller: 'full-flow', tokenOut: tokenFile, host: hostFile }));
       save(grantFile, { id: `full-flow-${p.id}`, controller: 'full-flow', missions: [mission.id], actions: ['request', 'plan', 'deliver', 'answer'], paths: ['src/**', 'tests/**', 'contracts/**', 'doc/work/**', '.code-agent/work/**', '.code-agent/approvals/**'], ttlHours: 24, maxUses: 80 });
       tty(() => masterGrant(p.path, grantFile));

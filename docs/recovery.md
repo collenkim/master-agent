@@ -34,8 +34,8 @@ code-agent의 요구 확정·계획 승인·미응답 질문·동의·임대는 
 ## CLI
 
 ```powershell
-master-agent mission recover <목표ID> <시도ID> --revision <버전> --expect-state <상태버전> --cli C:/IdeaProjects/code-agent/dist/agent/cli.js --provider claude --control
-master-agent mission drive <목표ID> --cli C:/IdeaProjects/code-agent/dist/agent/cli.js --provider claude --control
+master-agent mission recover <목표ID> <시도ID> --revision <버전> --expect-state <상태버전> --provider claude --control
+master-agent mission drive <목표ID> --provider claude --control
 master-agent mission show <목표ID>
 ```
 

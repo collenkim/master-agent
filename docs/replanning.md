@@ -16,7 +16,7 @@
 ## 사용
 
 ```powershell
-master-agent mission replan <목표ID> <실패시도ID> --revision <현재버전> --expect-state <상태버전> --cli C:/IdeaProjects/code-agent/dist/agent/cli.js --provider claude --control
+master-agent mission replan <목표ID> <실패시도ID> --revision <현재버전> --expect-state <상태버전> --provider claude --control
 master-agent mission show <목표ID>
 ```
 

@@ -64,7 +64,7 @@ master는 문서 원문·검증 시점의 SHA-256·반영 커밋의 일반 파�
 
 ```powershell
 master-agent mission verification <목표ID> <계약JSON> --revision <목표버전>
-master-agent mission drive <목표ID> --cli C:/IdeaProjects/code-agent/dist/agent/cli.js --control
+master-agent mission drive <목표ID> --control
 ```
 
 `advance`는 한 단계만 수행하고 `drive`는 가능한 전이를 반복한다. 작업 선택은 고정 계획의 의존 관계와 현재 상태에 따른다. AI 분석·재계획은 기존 analyze 경로가 담당한다. 막혔을 때 `blockers`와 `mission show`의 시도·판단·검증 기록을 확인한다. 자동으로 기존 외부 작업을 가져오거나 실패한 호스트를 반복 실행하지 않는다.
