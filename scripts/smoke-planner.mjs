@@ -1,17 +1,18 @@
 import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
-import { resolve, join } from 'node:path';
+import { join } from 'node:path';
 import { parseArgs } from 'node:util';
-import { randomUUID } from 'node:crypto';
+
 import assert from 'node:assert/strict';
 import { Store } from '../packages/storage/store.mjs';
 import { Engine } from '../packages/orchestrator/engine.mjs';
 import { Knowledge } from '../packages/knowledge/sources.mjs';
 import { Planner } from '../packages/reasoning/planner.mjs';
 import { CliProvider } from '../packages/reasoning/cli-provider.mjs';
+import { createSmokeArtifacts } from './smoke-artifacts.mjs';
 
 const { values } = parseArgs({ options: { provider: { type: 'string' }, 'ai-cli': { type: 'string' }, model: { type: 'string' } } });
 const provider = new CliProvider({ provider: values.provider, cliPath: values['ai-cli'], model: values.model });
-const root = resolve('.master-agent', `ai-smoke-${randomUUID()}`), project = join(root, 'project');
+const root = createSmokeArtifacts('ai-smoke-'), project = join(root, 'project');
 mkdirSync(project, { recursive: true });
 const policy = '# 소계 기능 정책\n이 프로젝트는 invoice 도메인의 소계 계산을 담당한다.\n가격과 수량은 0 이상의 수여야 한다. 음수 입력은 오류로 거부해야 한다.\n현재 subtotal 함수는 음수를 허용하는 결함이 있다. simulation은 모의 실행 기능이다.\n';
 const code = 'export function subtotal(price, quantity) { return price * quantity; }\n';

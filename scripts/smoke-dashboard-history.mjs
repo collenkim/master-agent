@@ -1,15 +1,14 @@
 // Real browser/API with an isolated catalog and synthetic status/event data; no development models.
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { setup } from '../tests/helpers.mjs';
 import { recordObservation, createHistory } from '../packages/dashboard/history.mjs';
 import { startDashboard } from '../packages/dashboard/server.mjs';
 import { openBrowser } from './browser.mjs';
+import { createSmokeArtifacts } from './smoke-artifacts.mjs';
 
-const artifactRoot = resolve(process.env.MASTER_AGENT_SMOKE_ROOT ?? '.master-agent');
-mkdirSync(artifactRoot, { recursive: true });
-const artifacts = mkdtempSync(join(artifactRoot, 'stage-history-browser-')), cleanup = [];
+const artifacts = createSmokeArtifacts('stage-history-browser-'), cleanup = [];
 const f = setup({ after(fn) { cleanup.push(fn); } });
 const project = f.fixture.projects[0];
 const unsafe = '<img src=x onerror="window.injected=true">';

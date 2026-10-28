@@ -84,11 +84,11 @@ code-agent 답은 원래 producer가 소비한다. 살아 있는 세션의 consu
 ```powershell
 npm.cmd test
 npm.cmd run check
-node scripts/check-interaction-support.mjs
+node scripts/smoke-interactions-live.mjs --support-only
 node scripts/smoke-dashboard-interactions.mjs
 node scripts/smoke-dashboard-verification.mjs
 node scripts/smoke-interactions-live.mjs
 node scripts/smoke-interactions-live.mjs --browser --browser-only
 ```
 
-실제 API 시험은 code-agent의 빌드된 시험 fixture를 사용하며 테스트 키·토큰을 저장소 밖 임시 디렉터리에 둔다. 브라우저 시험은 Windows Chrome을 사용하고 `CHROME_PATH`로 진입점을 바꿀 수 있다. 관리 프로젝트·code-agent 소스는 수정하지 않는다. 결과 JSON·화면은 `.master-agent`의 무시된 로컬 증거이며, 필요한 최신 결과만 [검증 기록](verification.md)에 요약한다.
+`--support-only`는 격리된 빈 저장소와 기존 파일이 있는 저장소에서 공개 `hello`만 조회하며 인증이나 빌드된 시험 fixture를 요구하지 않는다. 전체 API 시험은 code-agent의 빌드된 시험 fixture와 합성 키·토큰을 사용한다. `--browser`를 지정한 브라우저 시험은 Chrome을 사용하고 `CHROME_PATH`로 진입점을 바꿀 수 있다. 관리 프로젝트·code-agent 소스는 수정하지 않는다. 결과 JSON·화면·격리 fixture는 같은 실행 폴더에 묶으며 [smoke 산출물 보존](verification.md#smoke-산출물-보존)을 따른다.

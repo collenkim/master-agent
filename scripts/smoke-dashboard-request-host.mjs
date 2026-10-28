@@ -1,14 +1,14 @@
 // Real browser and dashboard API; isolated catalog, synthetic code-agent hello, no request runner or model calls.
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { setup } from '../tests/helpers.mjs';
 import { startDashboard } from '../packages/dashboard/server.mjs';
 import { controlProbe } from '../packages/code-agent-adapter/pairing.mjs';
 import { openBrowser } from './browser.mjs';
+import { createSmokeArtifacts } from './smoke-artifacts.mjs';
 
-mkdirSync(resolve('.master-agent'), { recursive: true });
-const artifacts = mkdtempSync(resolve('.master-agent/request-host-browser-')), cleanup = [];
+const artifacts = createSmokeArtifacts('request-host-browser-'), cleanup = [];
 const f = setup({ after(fn) { cleanup.push(fn); } });
 const [both, single, legacy] = f.fixture.projects;
 const ready = { ready: true, problems: [] };

@@ -1,18 +1,18 @@
 // Real code-agent, local Git upstream, npm build, dashboard API and browser; isolated stores and projects.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { Store } from '../packages/storage/store.mjs';
 import { Engine } from '../packages/orchestrator/engine.mjs';
 import { startDashboard } from '../packages/dashboard/server.mjs';
 import { runUpdateCli } from '../packages/dashboard/source-update.mjs';
 import { openBrowser } from './browser.mjs';
+import { createSmokeArtifacts } from './smoke-artifacts.mjs';
 
 const original = resolve(process.env.CODE_AGENT_SOURCE ?? '../code-agent');
 assert.ok(readFileSync(join(original, 'dist/agent/sourceUpdate.js'), 'utf8').includes('installOnlyConfirmed'), 'code-agent build must support install-only');
-mkdirSync(resolve('.master-agent'), { recursive: true });
-const artifacts = mkdtempSync(resolve('.master-agent/updates-browser-'));
+const artifacts = createSmokeArtifacts('updates-browser-');
 const source = join(artifacts, 'source'), remote = join(artifacts, 'upstream.git'), publisher = join(artifacts, 'publisher');
 mkdirSync(source);
 for (const name of ['package.json', 'package-lock.json', 'tsconfig.json', 'src', 'template', 'scripts', 'dist']) cpSync(join(original, name), join(source, name), { recursive: true });

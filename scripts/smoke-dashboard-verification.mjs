@@ -1,10 +1,11 @@
 // Isolated browser exercise: synthetic project/launcher, no managed project or model calls.
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { verificationFixture } from '../tests/verification-fixture.mjs';
 import { startDashboard } from '../packages/dashboard/server.mjs';
 import { openBrowser } from './browser.mjs';
+import { createSmokeArtifacts } from './smoke-artifacts.mjs';
 
 const cleanup = [], f = verificationFixture({ after(fn) { cleanup.push(fn); } });
 writeFileSync(join(f.projects[0].path, 'build.gradle.kts'), 'plugins { java }\n');
@@ -20,9 +21,7 @@ mission = f.engine.plan(mission.id, { schemaVersion: 1, summary: '검증 계약 
 f.store.put('target-request', { id: mission.id, state: 'waiting', targetType: 'project', targetId: 'one', taskNumber: 'BROWSER-1',
   goal: mission.goal, blockers: ['edit-one:missing-verification-recipe'], provider: 'fixture',
   projectIds: ['one'], templatesRegistered: true, templates: [], createdAt: new Date().toISOString() });
-const artifactRoot = resolve(process.env.MASTER_AGENT_SMOKE_ROOT ?? '.master-agent');
-mkdirSync(artifactRoot, { recursive: true });
-const artifacts = mkdtempSync(join(artifactRoot, 'verification-browser-'));
+const artifacts = createSmokeArtifacts('verification-browser-');
 let launches = 0, browser;
 const dashboard = await startDashboard({ dbPath: join(f.root, 'state.db'), port: 0, observe: false,
   launch: async (store, id) => { launches++; return store.need('target-request', id); } });

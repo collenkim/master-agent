@@ -58,8 +58,10 @@ master-agent mission list --db .master-agent/demo.db
 | 명령 | 실행 전제와 범위 |
 | --- | --- |
 | `npm.cmd run smoke:browser` | Chrome이 필요하며 `CHROME_PATH`로 지정한다. Windows 기본 위치는 `C:/Program Files/Google/Chrome/Application/chrome.exe`다. `smoke-dashboard-*.mjs`를 실행하며 업데이트·PC 신뢰 시험에는 code-agent 빌드와 Git·npm도 필요하다. |
-| `npm.cmd run smoke:code-agent` | code-agent CLI를 자동 탐색하거나 `CODE_AGENT_CLI`로 지정한다. 상태·요청함 전송·지원 계약을 검사한다. 요청함 시험에는 Chrome과 테스트 대역을 포함한 code-agent 공개 빌드가 필요하다. |
+| `npm.cmd run smoke:code-agent` | code-agent CLI를 자동 탐색하거나 `CODE_AGENT_CLI`로 지정한다. 상태·요청함 전송·지원 계약을 검사한다. 요청함 전송 시험에는 테스트 대역을 포함한 code-agent 공개 빌드가 필요하다. |
 | `npm.cmd run smoke:model` | `CLAUDE_CLI`와 code-agent 빌드가 필요하다. 전체 흐름 준비→실행→보고, 답변 문맥, 계획 분석을 검사하며 실제 모델 사용료가 발생한다. 전체 흐름 보고가 실패하면 다음 시험을 실행하지 않는다. |
+
+산출물의 위치와 기본 3개 보존 규칙은 [smoke 산출물 보존](docs/verification.md#smoke-산출물-보존)을 따른다.
 
 라이선스는 미정이므로 `UNLICENSED`로 표시하고 저장소 URL은 확정 후 등록한다.
 

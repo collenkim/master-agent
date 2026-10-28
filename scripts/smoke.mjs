@@ -9,7 +9,7 @@ const workspace = fileURLToPath(new URL('../', import.meta.url));
 const [group, option] = process.argv.slice(2);
 const groups = {
   browser: readdirSync(new URL('.', import.meta.url)).filter(name => /^smoke-dashboard-.*\.mjs$/.test(name)).sort(),
-  'code-agent': ['smoke-code-agent.mjs', 'smoke-interactions-live.mjs', 'check-interaction-support.mjs'],
+  'code-agent': ['smoke-code-agent.mjs', 'smoke-interactions-live.mjs', 'smoke-interactions-live.mjs --support-only'],
   model: ['smoke-full-flow.mjs', 'smoke-answer-context.mjs', 'smoke-planner.mjs'],
 };
 if (!Object.hasOwn(groups, group) || option && option !== '--list') throw new Error('browser | code-agent | model [--list]');
@@ -57,7 +57,10 @@ if (option === '--list') {
       await run('smoke-planner.mjs', ['--provider', 'claude', '--ai-cli', process.env.CLAUDE_CLI]);
     } else {
       const args = group === 'code-agent' ? [findCodeAgent()] : [];
-      for (const name of groups[group]) await run(name, args);
+      for (const entry of groups[group]) {
+        const [name, ...flags] = entry.split(' ');
+        await run(name, [...args, ...flags]);
+      }
     }
   } finally { process.removeListener('SIGINT', cancel); process.removeListener('SIGTERM', cancel); }
 }

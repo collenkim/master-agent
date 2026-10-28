@@ -34,21 +34,36 @@
 
 ## 보존한 실제 모델 증거
 
-| 증거 | 확인한 내용과 한계 |
-| --- | --- |
-| [앞선 답 판단](evidence/2026-10-16-answer-context.json) | 실제 Claude 판단·답 CLI 5건: routine 3, ambiguous 1, critical 1. 질문·앞선 답·도입 TTY는 합성 자료. `scripts/smoke-answer-context.mjs`로 재현 |
-| [병렬·계약 인계](evidence/2026-10-17-parallel-contract-flow.json) | 두 프로젝트·세 작업 succeeded, 실제 프로세스 구간·커밋·검사·계약 입력 해시. 고정 master 계획으로 시작하며 원격 push·배포는 제외 |
+질문·앞선 답·도입 TTY는 합성 자료이며 실제 Claude 판단과 code-agent 답 적용을 확인한 요약이다. 전체 흐름은 고정 master 계획으로 시작한 두 프로젝트·세 작업의 로컬 완료이며 원격 push·배포를 포함하지 않는다.
+
+| case ID | 분류 | passed | SHA-256 | master 커밋 |
+| --- | --- | --- | --- | --- |
+| relayed-1 | routine | true | `7d04c9b6f0aa4608cd0a15c619457334d2e20c24f069ab78dc3db266bae737e0` | `a9b65a1f93134db74ecbacd3b3a1ff2bbc5ebb6b` |
+| relayed-2 | routine | true | `8f7527fe8337a25cf7b70fe78cf2f7f81c471afcb28f16fc985d9d074fe759d0` | `a9b65a1f93134db74ecbacd3b3a1ff2bbc5ebb6b` |
+| relayed-3 | routine | true | `1b8353439de1be716090577c22b5f493f24aa2db9aacb877693fb076ec39bcfc` | `a9b65a1f93134db74ecbacd3b3a1ff2bbc5ebb6b` |
+| missing-context | ambiguous | true | `a2305d0226420d1a1f06e2e8dfdbc40e771bd0c234fd126008b1d3f2ccebd2a7` | `a9b65a1f93134db74ecbacd3b3a1ff2bbc5ebb6b` |
+| conflicting-policy | critical | true | `6e583f077f78381cf8954d994fefcde19aa05ed3c5ff4a3e58e7753a39164754` | `a9b65a1f93134db74ecbacd3b3a1ff2bbc5ebb6b` |
+| parallel-contract-flow | 병렬 개발·계약 인계·통합 | true | `97a10eeff25ddbc85b1677442cb8b617090e5a232289fce02eb9d8998a1eb35b` | `0a616e463a2af85660de79aaa0f327b350b5e3ba` + 수정 3개 |
+
+답변 문맥의 해시는 각 질문 문서, 전체 흐름의 해시는 제거 전 증거 JSON을 식별한다. 전체 흐름은 표시한 기준 커밋에 소스 3개를 수정한 상태에서 수행했으므로 깨끗한 커밋 재현이라고 표시하지 않는다. modelCalls 전문·로컬 절대 경로를 포함한 JSON은 저장소에 보존하지 않는다.
 
 ```powershell
+node scripts/smoke-answer-context.mjs
 node scripts/smoke-full-flow.mjs setup
 node scripts/smoke-full-flow.mjs drive <root>
 node scripts/smoke-full-flow.mjs status <root>
 node scripts/smoke-full-flow.mjs report <root>
 ```
 
-`setup`이 출력한 격리 root를 사용하며 준비와 실행은 같은 OS 사용자로 수행한다. 실제 모델 증거 JSON은 보존하고, 회귀 로그·브라우저 산출물은 최신 결과를 기준으로 관리한다.
+`CLAUDE_CLI`를 지정하고 `setup`이 출력한 격리 root를 사용한다. 준비와 실행은 같은 OS 사용자로 수행한다. 산출물의 보존·정리 규칙은 [smoke 산출물 보존](#smoke-산출물-보존)을 따른다.
 
 검증 상태나 완료 조건을 수동으로 바꿔 성공시키지 않는다. 미반환·미확인 실행은 성공이나 중복 실행으로 바꾸지 않는다.
+
+## smoke 산출물 보존
+
+브라우저·모델·요청함 smoke는 실행 폴더를 만들고 종류별 최신 3개를 기본으로 보존한다. 기본 위치는 실행 작업 폴더의 `.master-agent/`이며 `MASTER_AGENT_SMOKE_ROOT`로 바꾼다. 요청함의 지원 조회는 `interaction-support-*`, 전체 전송 시험은 `interactions-live-*` 아래에 결과와 격리 프로젝트를 함께 둔다. 브라우저 화면은 같은 폴더의 `browser/`에 저장한다. `smoke-code-agent.mjs`는 기존처럼 임시 시험 폴더를 종료 시 모두 삭제한다.
+
+공유 헬퍼의 소유 표지가 있는 실행 폴더만 정리한다. 실행 중인 폴더와 다른 호스트의 실행, 결과가 확인되지 않은 외부 실행을 보존하므로 잠시 3개를 넘을 수 있다. 전체 흐름의 `drive`는 외부 실행 전 보존 표지를 남기고 시도와 제어 실행이 종료됐음을 확인한 뒤 해제한다. 실행기가 비정상 종료하면 표지를 유지하며 같은 폴더로 조회·재개한 뒤 정리할 수 있다. 링크와 소유 표지가 없는 과거 폴더는 자동 삭제하지 않는다. 기존 로컬 산출물은 목록을 확인한 뒤 별도로 정리한다.
 
 ## 미검증 범위
 

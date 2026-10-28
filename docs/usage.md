@@ -38,6 +38,7 @@ master-agent group list
 | `CODE_AGENT_RELEASE_HOME` | 전체 흐름 smoke에서 code-agent 릴리스 저장소 설정을 보존하고 재개 시 복원한다. | master-agent가 별도 기본값을 지정하지 않고 code-agent의 설정을 따른다. 업데이트 smoke는 격리된 임시 위치를 사용한다. | `scripts/smoke-full-flow.mjs`, `scripts/smoke-dashboard-updates.mjs` |
 | `CLAUDE_CLI` | 실제 모델 smoke와 smoke 집계에 사용할 Claude 실행 파일 또는 JS 진입점 경로를 지정한다. 셸 래퍼는 직접 지정하지 않는다. 일반 계획 CLI는 `--ai-cli` 또는 자동 탐색을 사용한다. | 모델 smoke 준비·집계에는 필수다. 답변 문맥 시험은 명시한 `--ai-cli`가 우선하며, 준비된 전체 흐름의 조회·실행은 저장된 설정을 사용한다. | `scripts/smoke.mjs`, `scripts/smoke-full-flow.mjs`, `scripts/smoke-answer-context.mjs` |
 | `CHROME_PATH` | 브라우저 smoke의 Chrome 실행 파일을 지정한다. | `C:/Program Files/Google/Chrome/Application/chrome.exe`를 사용한다. 다른 설치 위치와 Linux에서는 명시한다. | `scripts/browser.mjs` |
+| `MASTER_AGENT_SMOKE_ROOT` | smoke 산출물의 상위 폴더를 지정한다. | 실행 작업 폴더의 `.master-agent`를 사용한다. | `scripts/smoke-artifacts.mjs` |
 
 ## 서비스 그룹과 단일 프로젝트 요청
 

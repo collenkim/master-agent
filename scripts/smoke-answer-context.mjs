@@ -12,6 +12,7 @@ import { DecisionDelegation } from '../packages/orchestrator/decisions.mjs';
 import { ControlHost, bindControl } from '../packages/runner/control-host.mjs';
 import { CliProvider, findCli } from '../packages/reasoning/cli-provider.mjs';
 import { childEnv } from '../packages/runner/process.mjs';
+import { createSmokeArtifacts } from './smoke-artifacts.mjs';
 
 // Opt-in live-model regression, not part of npm test. Setup and the prior human
 // answer are explicitly synthetic. The model, CLI transport, answer application,
@@ -30,8 +31,7 @@ const require = createRequire(import.meta.url);
 const { masterEnable, masterGrant } = require(join(dist, 'agent/master/admin.js'));
 const { writeWorkBinding } = require(join(dist, 'agent/master/store.js'));
 const { withInteraction } = require(join(dist, 'agent/tty.js'));
-const root = resolve('.master-agent', `answer-context-smoke-${randomUUID()}`);
-mkdirSync(root, { recursive: true });
+const root = createSmokeArtifacts('answer-context-smoke-');
 const save = (path, value) => writeFileSync(path, JSON.stringify(value, null, 2) + '\n');
 const digest = text => createHash('sha256').update(text).digest('hex');
 const tty = fn => withInteraction({

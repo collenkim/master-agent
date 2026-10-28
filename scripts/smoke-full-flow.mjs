@@ -12,6 +12,7 @@ import { ControlHost, bindControl } from '../packages/runner/control-host.mjs';
 import { CliProvider, findCli } from '../packages/reasoning/cli-provider.mjs';
 import { Knowledge } from '../packages/knowledge/sources.mjs';
 import { findCodeAgent } from '../packages/code-agent-adapter/discovery.mjs';
+import { createSmokeArtifacts, trackSmokeArtifacts, protectSmokeArtifacts } from './smoke-artifacts.mjs';
 
 // Opt-in live two-project execution. Only project onboarding TTY is emulated.
 // Task approvals/questions, development, verification and delivery use production paths.
@@ -26,7 +27,7 @@ if (action === 'setup') assert.ok(claudePath, 'CLAUDE_CLI에 실제 Claude CLI �
 const claude = action === 'setup' ? resolve(claudePath) : null;
 const claudeCommand = action === 'setup' ? findCli('claude', claude) : null;
 const cli = action === 'setup' ? findCodeAgent() : null;
-const root = action === 'setup' ? resolve('.master-agent', `full-flow-${randomUUID()}`) : resolve(location);
+const root = action === 'setup' ? createSmokeArtifacts('full-flow-') : trackSmokeArtifacts(resolve(location), { exclusive: action === 'drive' });
 const configFile = join(root, 'experiment.json');
 const runtimeSnapshot = executable => {
   const file = resolve(dirname(executable), '../../snapshot.json');
@@ -36,7 +37,6 @@ const runtimeSnapshot = executable => {
 };
 
 if (action === 'setup') {
-  mkdirSync(root, { recursive: true });
   const require = createRequire(import.meta.url), use = name => require(join(dirname(cli), `${name}.js`));
   const { init } = use('init'), { docsBegin, docsEnd, confirmDoc } = use('docsCommands'), { setupProject } = use('setup');
   const { withInteraction } = use('tty'), { masterEnable, masterGrant } = use('master/admin');
@@ -224,6 +224,7 @@ if (action === 'setup') {
         return result;
       } };
       console.log(JSON.stringify({ stage: 'drive-start', ...status() }));
+      protectSmokeArtifacts(root, true);
       const timer = setInterval(() => { try { const s = status(); save(join(root, 'progress.json'), s); console.log(JSON.stringify({ stage: 'progress', ...s })); } catch (error) { console.log(JSON.stringify({ stage: 'progress-error', message: error.message })); } }, 30000);
       try {
         const result = await new LiveWorkflow(store).run(config.missionId, host, provider);
@@ -231,5 +232,13 @@ if (action === 'setup') {
         console.log(JSON.stringify({ stage: 'drive-returned', state: result.mission.state, blockers: result.blockers }));
       } finally { clearInterval(timer); const r = report(); console.log(JSON.stringify({ stage: 'report', passed: r.passed, report: join(root, 'report.json') })); }
     }
-  } finally { store.close(); }
+  } finally {
+    try {
+      const mission = store.need('mission', config.missionId);
+      const pending = mission.attempts.some(attempt => ['running', 'unknown', 'verifying'].includes(attempt.state));
+      const calls = store.list('control-run', { missionId: mission.id });
+      const settled = calls.every(run => ['completed', 'blocked', 'failed', 'cancelled', 'paused'].includes(run.state));
+      if (!pending && settled) protectSmokeArtifacts(root, false);
+    } finally { store.close(); }
+  }
 }

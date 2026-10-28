@@ -1,19 +1,19 @@
 // Real browser, dashboard API and code-agent build; isolated CODE_AGENT_HOME/CODEX_HOME and project, no request runner or model calls.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Store } from '../packages/storage/store.mjs';
 import { Engine } from '../packages/orchestrator/engine.mjs';
 import { startDashboard } from '../packages/dashboard/server.mjs';
 import { openBrowser } from './browser.mjs';
+import { createSmokeArtifacts } from './smoke-artifacts.mjs';
 
 const DIST = resolve(process.env.CODE_AGENT_DIST ?? join(dirname(fileURLToPath(import.meta.url)), '../../code-agent/dist'));
 const CLI = join(DIST, 'agent/cli.js');
 assert.ok(existsSync(CLI) && readFileSync(join(DIST, 'agent/master/trust.js'), 'utf8').includes('masterTrustConfirmed'), `화면 신뢰를 지원하는 code-agent 빌드가 필요합니다: ${DIST}`);
-mkdirSync(resolve('.master-agent'), { recursive: true });
-const artifacts = mkdtempSync(resolve('.master-agent/trust-browser-'));
+const artifacts = createSmokeArtifacts('trust-browser-');
 const home = join(artifacts, 'home'), codex = join(artifacts, 'codex'), path = join(artifacts, 'project');
 for (const dir of [home, codex, path]) mkdirSync(dir);
 // The user's real trust store is never touched. CLAUDECODE stays set like a dashboard started from a host session.

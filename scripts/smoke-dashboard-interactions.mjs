@@ -1,6 +1,6 @@
 // Windows Chrome UI smoke. Synthetic producers/launcher; never contacts a managed project or model.
-import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs';
-import { resolve, join } from 'node:path';
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import assert from 'node:assert/strict';
 import { openBrowser } from './browser.mjs';
@@ -8,10 +8,9 @@ import { planningSetup, blockedAnswer } from '../tests/planning-fixture.mjs';
 import { createInteractions } from '../packages/dashboard/interactions.mjs';
 import { startDashboard } from '../packages/dashboard/server.mjs';
 import { acceptRequest } from '../packages/orchestrator/requests.mjs';
+import { createSmokeArtifacts } from './smoke-artifacts.mjs';
 
-const artifactRoot = resolve(process.env.MASTER_AGENT_SMOKE_ROOT ?? '.master-agent');
-mkdirSync(artifactRoot, { recursive: true });
-const artifacts = mkdtempSync(join(artifactRoot, 'interactions-browser-')), cleanup = [];
+const artifacts = createSmokeArtifacts('interactions-browser-'), cleanup = [];
 const f = planningSetup({ after(fn) { cleanup.push(fn); } });
 await f.planner.analyze(f.mission.id, { name: 'fixture', async generate({ context }) {
   const answer = blockedAnswer(context); answer.issues[0].recommendation = answer.issues[0].options[0];

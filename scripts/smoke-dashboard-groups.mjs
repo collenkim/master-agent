@@ -1,14 +1,13 @@
 // Real browser and dashboard API; isolated catalog, no managed projects or model calls.
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { setup } from '../tests/helpers.mjs';
 import { startDashboard } from '../packages/dashboard/server.mjs';
 import { openBrowser } from './browser.mjs';
+import { createSmokeArtifacts } from './smoke-artifacts.mjs';
 
-const artifactRoot = resolve(process.env.MASTER_AGENT_SMOKE_ROOT ?? '.master-agent');
-mkdirSync(artifactRoot, { recursive: true });
-const artifacts = mkdtempSync(join(artifactRoot, 'group-delete-browser-')), cleanup = [];
+const artifacts = createSmokeArtifacts('group-delete-browser-'), cleanup = [];
 const f = setup({ after(fn) { cleanup.push(fn); } });
 const groupId = f.fixture.group.id;
 mkdirSync(join(f.fixture.projects[0].path, '.code-agent'));
