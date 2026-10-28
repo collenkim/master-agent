@@ -60,7 +60,7 @@ master-agent request continue <요청ID> --revision <요청버전>
 
 `--criterion`은 여러 번 지정할 수 있으며 criterion-1부터 ID를 부여한다. 생략하면 요청 원문을 request 완료 조건으로 보존한다. host 선택은 [요청 host와 교차 검증](ai-planning.md#요청-host와-교차-검증)과 [관리 실행 규칙](code-agent-control.md#역할과-적용-조건)을 따른다. 요청 ID는 목표 ID다. 그룹 구성은 접수 때 고정하며 같은 request-key와 같은 입력은 같은 요청을 반환한다. 동일 키의 다른 내용은 거부한다. `--revision`을 그룹 요청에 주면 접수 전 그룹 버전을 대조한다.
 
-`--input`은 선택 설정 JSON이다. 예를 들어 `{ "taskNumber": "UZRF-392", "criteria": [{ "id": "cancel", "description": "취소 회귀 통과" }], "templates": [] }` 형태이며 검증 템플릿 배열은 [검증 계약 재사용](autonomous-progress.md)을 따른다. JSON에 `"host": { "mode": "both", "main": "codex" }`를 넣을 수도 있다. CLI의 --task-number, --criterion, --host, --main, --provider, --model, --request-key, --revision을 함께 주면 해당 옵션이 우선한다. 요청 대상과 원문은 명령의 위치 인자를 사용한다. 대시보드에서도 같은 검증 설정을 전달할 수 있다.
+`--input`은 선택 설정 JSON이다. 예를 들어 `{ "taskNumber": "UZRF-392", "criteria": [{ "id": "cancel", "description": "취소 회귀 통과" }], "templates": [] }` 형태이며 검증 템플릿 배열은 [재사용 검증 템플릿](live-verification.md#재사용-검증-템플릿)을 따른다. JSON에 `"host": { "mode": "both", "main": "codex" }`를 넣을 수도 있다. CLI의 --task-number, --criterion, --host, --main, --provider, --model, --request-key, --revision을 함께 주면 해당 옵션이 우선한다. 요청 대상과 원문은 명령의 위치 인자를 사용한다. 대시보드에서도 같은 검증 설정을 전달할 수 있다.
 
 ### TASK 번호
 
@@ -154,7 +154,7 @@ mission의 dispatch·continue·verify·handoff·reconcile·reconcile-verificatio
 
 ## 구현 경계
 
-`mission verification-template`으로 재사용 범위를 등록하면 drive가 새 계획의 일치하는 작업에 검증 계약을 자동 연결한다. 일반 복구 보류는 프로젝트·의존 작업으로 제한하고 기존 승인 후 ready 상태를 같은 세션에서 자동 재개한다. [자동 진행 보완](autonomous-progress.md)에 계약과 실제 호스트 시험 결과를 정리했다.
+검증 계약의 자동 연결은 [재사용 검증 템플릿](live-verification.md#재사용-검증-템플릿), 작업별 보류와 같은 세션의 자동 재개는 [자동 진행 보완](autonomous-progress.md)을 따른다.
 
 읽기 전용 분석은 `mission stop-analysis <목표ID> <분석ID> --revision <버전>`으로 결과 적용을 취소한다. 검증 명령이 모두 반환했지만 관측·저장이 중단된 unknown 시도는 `mission reconcile-verification`으로 새 검증에 연결한다. [분석·검증 중단 처리](interruption.md)의 조건을 따른다. 두 명령은 개발 프로세스의 강제 종료를 수행하지 않는다.
 

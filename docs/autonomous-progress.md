@@ -14,40 +14,7 @@ drive는 기존 작업의 요구 확정·계획 승인이 유효하고 질문·�
 
 ## 재사용 검증 템플릿
 
-작업마다 등록하는 기존 verification 명령 외에 목표 단위로 재사용을 명시한 계약을 등록할 수 있다.
-
-```powershell
-master-agent mission verification-template <목표ID> template.json --revision <버전>
-```
-
-```json
-{
-  "id": "invoice-negative-input",
-  "projectId": "invoice",
-  "domain": "invoice",
-  "kinds": ["implementation", "verification"],
-  "criteria": ["negative"],
-  "outputs": ["test-result"],
-  "recipe": {
-    "schemaVersion": 1,
-    "allowedPaths": ["subtotal.mjs"],
-    "checks": [{
-      "id": "negative-input",
-      "executable": "C:/Program Files/nodejs/node.exe",
-      "args": ["test-negative.mjs"],
-      "criterionIds": ["negative"],
-      "timeoutMs": 10000
-    }],
-    "artifacts": [{"name": "test-result", "checkId": "negative-input"}]
-  }
-}
-```
-
-실제 Node 경로와 프로젝트에 존재하는 테스트를 사용한다. 템플릿 등록은 해당 목표에서 프로젝트·도메인·작업 종류·완료 조건·변경 파일·산출물 범위 안의 반복 검증을 허용하는 설정이다. 명령의 의미와 완료 조건 연결은 최초 등록에서 확인해야 한다.
-
-AI 계획 입력에도 템플릿을 전달한다. drive는 현재 작업에 맞는 템플릿이 정확히 하나일 때 판단 기록을 남기고 검증 계약을 자동 연결한다. 파일 허용 범위는 현재 작업이 요구한 정확한 경로로 좁힌다. 조건의 ID 또는 의미, 프로젝트 경로, 도메인, 작업 종류, 산출물·수정 범위가 맞지 않거나 여러 템플릿이 겹치면 자동 선택하지 않는다. 모델이 임의의 실행 명령을 생성하는 방식은 지원하지 않는다.
-
-재계획 시 템플릿은 유지하지만 이미 실행한 검증 계약·성공 증거는 재사용하지 않는다. 새 작업마다 템플릿 적합성을 다시 검사한다. 템플릿을 등록하지 않은 목표는 작업별 계약 등록이 필요하다.
+등록 명령·JSON 형식·자동 연결 조건은 [재사용 검증 템플릿](live-verification.md#재사용-검증-템플릿)을 따른다.
 
 ## 실제 연동 시험과 남은 경계
 
