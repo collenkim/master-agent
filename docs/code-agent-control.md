@@ -16,6 +16,8 @@ host를 고르지 않은 요청은 프로젝트의 `execution claude|codex`·`ex
 
 Codex 접수의 세션 ID는 임시 별칭일 수 있다. master는 결과의 `hostKind`·`sessionConfirmed`·`sessionAlias`와 확정된 thread ID를 기록하고 같은 thread만 재개한다. thread 미확인은 새 세션으로 대체하지 않는다. 호스트·권한 설정이 바뀐 세션의 재개는 code-agent가 거부하며, 호스트 전환은 사용자의 `execution --handoff` 절차와 별도 실행 인계가 필요하다. 요청에서 host를 고른 작업도 같으며, 사람이 `execution <host> --handoff`로 인계하면 그 작업에 고정된 선택도 인계한 host로 바뀐다.
 
+작업 임대의 `held`·`idle` 소유권은 결과의 실제 호스트와 세션을 함께 대조한다. 결과 상태 기록과 재개 검사에 같은 기준을 적용하며, 같은 Codex·Claude 실행의 계획 동의는 `waiting-decision`으로 유지한다. 호스트 정보가 없는 저장 기록의 처리와 `none`·`released`·`other-work` 계약은 [배정과 계속 실행](live-execution.md#배정과-계속-실행)을 따른다.
+
 | 주체 | 하는 일 |
 | --- | --- |
 | master-agent | 목표 분석·작업 배분·의존성·진행·재계획·독립 검증·전체 완료 판정, 위임 판단의 분류·이유·근거 기록 |
@@ -51,7 +53,7 @@ master-agent project pair <프로젝트ID> --cli <경로> [--controller dashboar
 
 `drive --control`은 독립 프로젝트를 먼저 접수하고 실행 ID를 저장한 뒤, 각 결과를 한 번씩 조회한다. 하나가 실행 중이어도 다른 프로젝트를 접수할 수 있다. 동일 프로젝트 잠금·선행 인계 조건은 유지하며 판단과 검사는 순차 수행한다. 이 경로의 관측 상한은 저장된 acceptedAt부터 계산하므로 재연결로 초기화되지 않는다. 초과·관측 불가는 unknown으로 보존하고 잠금·외부 실행은 그대로 둔다. 개별 dispatch·continue·reattach는 종료를 기다린다.
 
-`mission progress <ID>`는 원격 호출 없이 최근 저장 관측을 읽는다. 정상 위임 대기는 approval-pending, 판단·전송 중은 approval-processing, 사람 이관은 human-input, 실패·범위 위반·미확인은 blocked로 표시한다. 기존 state와 nextAction은 호환성을 위해 보존하며 새 관제에서는 progress.status·progress.nextAction과 작업별 phase·reason·runId·lastProgressAt을 사용한다.
+`mission progress <ID>`는 원격 호출 없이 최근 저장 관측을 읽는다. 정상 위임 대기는 approval-pending, 판단·전송 중은 approval-processing, 사람 이관은 human-input, 실패·범위 위반·미확인은 blocked로 표시한다. state와 nextAction은 호환성을 위해 보존하며 관제에서는 progress.status·progress.nextAction과 작업별 phase·reason·runId·lastProgressAt을 사용한다.
 
 ## 제어 연결(페어링)
 
@@ -163,6 +165,7 @@ drive는 code-agent 통신 계약 호스트에서 판단기(`--provider`)가 있
 
 ## 시험
 
+- 임대 소유권 시험(`tests/live.test.mjs`): 실제 호스트·세션을 대조하는 결과 기록과 재개, Codex·Claude의 동의 대기, 다른 호스트·세션·작업 충돌, `none`·`released`·`other-work` 임대와 호스트 정보가 없는 기록의 호환을 본다.
 - 모의 시험(`tests/control.test.mjs`): code-agent 통신 계약을 흉내 낸 전송과 가짜 판단기로 두 프로젝트의 위임 → 독립 검증 → 위임 반영 → 인계 → 통합 완료, 판단 기록 선행, critical·ambiguous·권한 없음·준비하지 않은 동의의 사람 이관, 검증 전 반영 판단 금지, 위임 영수증 결합, 재부착, commandId 충돌·이벤트 재동기화, 정지 대상 제한, 독립 프로젝트 진행과 의존 작업 대기, 반영 단계에서만 하는 독립 검증과 반영 단계를 떠난 검증된 시도의 계속 실행, 위임 수정 요청 뒤 같은 세션의 재준비, 이어 실행 접수 거부의 막힘 기록, 반영 확인 수정 요청 뒤 재준비와 재검증, 선행 증거 요약 프롬프트, 업무 질문 판단 자료의 앞선 답을 본다.
 - 페어링 시험(`tests/pairing.test.mjs`): 계약을 흉내 낸 시험 대역(`tests/pairing-fake-cli.mjs`)과 임시 Ed25519 키로 연결 상태 분류, 확인 내용 해시 대조, 서명 검증·일회성 challenge, 토큰 파일 경로만 저장, 만료 임박 갱신(rotated), 다른 소유자·사용 중 프로젝트 거부, 응답 유실 뒤 같은 commandId 정산, 저장소 안 토큰 파일 거부, HTTP 확인 체크·화면 토큰을 본다. 실제 빌드와의 호환은 아래 연동 시험의 페어링 항목이 본다(빌드에 페어링이 없으면 건너뛴다).
 - 실제 code-agent CLI 연동 시험(`tests/code-agent-control.test.mjs`): 빌드된 code-agent(`CODE_AGENT_DIST` 또는 옆 저장소)와 가짜 호스트로 연결·원자적 접수·중복 거부·이벤트 커서·결과·재부착·정지·제어권 인계와 이전 소유자 거부를 본다. 시험 프로젝트에는 `init`으로 Claude 실행 절차·hook을 설치한다(관리 실행 설치 검사). 페어링 항목은 시험 폴더의 `CODE_AGENT_HOME`에서 PC 신뢰 → 확인한 연결 → 인증된 heartbeat·사람 채널 키 탐색을 보고, 화면 PC 신뢰 항목은 code-agent 문구의 해시로만 신뢰하고 바로 연결되는지와 호스트 표지를 넘기지 않는지 본다. code-agent 빌드가 없으면 건너뛴다.

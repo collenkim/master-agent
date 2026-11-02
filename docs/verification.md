@@ -4,19 +4,21 @@
 
 ## 최신 검증
 
-2026-10-28, Windows·Node.js 24.19.0 기준이다.
+2026-11-02, Windows·Node.js 24.19.0과 로컬 code-agent 빌드 기준이다. 최신 결과만 유지한다.
 
 | 검사 | 결과 | 재현 |
 | --- | --- | --- |
-| 자동 회귀 | 373건 통과, 실패·건너뜀 0 | `npm.cmd test` |
-| 구문·문서 링크·앵커 | JavaScript 136개·Markdown 19개 통과 | `npm.cmd run check` |
+| 관리 실행·임대 회귀 | 121건 통과, 실패·건너뜀 0 | `node --test tests/live.test.mjs` |
+| 전체 자동 회귀 | 484건 중 481건 통과, 3건 실패, 건너뜀 0. 실패 분류는 아래 참조 | `npm.cmd test` |
+| 연동 실패 재검증 | 샌드박스 밖에서 10건 중 8건 통과, 기존 인계 계약 검사와 상위 테스트 2건 실패 | `node --test tests/code-agent-control.test.mjs tests/handoff-contracts.test.mjs` |
+| 구문·문서 링크·앵커 | JavaScript 138개·Markdown 19개 통과 | `npm.cmd run check` |
 | 린트 | 미사용 변수·import와 미정의 이름 검사 통과 | `npm.cmd run lint` |
-| 그룹 브라우저 | 11개 checks 통과 | `node scripts/smoke-dashboard-groups.mjs` |
-| 타임라인 브라우저 | 12개 checks 통과 | `node scripts/smoke-dashboard-history.mjs` |
-| 요청함 브라우저 | 28개 checks 통과 | `node scripts/smoke-dashboard-interactions.mjs` |
-| 검증 계약 브라우저 | 17개 checks 통과 | `node scripts/smoke-dashboard-verification.mjs` |
 
-회귀 시험은 공개 code-agent 빌드를 고정한 격리 환경에서 수행한다. 모델·개발 호스트는 모의 응답이며 파일·Git·SQLite·자식 프로세스와 code-agent 통신은 실제 실행한다. 외부 빌드가 필요한 시험은 빌드가 없으면 건너뛰므로 결과의 skipped 수를 함께 확인한다. 이번 검사에서 실제 모델과 원격 CI는 실행하지 않았다.
+전체 회귀의 실패 중 PC 신뢰 시험 1건은 샌드박스의 사용자 홈 경로 접근 제한(`EPERM`)이며, 샌드박스 밖 재실행에서 통과했다. 남은 실패는 `tests/handoff-contracts.test.mjs`의 원본 계약 문서 변경 감지 assertion과 그 상위 테스트다. 임대 수정 전 기준 커밋(`c9d7279`)의 `live.mjs`를 주입해도 같은 assertion이 실패하므로 임대 수정과 독립된 기존 연동 문제로 남아 있다. 전체 회귀가 모두 통과한 상태는 아니다.
+
+회귀 시험은 격리된 임시 프로젝트에서 수행한다. 모델·개발 호스트는 모의 응답이며 파일·Git·SQLite·자식 프로세스와 code-agent 통신은 실제 실행한다. 외부 빌드가 필요한 시험은 빌드가 없으면 건너뛰므로 결과의 skipped 수를 함께 확인한다. 이번 검사에서 브라우저 smoke·실제 모델·원격 CI는 실행하지 않았다.
+
+관리 실행 회귀는 Codex·Claude의 `held`·`idle` 임대에서 동의 대기와 같은 시도·세션 재개, 다른 호스트·세션·작업 거부, `none`·`released`·`other-work`, 호스트 정보가 없는 기록의 호환 계약을 결과 기록과 재개 검사 양쪽에서 확인한다. 기존 Codex 실행 증거의 discount·total 상태 요약과 임대를 결합한 사본 DB 재판정도 두 임대 상태 모두 `waiting-decision`을 유지했다. 원본 DB·실행 JSON·임대 파일의 해시는 그대로이며, 이 재판정은 실제 호스트 재실행을 포함하지 않는다.
 
 ## 자동 회귀의 확인 범위
 
@@ -26,6 +28,7 @@
 | 실행·복구 | 취소 후 잠금 해제·TASK 재사용, 실행 중 취소 거부, 재계획 트리 변경 감지·재동기화, 실패·중단 복구 |
 | 저장·임대 | v1→v2 데이터 보존, 오래된 임대 회수·생존 프로세스 보호, 종료 체크포인트 삭제, 분석·실행 회차의 저장 크기 제한 |
 | 관리 통신·위임 | 원자적 접수·중복 거부·이벤트·재부착·정지·인계, 위임 출처·권한·영수증 대조, relay 전송 실패 마감 |
+| 관리 실행 소유권 | 실제 호스트·세션 대조, Codex·Claude 동의 대기·재개, 다른 작업 격리, 임대 상태·호스트 누락 호환 |
 | 대시보드·조회 | 200개 목표·2만 이벤트 조회, 읽기 전용 GET·페이지·필드 투영, 설치 지문 재사용·변경 감지 |
 | HTTP·입력 보호 | 인증·Host/Origin·cross-site 거부, 비도메인 오류의 고정 500 응답, 원격 숫자·답변 타입 검증 |
 | 요청함·타임라인 | 응답 중복·버전 대조, 재기동 후 sending 결과 확인, gap 계약 위반 거부와 커서 복구 |
@@ -60,4 +63,4 @@ node scripts/smoke-full-flow.mjs report <root>
 
 ## 미검증 범위
 
-자유 목표의 연속 완주·실패와 중단 복구·Codex 및 교차 판단은 실제 모델로 추가 검증해야 한다. 후속 시험은 [남은 작업](implementation.md#남은-작업)을 따른다.
+임대 수정 후 실제 Codex·Claude 호스트의 계획 동의 처리와 재개·전체 완료는 추가 검증해야 한다. 자유 목표의 연속 완주·실패와 중단 복구·교차 판단도 실제 모델 검증이 필요하다. 후속 시험은 [남은 작업](implementation.md#남은-작업)을 따른다.

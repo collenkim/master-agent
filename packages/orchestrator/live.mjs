@@ -9,10 +9,16 @@ import { predecessorContracts } from '../verification/handoff-contracts.mjs';
 import { taskHeld, relevantSource } from './scope.mjs';
 import { remoteStateSummary } from './remote-state.mjs';
 
-// other-work 는 지금 작업이 아닌(끝난) 작업의 임대다 — code-agent 도 다음 진행 명령에서 넘겨받는다(lease.ts leaseDecision)
-function ownsLease(state, sessionId) {
+// 결과가 호스트를 생략하면 저장된 실행 호스트를 사용한다. 둘 다 없는 과거 기록만 기존 Claude 계약을 따른다.
+function leaseOwner(result, attempt) {
+  return { host: result?.control?.hostKind ?? attempt?.executionHost ?? 'claude', session: result?.sessionId };
+}
+// other-work 는 현재 작업 밖의 임대다 — code-agent 도 다음 진행 명령에서 넘겨받는다(lease.ts leaseDecision).
+// 현재 작업 ID의 일치는 record/ready에서 별도로 검사한다.
+function ownsLease(state, owner) {
   const lease = state.ownership?.lease;
-  return ['none', 'released', 'other-work'].includes(lease?.state) || (sessionId && lease?.host === 'claude' && lease.session === sessionId && ['held', 'idle'].includes(lease.state));
+  return ['none', 'released', 'other-work'].includes(lease?.state) || Boolean(owner?.session && ['claude', 'codex'].includes(owner.host) &&
+    lease?.host === owner.host && lease.session === owner.session && ['held', 'idle'].includes(lease.state));
 }
 // master 통신 계약 실행의 권한 거부는 hook·허용 도구가 돌려보낸 기록이다 — 막힘은 실행 끝 상태와 code-agent 재개 판정으로 본다
 const denialsBlock = result => Boolean(result?.permissionDenials?.length && !result.control);
@@ -29,9 +35,9 @@ function changeRequests(store, attempt) {
   const turn = attempt.turns.at(-1);
   return store.list('delegation').filter(d => d.attemptId === attempt.id && d.kind === 'consent' && d.state === 'changes-requested' && Date.parse(d.recordedAt) >= Date.parse(turn.at));
 }
-function ready(state, workId, fresh, sessionId, delegated = false, revising = false) {
+function ready(state, workId, fresh, owner, delegated = false, revising = false) {
   requireThat(state && typeof state.stateVersion === 'string', 'invalid-remote-state', '상태 버전이 필요합니다.');
-  requireThat(ownsLease(state, sessionId), 'remote-busy', '다른 호스트의 임대가 남아 있습니다. 종료·해제를 확인하세요.');
+  requireThat(ownsLease(state, owner), 'remote-busy', '다른 호스트의 임대가 남아 있습니다. 종료·해제를 확인하세요.');
   requireThat(state.consents?.readable === true && state.consents.open.length === 0, 'remote-needs-human', '열린 동의를 기존 호스트에서 처리해야 합니다.');
   requireThat(!state.questions?.unanswered?.length && !state.questions?.unverified?.length, 'remote-needs-human', '답변 또는 확인이 필요한 질문이 있습니다.');
   if (fresh && !state.work) requireThat(state.resume.code === 'no-work' && state.request === null, 'remote-busy', '접수 중인 작업이 있거나 시작할 수 없습니다.');
@@ -159,7 +165,7 @@ export class LiveExecution {
         state.resume?.code === 'needs-human' || state.consents?.open?.length || state.questions?.unanswered?.length || state.questions?.unverified?.length ? 'waiting-decision' :
           state.resume?.code === 'unobservable' || state.resume?.code === 'ownership-conflict' ? 'unknown' :
             result.status === 'blocked' || denialsBlock(result) || state.resume?.code !== 'ready' ? 'blocked' : 'awaiting-verification';
-      if (state && !ownsLease(state, result?.sessionId)) disposition = 'unknown';
+      if (state && !ownsLease(state, leaseOwner(result, attempt))) disposition = 'unknown';
       const turn = { id: randomUUID(), at: now(), expectedState: ticket.expectedState, state: remoteStateSummary(state, result?.control?.runId), result: result ?? null, error: error ?? null, disposition };
       attempt.turns.push(turn); attempt.state = disposition; attempt.hostReturnedAt = now();
       if (['claude', 'codex'].includes(result?.control?.hostKind)) attempt.executionHost = result.control.hostKind;
@@ -192,7 +198,7 @@ export class LiveExecution {
       'invalid-state', '검증된 시도는 같은 작업이 반영 자리를 떠났거나 반영 확인이 위임 수정 요청을 받았을 때만 이어 갑니다.');
     // 직전 회차가 기다린 동의·질문을 위임 판단(사람이 준 권한 범위)으로 모두 처리했으면 그 회차에 한해 이어 간다 — 승인 자체는 code-agent 가 확인했다
     const delegated = Boolean(attempt.delegatedTurnId && attempt.delegatedTurnId === attempt.turns.at(-1)?.id);
-    ready(state, attempt.codeAgentWorkId, false, sessionId, delegated, delegated && host.transport === 'code-agent-master' && revisingTurn(this.store, attempt, state));
+    ready(state, attempt.codeAgentWorkId, false, leaseOwner(attempt.turns.at(-1).result, attempt), delegated, delegated && host.transport === 'code-agent-master' && revisingTurn(this.store, attempt, state));
     if (automatic) {
       requireThat((delegated || state.request?.status === 'confirmed' && state.approval?.status === 'approved') && !state.findings?.blocking && !denialsBlock(attempt.turns.at(-1)?.result),
         'remote-unapproved', '자동 계속 실행에는 기존 요구 확정·승인(또는 그 회차의 위임 판단 처리)·권한 확인이 필요합니다.');

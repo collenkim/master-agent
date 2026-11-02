@@ -26,6 +26,10 @@ code-agent CLI는 자동 탐색한다. 별도 설치는 `--cli <code-agent CLI �
 
 계속 실행은 같은 작업과 기록된 세션을 사용한다. 질문·승인은 [공통 요청함](dashboard-interactions.md) 또는 기존 code-agent 호스트에서 처리한다. `mission clarify`는 계획 분석 질문용이다. 실제 작업이 시작된 뒤 새 계획으로 실행 시도를 덮을 수 없다.
 
+결과 기록과 계속 실행의 임대 검사는 같은 소유권 기준을 쓴다. `held`·`idle` 임대는 실제 관리 실행의 호스트와 세션이 모두 같아야 한다. 호스트는 현재 결과(재개 시 직전 회차 결과)의 `control.hostKind`, 저장된 시도의 `executionHost` 순서로 찾고, 둘 다 없는 과거 기록만 기존 `claude` 호환값을 쓴다. 세션은 그 결과의 `sessionId`다. 프로젝트 기능 표지나 임대 자체의 호스트·`self` 값으로 실행 소유자를 추정하지 않는다. 같은 Codex·Claude 실행의 계획 동의 대기는 `waiting-decision`으로 유지하며, 동의 처리 후 같은 시도·세션으로 재개한다. 다른 호스트 또는 세션의 `held`·`idle` 임대는 결과를 `unknown`으로 기록하고 재개 검사는 `remote-busy`로 거부한다.
+
+`none`·`released`·`other-work`는 기존처럼 임대 검사에서 진행을 막지 않는다. `other-work`는 현재 작업 밖의 임대 기록이며 code-agent가 다음 진행 명령에서 넘겨받는다. 이 예외가 현재 작업 ID 검사를 생략하지는 않는다. 관측한 작업이 배정된 작업과 다르면 결과는 `unknown`, 재개는 `remote-not-ready`이며, 읽을 수 없거나 상태가 누락된 임대도 소유한 것으로 인정하지 않는다. 이 계약은 `tests/live.test.mjs`에서 결과 기록과 재개 검사 양쪽으로 검증한다.
+
 ## 상태와 잠금
 
 | 작업 상태 | 의미 | 후속 동작 |

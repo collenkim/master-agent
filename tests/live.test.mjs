@@ -136,6 +136,162 @@ test('동의 대기와 기존 세션 재개를 기록하고 사람 승인 자체
   assert.equal(m.attempts[0].turns.length, 2); assert.equal(m.tasks[0].state, 'awaiting-verification');
 });
 
+// 관리 실행 결과의 hostKind가 실제 호스트다. 카탈로그의 과거 claude 기능 표지는 소유권 근거가 아니다.
+function managedLeaseFixture(t, hostKind) {
+  const f = fixture(t), base = f.host.execute;
+  f.host.execute = async ticket => {
+    const result = await base(ticket);
+    f.state.work.phase = 'plan'; f.state.resume.code = 'needs-human';
+    f.state.consents.open = [{ id: 'C-plan', action: 'plan' }];
+    return { ...result, control: { hostKind, sessionConfirmed: true } };
+  };
+  return f;
+}
+
+const continueOptions = (f, m) => ({ expectedRevision: m.revision, expectedState: f.state.stateVersion });
+function resolvePlan(f) { f.state.consents.open = []; f.state.resume.code = 'ready'; }
+
+for (const hostKind of ['claude', 'codex']) for (const leaseState of ['held', 'idle']) {
+  test(`${hostKind}/${leaseState}: 임대 없는 첫 회차 → 계획 동의 대기 → 같은 실행 재개`, async t => {
+    const f = managedLeaseFixture(t, hostKind), base = f.host.execute;
+    f.host.execute = async ticket => {
+      const result = await base(ticket);
+      if (f.host.calls === 1) { f.state.work = null; f.state.resume.code = 'no-work'; }
+      else {
+        assert.equal(ticket.sessionId, 'session-test');
+        f.state.ownership.lease = { state: leaseState, host: hostKind, session: ticket.sessionId };
+      }
+      if (f.host.calls === 3) { resolvePlan(f); f.state.work.phase = 'implement'; }
+      return result;
+    };
+    let m = await f.live.dispatch(f.mission.id, f.taskId, f.host, f.options);
+    const attemptId = m.attempts[0].id;
+    assert.equal(m.attempts[0].state, 'waiting-decision');
+    resolvePlan(f); f.state.work = { id: m.attempts[0].codeAgentWorkId, phase: 'plan' };
+    m = await f.live.continue(m.id, attemptId, f.host, continueOptions(f, m));
+    assert.equal(m.state, 'waiting-decision'); assert.equal(m.tasks[0].state, 'waiting-decision');
+    assert.equal(m.attempts[0].state, 'waiting-decision');
+    assert.equal(m.attempts[0].turns.at(-1).disposition, 'waiting-decision');
+    assert.equal(m.attempts[0].turns.at(-1).state.phase, 'plan');
+    assert.equal(m.attempts[0].executionHost, hostKind);
+    await assert.rejects(f.live.continue(m.id, attemptId, f.host, continueOptions(f, m)), { code: 'remote-needs-human' });
+    assert.equal(f.host.calls, 2);
+    resolvePlan(f);
+    m = await f.live.continue(m.id, attemptId, f.host, continueOptions(f, m));
+    assert.equal(f.host.calls, 3); assert.equal(m.attempts.length, 1);
+    assert.equal(m.attempts[0].id, attemptId); assert.equal(m.attempts[0].turns.length, 3);
+    assert.equal(m.attempts[0].state, 'awaiting-verification');
+    assert.ok(m.attempts[0].turns.every(turn => turn.result.sessionId === 'session-test'));
+  });
+}
+
+for (const hostKind of ['claude', 'codex']) {
+  const otherHost = hostKind === 'claude' ? 'codex' : 'claude';
+  const cases = [
+    ...['none', 'released', 'other-work'].map(state => [state, s => {
+      s.ownership.lease = { state, host: otherHost, session: 'other-session' };
+    }, null]),
+    ...['held', 'idle'].flatMap(state => [
+      [`${state}/다른 호스트`, s => { s.ownership.lease = { state, host: otherHost, session: 'session-test', self: true }; }, 'remote-busy'],
+      [`${state}/다른 세션`, s => { s.ownership.lease = { state, host: hostKind, session: 'other-session' }; }, 'remote-busy'],
+      [`${state}/다른 작업`, s => { s.ownership.lease = { state, host: hostKind, session: 'session-test' }; s.work.id = 'OTHER'; }, 'remote-not-ready'],
+    ]),
+    ['held/호스트 없음', s => { s.ownership.lease = { state: 'held', session: 'session-test' }; }, 'remote-busy'],
+    ['idle/세션 없음', s => { s.ownership.lease = { state: 'idle', host: hostKind }; }, 'remote-busy'],
+    ['읽을 수 없는 임대', s => { s.ownership.lease = { state: 'unreadable' }; }, 'remote-busy'],
+    ['임대 관측 없음', s => { delete s.ownership.lease; }, 'remote-busy'],
+    ['other-work/다른 현재 작업', s => { s.ownership.lease = { state: 'other-work' }; s.work.id = 'OTHER'; }, 'remote-not-ready'],
+  ];
+  for (const [name, change, code] of cases) test(`${hostKind}/${name}: 결과 기록과 재개 소유권 계약`, async t => {
+    await t.test('결과 기록', async t => {
+      const f = managedLeaseFixture(t, hostKind), base = f.host.execute;
+      f.host.execute = async ticket => { const result = await base(ticket); change(f.state); return result; };
+      const m = await f.live.dispatch(f.mission.id, f.taskId, f.host, f.options);
+      const expected = code ? 'unknown' : 'waiting-decision';
+      assert.equal(m.attempts[0].state, expected); assert.equal(m.tasks[0].state, expected);
+      assert.equal(m.attempts[0].turns[0].disposition, expected);
+      assert.equal(f.store.lock(m.attempts[0].projectId).attempt_id, m.attempts[0].id);
+    });
+    await t.test('재개 검사', async t => {
+      const f = managedLeaseFixture(t, hostKind);
+      let m = await f.live.dispatch(f.mission.id, f.taskId, f.host, f.options);
+      resolvePlan(f); change(f.state);
+      const resume = () => f.live.continue(m.id, m.attempts[0].id, f.host, continueOptions(f, m));
+      if (code) {
+        await assert.rejects(resume(), { code });
+        assert.equal(f.host.calls, 1);
+        assert.equal(f.store.need('mission', m.id).revision, m.revision);
+        assert.equal(f.store.need('mission', m.id).attempts[0].turns.length, 1);
+      } else {
+        m = await resume();
+        assert.equal(f.host.calls, 2); assert.equal(m.attempts[0].state, 'waiting-decision');
+      }
+      assert.equal(f.store.lock(m.attempts[0].projectId).attempt_id, m.attempts[0].id);
+    });
+  });
+}
+
+for (const hostKind of ['claude', 'codex']) for (const leaseState of ['held', 'idle']) {
+  test(`${hostKind}/${leaseState}: 결과 호스트가 빠진 회차는 저장된 실행 호스트로 기록·재개`, async t => {
+    const f = managedLeaseFixture(t, hostKind), base = f.host.execute;
+    let m = await f.live.dispatch(f.mission.id, f.taskId, f.host, f.options);
+    f.state.ownership.lease = { state: leaseState, host: hostKind, session: 'session-test' };
+    f.host.execute = async ticket => {
+      const result = await base(ticket);
+      delete result.control.hostKind; // 접수 거부 결과 등은 호스트 정보를 다시 싣지 않는다.
+      return result;
+    };
+    for (let turn = 2; turn <= 3; turn++) {
+      resolvePlan(f);
+      m = await f.live.continue(m.id, m.attempts[0].id, f.host, continueOptions(f, m));
+      assert.equal(m.attempts[0].state, 'waiting-decision');
+      assert.equal(m.attempts[0].executionHost, hostKind);
+      assert.equal(m.attempts[0].turns.length, turn);
+      assert.equal(m.attempts[0].turns.at(-1).result.control.hostKind, undefined);
+    }
+  });
+}
+
+for (const hostKind of ['claude', 'codex']) test(`${hostKind}: 직전 결과의 호스트가 저장된 실행 호스트보다 우선한다`, async t => {
+  const f = managedLeaseFixture(t, hostKind);
+  let m = await f.live.dispatch(f.mission.id, f.taskId, f.host, f.options);
+  const stored = f.store.need('mission', m.id), otherHost = hostKind === 'claude' ? 'codex' : 'claude';
+  stored.attempts[0].executionHost = otherHost;
+  m = f.store.put('mission', stored, stored.revision);
+  resolvePlan(f);
+  f.state.ownership.lease = { state: 'held', host: otherHost, session: 'session-test' };
+  await assert.rejects(f.live.continue(m.id, m.attempts[0].id, f.host, continueOptions(f, m)), { code: 'remote-busy' });
+  assert.equal(f.host.calls, 1);
+  f.state.ownership.lease.host = hostKind;
+  m = await f.live.continue(m.id, m.attempts[0].id, f.host, continueOptions(f, m));
+  assert.equal(m.attempts[0].state, 'waiting-decision');
+  assert.equal(m.attempts[0].executionHost, hostKind);
+});
+
+for (const hostKind of [undefined, null]) for (const leaseHost of ['claude', 'codex']) {
+  test(`호스트 없는 과거 기록(${hostKind})/${leaseHost}: Claude 호환값으로만 기록·재개`, async t => {
+    await t.test('결과 기록', async t => {
+      const f = managedLeaseFixture(t, hostKind), base = f.host.execute;
+      f.host.execute = async ticket => {
+        const result = await base(ticket);
+        f.state.ownership.lease = { state: 'held', host: leaseHost, session: 'session-test' };
+        return result;
+      };
+      const m = await f.live.dispatch(f.mission.id, f.taskId, f.host, f.options);
+      assert.equal(m.attempts[0].state, leaseHost === 'claude' ? 'waiting-decision' : 'unknown');
+      assert.equal(m.attempts[0].executionHost, undefined);
+    });
+    await t.test('재개 검사', async t => {
+      const f = managedLeaseFixture(t, hostKind);
+      let m = await f.live.dispatch(f.mission.id, f.taskId, f.host, f.options);
+      resolvePlan(f); f.state.ownership.lease = { state: 'idle', host: leaseHost, session: 'session-test' };
+      const resume = () => f.live.continue(m.id, m.attempts[0].id, f.host, continueOptions(f, m));
+      if (leaseHost === 'codex') { await assert.rejects(resume(), { code: 'remote-busy' }); assert.equal(f.host.calls, 1); }
+      else { m = await resume(); assert.equal(m.attempts[0].state, 'waiting-decision'); assert.equal(f.host.calls, 2); }
+    });
+  });
+}
+
 test('실행 중 pause는 돌아온 결과로 해제되지 않으며 모의 결과 API를 혼용할 수 없다', async t => {
   const f = fixture(t), base = f.host.execute;
   f.host.execute = async ticket => {
