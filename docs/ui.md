@@ -68,6 +68,8 @@ code-agent에는 중앙 프로젝트 등록부가 없으므로 현재 작업 디
 | 연결 갱신 필요 | 저장된 소유권·세대와 현재 code-agent 관측이 다르다. |
 | 관찰 연결 | 이 DB의 연결은 소유자가 아닌 관찰자다. |
 
+상태 조회가 설치 마커 없음(`not-installed`) 또는 다른 저장소의 상태(`wrong-project`)를 반환한 프로젝트에는 hello·요청함 조회를 보내지 않는다. 그 경로에서 실행한 code-agent는 상위 저장소를 대신 응답하고 그 저장소에 로그를 남기기 때문이다.
+
 아직 hello 관측이 없고 연결도 없으면 임시 표시인 `연결 확인 전`을 사용한다. 저장된 연결만으로 현재 인증 성공을 확정하지 않는다. 연결·갱신 절차는 [제어 연결(페어링)](code-agent-control.md#제어-연결페어링)을 따른다.
 
 카드의 `요청별 host 선택`은 고를 수 있는 실행 방식마다(둘 다는 주 host마다) `준비 완료`·`프로젝트 신뢰 필요`·`hook 검토 필요`·`준비 확인 실패`·`준비 확인 중`과 막힌 이유를 표시한다. 설치된 방식이라도 준비가 확정되지 않았으면 준비 완료로 표시하지 않는다.
@@ -184,7 +186,7 @@ HTTP 오류는 `DomainError`만 공개 코드·메시지와 400·403·404·409�
 
 CLI 전용 `POST /api/dashboard-control`은 별도 제어 토큰과 서버 ID로 status·stop을 처리한다. 화면 토큰으로는 호출할 수 없다. restart는 이 종료 경로를 확인한 뒤 새 CLI 프로세스가 서버를 시작하는 동작이다.
 
-`GET /api/interactions`는 저장된 관측을 읽기만 한다. master 요청 동기화는 서버 시작·관측 변경·응답 제출 뒤에 수행한다. `itemId`를 함께 보내면 열린 항목의 `openedItem`과 같은 분석의 다음 질문 `nextItem`·`remainingCount`를 반환해 페이지 밖으로 이동한 답변 이력을 유지한다. 원격 요청의 화면 필드만 투영하며 `challenge`·`humanChannel`·서명 envelope는 보내지 않는다.
+`GET /api/interactions`는 저장된 관측을 읽기만 하며 동기화 시점은 [요청과 전송의 보존](dashboard-interactions.md#요청과-전송의-보존)을 따른다. `itemId`를 함께 보내면 열린 항목의 `openedItem`과 같은 분석의 다음 질문 `nextItem`·`remainingCount`를 반환해 페이지 밖으로 이동한 답변 이력을 유지한다. 원격 요청의 화면 필드만 투영하며 `challenge`·`humanChannel`·서명 envelope는 보내지 않는다.
 
 ## 공통 요청함
 

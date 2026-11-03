@@ -1,6 +1,6 @@
 # 실제 개발 호스트 연결
 
-master-agent는 live 목표의 준비된 작업을 code-agent 관리 실행으로 배정하고 실행 회차와 상태를 저장한다. CLI의 배정·계속 실행·검증·인계·복구·재계획·자동 진행에는 `--control`이 필요하다. 대시보드와 요청 실행기는 같은 관리 실행 계약을 사용한다. 연결과 host 선택은 [code-agent 통신 계약 연동](code-agent-control.md)을 따른다.
+master-agent는 live 목표의 준비된 작업을 code-agent 관리 실행으로 배정하고 실행 회차와 상태를 저장한다. CLI에서 `--control`이 필요한 명령은 [통신 계약의 명령](code-agent-control.md#명령)을 따른다. 대시보드와 요청 실행기는 같은 관리 실행 계약을 사용한다. 연결과 host 선택은 [code-agent 통신 계약 연동](code-agent-control.md)을 따른다.
 
 ## 실행 계약
 

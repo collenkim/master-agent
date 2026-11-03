@@ -5,7 +5,7 @@ import { LiveWorkflow } from '../packages/orchestrator/drive.mjs';
 import { LiveExecution } from '../packages/orchestrator/live.mjs';
 import { predecessorContracts, validateExports, bindExports, contractLines, dependencyBundle, verifyContractDocuments } from '../packages/verification/handoff-contracts.mjs';
 import { hash } from '../packages/domain/contracts.mjs';
-import { writeFileSync, existsSync, mkdirSync, realpathSync } from 'node:fs';
+import { writeFileSync, readFileSync, existsSync, mkdirSync, realpathSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { createRequire } from 'node:module';
 import { hostPrompt } from '../packages/runner/host-context.mjs';
@@ -43,7 +43,7 @@ test('committed contract documents become a code-agent bundle and verified local
   await t.test('actual code-agent registration accepts the bundle and rejects tampered claims or documents', {
     skip: !existsSync(dependencyModule) && 'code-agent dependencyContracts build absent',
   }, () => {
-    const { registerContracts, dependencyContracts } = createRequire(import.meta.url)(dependencyModule);
+    const { registerContracts, dependencyContracts, contractDrift, contractsFile } = createRequire(import.meta.url)(dependencyModule);
     const consumer = join(f.root, 'consumer'); mkdirSync(consumer);
     const file = join(f.root, 'bundle.json'); writeFileSync(file, JSON.stringify(bundle));
     registerContracts(consumer, 'contract-test', file);
@@ -51,7 +51,14 @@ test('committed contract documents become a code-agent bundle and verified local
     const altered = structuredClone(bundle); altered.contracts[0].claims[0].text = 'unproven statement';
     writeFileSync(file, JSON.stringify(altered));
     assert.throws(() => registerContracts(consumer, 'contract-test', file), /원문 한 줄/);
+    // code-agent pins the contract to the delivered commit: an uncommitted producer edit is reported as drift, not adopted.
     writeFileSync(join(f.projects[0].path, declaration.documentPath), 'changed\n');
+    assert.equal(dependencyContracts(consumer, 'contract-test').problems.length, 0);
+    const { drift } = contractDrift(consumer, 'contract-test');
+    assert.deepEqual(drift.map(d => [d.key, d.where]), bundle.contracts[0].claims.map(c => [c.key, 'worktree']));
+    const stored = join(consumer, contractsFile('contract-test')), copy = JSON.parse(readFileSync(stored, 'utf8'));
+    copy.contracts[0].excerpt = 'forged excerpt';
+    writeFileSync(stored, JSON.stringify(copy));
     assert.ok(dependencyContracts(consumer, 'contract-test').problems.length);
   });
 });

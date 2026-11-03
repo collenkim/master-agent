@@ -227,7 +227,11 @@ export function createInteractions(store, { cliPath, readRemote, resolveHumanKey
   }
   async function readProject(project) {
     let remote, error;
-    try { remote = await readRemote(store, project, cliPath); } catch (e) { error = e.code ?? 'interaction-unavailable'; }
+    // Without its own install, code-agent would resolve the enclosing repository and answer for it.
+    const unowned = ['not-installed', 'wrong-project'].includes(store.get('observation', project.id)?.status);
+    if (unowned) remote = { capability: { version: null, commands: {}, responseSupported: false, control: null, checkedAt: now(),
+      reason: '이 프로젝트 경로에 code-agent 설치가 확인되지 않아 연동을 조회하지 않습니다.' }, questions: null, consents: null };
+    else try { remote = await readRemote(store, project, cliPath); } catch (e) { error = e.code ?? 'interaction-unavailable'; }
     store.transaction(() => {
       if (store.get('project', project.id)?.deletedAt) return;
       const previous = store.get('interaction-source', project.id);

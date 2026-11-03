@@ -50,7 +50,7 @@ errors: [{"type":"RangeError","when":"타입 또는 범위 위반"}]
 
 master는 문서 원문·검증 시점의 SHA-256·반영 커밋의 일반 파일 내용을 대조한다. 후속 프롬프트의 `dependencyContracts`에는 실제 저장소 루트, 문서 경로, 커밋, SHA-256과 위 네 줄의 claim을 담는다. `inputContracts`에는 기존 소스·검증 출처와 문서 해시도 남는다. Windows 저장소 경로는 실제 파일시스템의 대소문자로 전달한다.
 
-후속 호스트는 전달 JSON을 `doc/work/<작업ID>/dependency-input.json`에 저장하고, 계획 단계의 첫 담당 배정 전에 `code-agent planning contracts <파일>`로 등록한다. code-agent가 원본과 커밋을 다시 검증해 담당 입력·입력 해시에 사본을 연결한다. 이 명령을 지원하는 code-agent 빌드가 필요하며 등록 실패를 프롬프트 전달만으로 대체하지 않는다. 같은 출처가 등록된 이어 실행은 재등록하지 않는다.
+후속 호스트는 전달 JSON을 `doc/work/<작업ID>/dependency-input.json`에 저장하고, 계획 단계의 첫 담당 배정 전에 `code-agent planning contracts <파일>`로 등록한다. code-agent가 원본과 커밋을 다시 검증해 담당 입력·입력 해시에 사본을 연결한다. 이 명령을 지원하는 code-agent 빌드가 필요하며 등록 실패를 프롬프트 전달만으로 대체하지 않는다. 같은 출처가 등록된 이어 실행은 재등록하지 않는다. 등록 사본은 반영 커밋에 고정되며, code-agent는 이후 제공 저장소의 커밋·작업 트리 변경을 채택하지 않고 drift로만 알린다. master는 이후 기록한 프로젝트 트리의 계약 소스·문서 해시가 달라지면 후속 인계를 `stale-contract`로 막는다.
 
 문서는 128KiB 이하, 후속 등록 묶음은 최대 20개이며 원문을 포함한 code-agent 사본 전체도 128KiB 이내여야 한다. `documentPath`가 없는 기존 계약은 구조화 프롬프트 인계를 유지한다. 기존 계약의 재인용은 새 사람 답이나 승인이 아니며, 필요한 경우 code-agent의 계약 답 출처 기록 절차를 따른다.
 

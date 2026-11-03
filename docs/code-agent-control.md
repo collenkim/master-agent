@@ -1,6 +1,6 @@
 # code-agent 통신 계약 연동
 
-code-agent가 제공하는 master 통신 계약(`code-agent.master` v1, code-agent 저장소 `doc/master-control.md`)으로 실행을 접수·관찰·정지·재개·인계하고, 사람이 code-agent에서 준 권한 범위의 일상 판단을 위임 판단으로 보낸다. 대시보드·CLI의 프로젝트/그룹 요청과 `--control` 실행이 이 경로를 쓴다. 개발 실행은 이 관리 계약으로 통일하며 배정·계속 실행·검증·인계·복구·재계획·자동 진행 명령에는 `--control`이 필요하다. 실행 상태는 [실제 개발 호스트 연결](live-execution.md)을 따른다.
+code-agent가 제공하는 master 통신 계약(`code-agent.master` v1, code-agent 저장소 `doc/master-control.md`)으로 실행을 접수·관찰·정지·재개·인계하고, 사람이 code-agent에서 준 권한 범위의 일상 판단을 위임 판단으로 보낸다. 대시보드·CLI의 프로젝트/그룹 요청과 `--control` 실행이 이 경로를 쓴다. 개발 실행은 이 관리 계약으로 통일하며 `--control`이 필요한 명령은 [명령](#명령)을 따른다. 실행 상태는 [실제 개발 호스트 연결](live-execution.md)을 따른다.
 
 ## 역할과 적용 조건
 
@@ -156,7 +156,7 @@ drive는 code-agent 통신 계약 호스트에서 판단기(`--provider`)가 있
 - 검증 계약의 `codeAgentRecords: true`는 그 작업의 code-agent 기록(`doc/work/<작업ID>/`, `.code-agent/work/<작업ID>/`, `.code-agent/approvals/<작업ID>/`)을 변경 범위로 허용한다. 제품 파일·다른 작업의 기록은 여기에 들지 않는다.
 - 독립 검증은 code-agent 작업이 반영 단계에 닿은 뒤에만 한다(반영 동의를 아직 준비하지 않았거나, 반영 동의 하나가 응답을 기다리는 자리). code-agent의 check·test가 통과했어도 리뷰·통합 검증이 남아 있으면 같은 세션을 먼저 이어 간다. 반영 동의는 그 검증이 끝난 뒤에만 판단한다.
 - 검증 뒤 code-agent 작업이 반영 단계를 떠나거나(되감기) 반영 확인이 위임 수정 요청을 받으면 그 검증으로 인계하지 않는다. 같은 세션을 이어 가고 반영 단계에서 다시 검증한다 — 인계 증거는 다시 한 검증에 결합한다. 이 계속 실행은 통신 계약 호스트에만 있다.
-- 반영 영수증은 사람이 고른 응답(observed) 또는 위임 영수증이어야 한다. 위임 영수증은 `master-delegation` 통로이고, 이 시도의 deliver 위임 기록(승인·적용 완료)과 판단 ID·확인 요청 ID·작업 ID가 같아야 하며, 사람 응답이 섞이지 않아야 한다.
+- 반영 영수증은 사람이 고른 응답(observed) 또는 `master-delegation` 위임 영수증이어야 한다. 대조 조건은 [반영 대조](delivery-reconciliation.md)를 따른다.
 - 반영 뒤 남은 지난 작업의 임대(`other-work`)는 인계를 막지 않는다 — code-agent도 다음 진행 명령에서 넘겨받는 기록이다.
 
 ## 제어권 인계

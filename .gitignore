@@ -8,3 +8,5 @@ coverage/
 *.dashboard.json
 *.dashboard.lock
 *.dashboard.json.*.tmp
+.code-agent/log/
+.code-agent/interactions/

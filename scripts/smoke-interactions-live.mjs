@@ -123,7 +123,9 @@ async function runLive(cliPath, options) {
       if (kind === 'existing') {
         const consent = JSON.parse(prepareConsent(path, { action: 'docs' }, { binding: { id: 'fixture-session', host: 'claude' } }));
         await inbox.refreshProject(project);
-        item = inbox.snapshot().items.find(i => i.remote?.origin.id === consent.id);
+        // The inbox view does not project remote.origin, so match the consent on the stored record.
+        const approvalId = store.list('interaction').find(i => i.remote?.origin?.id === consent.id)?.id;
+        item = inbox.snapshot({ itemId: approvalId }).openedItem;
         assert.equal(item.kind, 'approval'); assert.ok(item.body.length > 0);
         await assert.rejects(inbox.respond(payload(item, { action: 'approve', reviewed: false, choices: {} })), { code: 'invalid-input' });
         if (options.browser) {

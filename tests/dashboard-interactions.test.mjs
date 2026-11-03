@@ -109,6 +109,24 @@ test('cloned code-agent ledger IDs remain distinct per project', async t => {
   assert.notDeepEqual(items[0].projectIds, items[1].projectIds);
 });
 
+test('a project path without its own code-agent install is not queried, so an enclosing repository never answers for it', async t => {
+  const f = await pending(t);
+  const [missing, other, installed] = f.fixture.projects;
+  f.store.transaction(() => {
+    f.store.put('observation', { id: missing.id, status: 'not-installed', recordedAt: new Date().toISOString() });
+    f.store.put('observation', { id: other.id, status: 'wrong-project', recordedAt: new Date().toISOString() });
+    f.store.put('interaction-source', { id: other.id, control: { enabled: true, owner: 'enclosing' }, responseSupported: true });
+  });
+  const queried = [];
+  const inbox = createInteractions(f.store, { readRemote: async (_, project) => { queried.push(project.id); return { capability: { sourceInstanceId: 'own' }, records: [] }; } });
+  for (const p of [missing, other, installed]) await inbox.refreshProject(p);
+  assert.deepEqual(queried, [installed.id]);
+  for (const p of [missing, other]) {
+    const source = f.store.need('interaction-source', p.id);
+    assert.equal(source.control, null); assert.equal(source.responseSupported, false); assert.equal(source.error, null);
+  }
+});
+
 test('group edits preserve the accepted question scope and do not copy an answer to another project', async t => {
   const f = await pending(t), inbox = createInteractions(f.store), item = inbox.snapshot().items[0];
   f.engine.catalog.group({ ...f.fixture.group, projectIds: [f.fixture.projects[0].id] }, f.store.need('group', f.fixture.group.id).revision);

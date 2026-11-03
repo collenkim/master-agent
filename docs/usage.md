@@ -19,7 +19,7 @@ master-agent project list
 master-agent group list
 ```
 
-모든 명령은 `--db <경로>`로 저장소를 바꿀 수 있다. 기본 DB는 현재 작업 디렉터리의 `.master-agent/master.db`이므로 같은 작업을 조회할 때 동일한 절대 경로를 권장한다. 출력은 JSON이며 오류는 표준 오류에 코드와 메시지로 출력한다. `help`는 데이터베이스를 만들지 않는다. Windows 실행 정책이 막으면 `master-agent.cmd`를 사용한다.
+모든 명령은 `--db <경로>`로 저장소를 바꿀 수 있다. 기본 위치와 여러 터미널의 공유 조건은 [설치와 빠른 확인](../README.md#설치와-빠른-확인)을 따른다. 출력은 JSON이며 오류는 표준 오류에 코드와 메시지로 출력한다. `help`는 데이터베이스를 만들지 않는다.
 
 `master-agent mission events prune <목표ID> --revision <버전>`은 종료 후 30일이 지난 목표의 오래된 이벤트를 정리한다. 종료 체크포인트 삭제와 근거·회차 저장 범위는 [기록 보존과 정리](langgraph.md#기록-보존과-정리)를 따른다.
 
