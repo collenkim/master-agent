@@ -101,7 +101,7 @@ master-agent mission clarify <목표ID> <응답JSON> --revision <목표버전> -
 
 현재 질문의 ID와 상태 버전을 대조한 뒤 사람 판단을 기록한다. provider를 지정하면 답변을 포함해 즉시 재분석한다. 생략하면 답변만 기록하고 analyze를 별도로 호출한다. 답변은 허용 프로젝트나 완료 조건을 자동 변경하지 않고 재분석의 근거로 사용한다. 오래된 질문과 중복 답변은 거부한다.
 
-분석 프로세스가 중단돼 analyzing 상태가 남은 경우 pause 후 resume으로 기존 분석을 무효화하고 다시 analyze할 수 있다. 그 사이 도착한 이전 응답은 상태 버전 대조로 버린다. 이 동작이 이전 AI 프로세스의 종료를 보장하지는 않는다.
+분석이 중단되면 `mission stop-analysis`로 해당 분석의 결과 적용을 취소한 뒤 `mission analyze`로 다시 분석한다. 실행 조건과 늦게 도착한 응답의 처리는 [읽기 전용 분석 적용 취소](interruption.md#읽기-전용-분석-적용-취소)를 따른다.
 
 ## 예제와 검증
 
@@ -117,4 +117,4 @@ master-agent mission run <목표ID> --simulate
 
 `node scripts/smoke-planner.mjs --provider claude` 또는 `--provider codex`는 합성 정책·코드로 실제 CLI 계획 생성을 확인한다. 실제 모델 사용량이 발생하며 테스트 저장소와 계획·보고서는 `ai-smoke-*` 실행 폴더에 남으며 [산출물 보존 규칙](verification.md#smoke-산출물-보존)을 따른다. 일반 `npm test`는 모델을 호출하지 않는다.
 
-개발 호스트 설정·배정·관측과 grant 범위의 위임 판단은 [code-agent 통신 계약](code-agent-control.md), 실제 테스트 검증·자동 후행 배정은 [실제 검증과 자동 진행](live-verification.md), 실패 분석·수정은 [자동 복구](recovery.md)를 따른다. [재계획 인계](replanning.md)는 종료된 실패 작업을 최신 근거의 새 계획에 연결한다. [대시보드](ui.md)는 로컬 관제·그룹/단일 요청·공통 질문 및 승인 처리를 제공한다. 웹 화면의 후속 범위는 [남은 작업](implementation.md#남은-작업)을 따른다.
+계획 활성화 뒤에는 [code-agent 관리 실행](code-agent-control.md)과 [독립 검증](live-verification.md)으로 진행한다. 범위 변경이 필요한 실패는 [재계획 인계](replanning.md)로 새 계획에 연결한다.

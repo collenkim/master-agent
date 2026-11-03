@@ -70,6 +70,11 @@ function render() {
     ${['blocked', 'setup-required'].includes(m.status) ? `<p class="error">${escape(m.reason)}</p>` : ''}
     <div class="table-wrap"><table><thead><tr><th>작업 / 프로젝트</th><th>상태</th><th>단계 / 실행 호스트</th><th>사유 / 다음 행동</th><th>마지막 진행</th></tr></thead><tbody>${m.tasks.map(t => `<tr><td>${escape(t.taskId)}<small>${escape(t.projectId)}</small></td><td>${badge(t.status)}</td><td>${escape(t.phase ?? '—')}<small>${escape(t.executionHost ?? '호스트 확인 전')}</small></td><td>${escape(t.reason)}<small>${escape(t.nextAction)}</small></td><td>${escape(date(t.lastProgressAt))}</td></tr>`).join('')}</tbody></table></div>
     <h3>최근 이벤트</h3><ol class="events">${m.events.map(e => `<li><time>${escape(date(e.at))}</time> ${escape(e.type)} ${escape(e.taskId)}</li>`).join('') || '<li>기록 없음</li>'}</ol>
+    ${m.pullRequests?.projects.map(p => `<section><h3>${escape(p.projectName)} · ${escape(p.status)}</h3>
+      <p>PR 브랜치: <code>${escape(p.branch ?? '확인 필요')}</code> · 마지막 반영 커밋: <code>${escape(p.commit ?? '없음')}</code></p>
+      <p>${escape(p.reason)}</p><p>task 브랜치: ${escape(p.update?.label ?? '미처리')} · ${escape(p.taskBranch.label)}</p>
+      <p>${escape(p.update?.action ?? '')}</p>
+      <details><summary>squash 커밋 메시지와 작업별 상세 경로</summary><pre>${escape(p.squashMessage)}</pre></details></section>`).join('') ?? ''}
   </details>`).join('') || '<div class="empty">등록된 목표가 없습니다.</div>';
   renderManagement();
   renderUpdates();

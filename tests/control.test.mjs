@@ -231,14 +231,16 @@ test('반영 동의의 문서 변경 후보는 위임 판단이 적용하지 않
   assert.match(asked, /"delegatedAnswer": "유지"/);
 });
 
-test('같은 프로젝트의 선행 작업이 반영한 커밋을 새 작업의 기준으로 알려 준다(다른 프로젝트의 반영은 기준이 아니다)', () => {
+test('배정에서 검증한 기준만 알려 주며 의존 증거에서 기준을 추측하지 않는다', () => {
   const ticket = { missionId: 'M', planVersion: 1, taskId: 'T', id: 'A', projectId: 'app', codeAgentWorkId: 'MA-2', goal: 'g', criteria: [], task: {},
     inputEvidence: [{ projectId: 'core', delivery: { commit: 'c0ffee1' } }, { projectId: 'app', delivery: { commit: 'abc1234' } }, { projectId: 'app', delivery: { level: 'local-files' } }] };
-  const prompt = hostPrompt(ticket);
+  const prompt = hostPrompt({ ...ticket, codeAgentBase: 'abc1234' });
   assert.match(prompt, /--base abc1234/);
   assert.match(prompt, /"codeAgentBase": "abc1234"/);
   assert.ok(!prompt.includes('--base c0ffee1'));
   assert.ok(!hostPrompt({ ...ticket, inputEvidence: [] }).includes('codeAgentBase'));
+  assert.ok(!hostPrompt(ticket).includes('codeAgentBase'));
+  assert.ok(!hostPrompt({ ...ticket, codeAgentBase: 'abc1234', sessionId: 'continued' }).includes('codeAgentBase'));
 });
 
 test('독립 검증은 code-agent 가 반영 자리에 닿은 뒤에만 한다 — 리뷰 질문이 위임으로 답해지면 같은 세션을 먼저 이어 간다', async t => {
@@ -331,7 +333,7 @@ test('통신 계약 실행의 프롬프트는 선행 증거를 요약만 싣는�
     delivery: { level: 'local-commit-with-consent-record', runId: 'r', commit, receiptHash: 'x'.repeat(64) } });
   const ticket = { missionId: 'M', planVersion: 1, taskId: 'checkout', id: 'A', projectId: 'app', codeAgentWorkId: 'MA-3', goal: 'g', criteria: [], task: { kind: 'integration' },
     inputEvidence: [evidence('discount', 'core', 'c0ffee1'), evidence('total', 'app', 'abc1234')] };
-  const control = hostPrompt(ticket);
+  const control = hostPrompt({ ...ticket, codeAgentBase: 'abc1234' });
   assert.ok(JSON.stringify(ticket.inputEvidence).length > 20000, '시험 증거는 실제 run4 처럼 한도를 넘는다');
   assert.ok(control.length < 20000, `프롬프트 ${control.length}자`);
   for (const text of ['"commit": "c0ffee1"', '"commit": "abc1234"', '"id": "discount-independent"', '"passed": true', '"codeAgentBase": "abc1234"']) assert.ok(control.includes(text), text);

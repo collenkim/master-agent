@@ -32,6 +32,16 @@ Codex 접수의 세션 ID는 임시 별칭일 수 있다. master는 결과의 `h
 
 자식 프로세스는 공통 실행 헬퍼에서 부모 호스트·런타임 표지를 제거한 환경으로 시작한다. 상태 조회·제어 통신·AI CLI·설치 호출은 셸 없이 인자 배열을 사용하며, 시간 또는 출력 제한으로 중단할 때 직접 시작한 자식의 프로세스 트리도 종료한다. 요청 실행기와 Git 검증 호출에도 같은 환경 정리를 적용한다.
 
+## 같은 목표·프로젝트의 작업 연결과 task 브랜치
+
+새 code-agent 작업의 기준은 의존 관계와 무관하게 같은 목표·같은 프로젝트에서 마지막으로 인계된 `delivery.commit`이다. `local-files`이면 `tree.head`를 사용하지만, 미커밋 산출물이 커밋에 포함됐다는 뜻은 아니다. 순서는 `live-handed-off` 이벤트 순번으로 판정하고 `control-command`에도 보존한다. 작업 배열 순서나 커밋 시각은 사용하지 않는다.
+
+배정 전에 마지막 기준이 앞선 해당 프로젝트 인계 커밋을 모두 포함하는지 읽기 전용 Git 검사로 확인한다. 끊겼거나 커밋을 찾을 수 없으면 `delivery-history`, 순서 기록이 없으면 `handoff-order-missing`으로 거부한다. 새 작업·잠금·배정 판단은 남기지 않으며 자동 merge·reset은 하지 않는다. 다른 목표·프로젝트는 기준에 섞지 않고, 같은 `codeAgentWorkId`의 재시도·이어가기에는 기준을 다시 주입하지 않는다.
+
+TASK 번호와 유효한 반영 커밋이 있으면 `hello.commands.mutating`에서 `task-branch` 지원을 확인한 뒤 `code-agent master call`로 `{ taskNumber, workId, commit }`을 보낸다. 최초 생성 또는 fast-forward 전진만 요청하며 code-agent도 ref 갱신 시 이를 원자적으로 검사해야 한다. 미지원이면 이 단계만 생략하고 작업 연결·PR 메시지는 계속 제공한다.
+
+요청의 영속 저장·실패 격리·동일 commandId 재전송은 [인계 후 브랜치 복구](delivery-reconciliation.md#인계-후-브랜치-복구), PR 생성·병합·브랜치 정리는 [운영 절차](usage.md#목표-완료-후-pr과-브랜치-정리)를 따른다.
+
 ## 명령
 
 ```powershell
@@ -43,13 +53,15 @@ master-agent mission reattach <목표ID> <시도ID> --cli <경로>
 master-agent mission stop <목표ID> <시도ID> --cli <경로> --mode pause|cancel [--force] [--wait-ms <N>]
 master-agent mission delegate <목표ID> <시도ID> --cli <경로> --provider claude
 master-agent mission escalations <목표ID>
+master-agent mission pr <목표ID>
+master-agent mission task-branch <목표ID> --control [--cli <경로>] [--new-command]
 master-agent mission relay <목표ID> <시도ID> <답JSON> --cli <경로>
 master-agent project handover <프로젝트ID> --cli <경로> --to <새 제어자> [--wait-ms <N>]
 master-agent project accept <프로젝트ID> --cli <경로> --controller <새 제어자> --token-file <절대경로>
 master-agent project pair <프로젝트ID> --cli <경로> [--controller dashboard]   # TTY에서 확인 단어 pair
 ```
 
-`--control`은 dispatch·continue·verify·handoff·reconcile·reconcile-verification·replan·recover·advance·drive에 필수로 붙인다. reattach·stop·delegate·relay는 항상 이 경로다. `--poll-ms`(결과·이벤트 조회 주기)와 `--follow-timeout-ms`(한 실행을 기다리는 상한 — 넘으면 기다림만 멈추고 실행은 code-agent에서 계속된다)는 master 쪽 설정이다. heartbeat·연결 끊김 판단·정지 유예·실행 시간 상한 등은 code-agent 정책(`code-agent master enable --policy`, 통신 `policy`)이 정한다.
+`--control`은 dispatch·continue·verify·handoff·reconcile·reconcile-verification·replan·recover·advance·drive·task-branch에 필수로 붙인다. reattach·stop·delegate·relay는 항상 이 경로다. `mission pr`은 읽기 전용이다. `--poll-ms`(결과·이벤트 조회 주기)와 `--follow-timeout-ms`(한 실행을 기다리는 상한 — 넘으면 기다림만 멈추고 실행은 code-agent에서 계속된다)는 master 쪽 설정이다. heartbeat·연결 끊김 판단·정지 유예·실행 시간 상한 등은 code-agent 정책(`code-agent master enable --policy`, 통신 `policy`)이 정한다.
 
 `drive --control`은 독립 프로젝트를 먼저 접수하고 실행 ID를 저장한 뒤, 각 결과를 한 번씩 조회한다. 하나가 실행 중이어도 다른 프로젝트를 접수할 수 있다. 동일 프로젝트 잠금·선행 인계 조건은 유지하며 판단과 검사는 순차 수행한다. 이 경로의 관측 상한은 저장된 acceptedAt부터 계산하므로 재연결로 초기화되지 않는다. 초과·관측 불가는 unknown으로 보존하고 잠금·외부 실행은 그대로 둔다. 개별 dispatch·continue·reattach는 종료를 기다린다.
 
@@ -165,8 +177,4 @@ drive는 code-agent 통신 계약 호스트에서 판단기(`--provider`)가 있
 
 ## 시험
 
-- 임대 소유권 시험(`tests/live.test.mjs`): 실제 호스트·세션을 대조하는 결과 기록과 재개, Codex·Claude의 동의 대기, 다른 호스트·세션·작업 충돌, `none`·`released`·`other-work` 임대와 호스트 정보가 없는 기록의 호환을 본다.
-- 모의 시험(`tests/control.test.mjs`): code-agent 통신 계약을 흉내 낸 전송과 가짜 판단기로 두 프로젝트의 위임 → 독립 검증 → 위임 반영 → 인계 → 통합 완료, 판단 기록 선행, critical·ambiguous·권한 없음·준비하지 않은 동의의 사람 이관, 검증 전 반영 판단 금지, 위임 영수증 결합, 재부착, commandId 충돌·이벤트 재동기화, 정지 대상 제한, 독립 프로젝트 진행과 의존 작업 대기, 반영 단계에서만 하는 독립 검증과 반영 단계를 떠난 검증된 시도의 계속 실행, 위임 수정 요청 뒤 같은 세션의 재준비, 이어 실행 접수 거부의 막힘 기록, 반영 확인 수정 요청 뒤 재준비와 재검증, 선행 증거 요약 프롬프트, 업무 질문 판단 자료의 앞선 답을 본다.
-- 페어링 시험(`tests/pairing.test.mjs`): 계약을 흉내 낸 시험 대역(`tests/pairing-fake-cli.mjs`)과 임시 Ed25519 키로 연결 상태 분류, 확인 내용 해시 대조, 서명 검증·일회성 challenge, 토큰 파일 경로만 저장, 만료 임박 갱신(rotated), 다른 소유자·사용 중 프로젝트 거부, 응답 유실 뒤 같은 commandId 정산, 저장소 안 토큰 파일 거부, HTTP 확인 체크·화면 토큰을 본다. 실제 빌드와의 호환은 아래 연동 시험의 페어링 항목이 본다(빌드에 페어링이 없으면 건너뛴다).
-- 실제 code-agent CLI 연동 시험(`tests/code-agent-control.test.mjs`): 빌드된 code-agent(`CODE_AGENT_DIST` 또는 옆 저장소)와 가짜 호스트로 연결·원자적 접수·중복 거부·이벤트 커서·결과·재부착·정지·제어권 인계와 이전 소유자 거부를 본다. 시험 프로젝트에는 `init`으로 Claude 실행 절차·hook을 설치한다(관리 실행 설치 검사). 페어링 항목은 시험 폴더의 `CODE_AGENT_HOME`에서 PC 신뢰 → 확인한 연결 → 인증된 heartbeat·사람 채널 키 탐색을 보고, 화면 PC 신뢰 항목은 code-agent 문구의 해시로만 신뢰하고 바로 연결되는지와 호스트 표지를 넘기지 않는지 본다. code-agent 빌드가 없으면 건너뛴다.
-- 실제 모델 시험의 실행 방법과 미검증 범위는 [검증 기준](verification.md)을 따른다.
+자동 회귀의 범위·시험 파일·실제 연동과 대역의 구분은 [검증 기준](verification.md)을 따른다.

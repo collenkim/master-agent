@@ -18,9 +18,8 @@ function evidenceSummary(e) {
 export function hostPrompt(ticket) {
   const dependencyContracts = dependencyBundle(ticket.inputContracts);
   const contractDocuments = (ticket.recipe?.exports ?? []).filter(c => c.documentPath).map(c => ({ path: c.documentPath, lines: contractLines(c) }));
-  // 같은 프로젝트의 선행 작업이 반영한 커밋 — 새 작업이 기본 기준 브랜치에서 시작하면 그 산출물이 빠진다
-  const projectId = ticket.projectId ?? ticket.project?.id;
-  const codeAgentBase = (ticket.inputEvidence ?? []).filter(e => e?.projectId === projectId && typeof e.delivery?.commit === 'string').at(-1)?.delivery.commit;
+  // 배정 경로가 인계 순서·조상 관계를 검사한 새 작업에만 준다. 의존 증거에서 다시 추측하지 않는다.
+  const codeAgentBase = ticket.sessionId ? undefined : ticket.codeAgentBase;
   const context = { missionId: ticket.missionId, planVersion: ticket.planVersion, taskId: ticket.taskId, attemptId: ticket.id,
     ...(ticket.taskNumber === undefined ? {} : { taskNumber: ticket.taskNumber }),
     codeAgentWorkId: ticket.codeAgentWorkId, ...(codeAgentBase ? { codeAgentBase } : {}), goal: ticket.goal, criteria: ticket.criteria,
@@ -36,7 +35,7 @@ export function hostPrompt(ticket) {
 ${procedure}
 feature·fix·refactor는 최초 접수 요구로 판단합니다. 이미 접수한 작업의 후속 수정·검증 실패는 기존 종류와 codeAgentWorkId를 유지하며 새 fix 작업으로 재접수하지 마세요.
 ${ticket.taskNumber ? 'taskNumber는 사용자가 지정한 업무 TASK 번호입니다. 이 프로젝트의 요구사항·작업 기록에서 원래 요청과의 연결을 유지하세요. 그룹에서 나눈 작업도 같은 번호를 참조하며 내부 taskId·codeAgentWorkId는 별도로 유지하세요.\n' : ''}
-${codeAgentBase ? `codeAgentBase는 같은 프로젝트의 선행 작업이 반영한 커밋입니다. 새 작업을 접수할 때 기준 브랜치로 --base ${codeAgentBase}를 주어 그 위에서 시작하세요.\n` : ''}${check}
+${codeAgentBase ? `codeAgentBase는 같은 목표에서 이 프로젝트에 마지막으로 인계된 기준 커밋입니다. 새 작업을 접수할 때 기준 브랜치로 --base ${codeAgentBase}를 주어 그 위에서 시작하세요. local-files의 tree.head에는 미커밋 산출물이 포함되지 않습니다.\n` : ''}${check}
 다른 작업을 중단하거나 덮어쓰지 마세요. 커밋·push·배포를 자동 승인하지 마세요.
 배정된 작업의 allowedChanges·exclusions와 프로젝트 제약을 지키세요. 범위를 늘려야 한다면 실행하지 말고 근거와 변경 제안을 보고하세요.
 recovery가 있으면 기록된 원인과 수정 단계에 따라 기존 세션을 이어가세요. verificationContract의 허용 파일·명령·완료 조건을 완화하지 마세요.

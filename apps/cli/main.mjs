@@ -23,6 +23,8 @@ import { Reconciliation } from '../../packages/orchestrator/reconcile.mjs';
 import { stopAnalysis } from '../../packages/orchestrator/analysis-control.mjs';
 import { VerificationTemplates } from '../../packages/verification/templates.mjs';
 import { ControlHost, bindControl, requestControlHandover, acceptControl } from '../../packages/runner/control-host.mjs';
+import { missionPullRequests } from '../../packages/verification/pull-request.mjs';
+import { recoverTaskBranches } from '../../packages/verification/task-branch.mjs';
 import { pairControl, pairingPreview, pairingReceipt } from '../../packages/runner/control-pairing.mjs';
 import { DASHBOARD_CONTROLLER } from '../../packages/code-agent-adapter/pairing.mjs';
 import { DecisionDelegation } from '../../packages/orchestrator/decisions.mjs';
@@ -73,6 +75,8 @@ code-agent는 설치된 명령에서 자동 탐색합니다. --cli는 별도 빌
   mission graph <ID>                   LangGraph checkpoint and last execution
   mission unlock <ID> --revision <N> --confirm  중단된 그래프 임대 회수(프로젝트 실행 잠금은 유지)
   mission show <ID>                    계획·판단·상태·증거·이벤트
+  mission pr <ID>                      실제 브랜치·목표 단위 squash 메시지 조회(읽기 전용)
+  mission task-branch <ID> --control [--cli <경로>] [--new-command]  인계 후 미처리 요청 복구; 확정 실패는 원인 해결 후 새 명령
   mission events prune <ID> --revision <N>  종료 후 30일이 지난 목표의 오래된 이벤트 정리
   mission progress <ID>                작업별 실행·승인 처리·사람 답·장애와 마지막 진척
   mission plan <ID> <JSON> --revision <N>  검증 후 계획 활성화
@@ -131,7 +135,7 @@ async function main() {
     db: { type: 'string' }, cli: { type: 'string' }, revision: { type: 'string' }, simulate: { type: 'boolean' }, help: { type: 'boolean' },
     provider: { type: 'string' }, 'ai-cli': { type: 'string' }, model: { type: 'string' }, context: { type: 'string' },
     'expect-state': { type: 'string' }, work: { type: 'string' },
-    control: { type: 'boolean' }, controller: { type: 'string' }, 'token-file': { type: 'string' }, to: { type: 'string' }, mode: { type: 'string' },
+    control: { type: 'boolean' }, 'new-command': { type: 'boolean' }, controller: { type: 'string' }, 'token-file': { type: 'string' }, to: { type: 'string' }, mode: { type: 'string' },
     force: { type: 'boolean' }, 'wait-ms': { type: 'string' }, 'poll-ms': { type: 'string' }, 'follow-timeout-ms': { type: 'string' },
     port: { type: 'string' }, 'refresh-ms': { type: 'string' },
     saved: { type: 'boolean' }, description: { type: 'string' }, input: { type: 'string' }, reason: { type: 'string' }, confirm: { type: 'boolean' },
@@ -161,7 +165,7 @@ async function main() {
     'mission advance': 3, 'mission drive': 3, 'mission progress': 3, 'mission unlock': 3, 'mission events-prune': 4,
     'project control': 3, 'project pair': 3, 'project snapshot': 3, 'project handover': 3, 'project accept': 3,
     'mission reattach': 4, 'mission stop': 4, 'mission delegate': 4, 'mission escalations': 3, 'mission relay': 5,
-    'mission create': 3, 'mission list': 2, 'mission show': 3, 'mission graph': 3, 'mission plan': 4, 'mission step': 3, 'mission run': 3,
+    'mission create': 3, 'mission list': 2, 'mission show': 3, 'mission pr': 3, 'mission task-branch': 3, 'mission graph': 3, 'mission plan': 4, 'mission step': 3, 'mission run': 3,
     'mission pause': 3, 'mission resume': 3, 'mission retry': 4, 'mission unknown': 4, 'mission cancel': 3,
     'group create': 4, 'group show': 3, 'group delete': 3, 'group add': 4, 'group remove': 4, 'group request': 4, 'project request': 4,
     'request list': 2, 'request show': 3, 'request run': 3, 'request continue': 3, 'request reset': 3 };
@@ -169,6 +173,8 @@ async function main() {
   requireThat(counts[key] === args.length, 'usage', help);
   if (['dispatch', 'continue', 'verify', 'handoff', 'recover', 'replan', 'reconcile', 'reconcile-verification', 'advance', 'drive'].some(a => key === `mission ${a}`))
     requireThat(values.control === true, 'usage', '개발 실행은 code-agent 관리 연결을 사용합니다. --control이 필요합니다.');
+  if (key === 'mission task-branch') requireThat(values.control === true && !values.simulate, 'usage', 'task 브랜치 복구에는 --control이 필요합니다.');
+  if (values['new-command']) requireThat(key === 'mission task-branch', 'usage', '--new-command는 task 브랜치 복구에서만 사용합니다.');
   const revision = values.revision === undefined ? undefined : Number(values.revision);
   if (values.revision !== undefined) requireThat(Number.isSafeInteger(revision) && revision > 0, 'usage', '--revision은 양의 정수입니다.');
   if (['mission cancel', 'mission replan-refresh', 'mission events-prune'].includes(key)) requireThat(revision, 'usage', '--revision이 필요합니다.');
@@ -264,6 +270,8 @@ async function main() {
       case 'mission list': result = store.list('mission').map(summary); break;
       case 'mission graph': result = await graphStatus(store, store.need('mission', id).mode === 'live' ? 'mission' : 'simulation', id); break;
       case 'mission show': result = engine.describe(id); break;
+      case 'mission pr': result = missionPullRequests(store, id); break;
+      case 'mission task-branch': result = await recoverTaskBranches(store, id, controlHost(), { newCommand: values['new-command'] === true }); break;
       case 'mission events-prune': requireThat(eventPrune, 'usage', help); result = engine.pruneEvents(id, revision); break;
       case 'mission progress': { const m = engine.describe(id); result = { id: m.id, state: m.state, ...m.progress }; break; }
       case 'mission plan': result = engine.plan(id, json(file), revision); break;

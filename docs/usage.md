@@ -97,6 +97,22 @@ master-agent mission run <목표ID> --simulate
 
 모호함을 나타내는 unresolved가 비어 있지 않으면 계획 활성화를 거부한다. 직접 입력한 계획은 보완하고, AI 분석에서는 검증 오류와 미해결 사항을 모델에 전달해 재검토한다. 일반 정보 부족과 중대한 사람 판단을 구분하며 모든 계획에 사람 승인을 요구하지 않는다.
 
+## 목표 완료 후 PR과 브랜치 정리
+
+```powershell
+master-agent mission pr <목표ID>
+# 인계 뒤 브랜치 요청이 미처리이면 전용 명령으로 복구하고 다시 조회
+master-agent mission task-branch <목표ID> --control
+```
+
+목표의 모든 작업 인계가 끝나면 프로젝트마다 **실제로 안내된 브랜치**로 Git 호스트에서 PR을 만들고 표시된 메시지로 squash merge한다. PR 준비 미완료이면 먼저 안내된 원인을 해결한다. master는 로컬 커밋 합치기·push·PR 생성·병합을 수행하지 않는다. 담당자가 조직의 브랜치 게시·병합 절차를 따른다. 브랜치 선택과 메시지 형식은 [목표 단위 PR 안내](delivery-reconciliation.md#목표-단위-pr-안내)가 기준이다.
+
+병합 후 담당자는 목표 기준 브랜치의 squash 결과와 완료 조건을 확인하고 해당 목표에 사용한 `feature/MA-…`·`fix/MA-…`·`refactor/MA-…` 브랜치 및 `task/<번호>`를 로컬·원격에서 정리한다. 진행 중 작업·worktree나 다른 PR이 쓰지 않는지 먼저 확인한다. squash merge는 원래 커밋을 조상으로 남기지 않을 수 있으므로 단순 merged 판정만으로 삭제 여부를 결정하지 않는다. 필요한 이력·PR 링크를 보존하고 저장소의 브랜치 삭제 절차로 정리한다. master의 조회와 복구 명령은 브랜치를 삭제하지 않는다.
+
+취소한 요청 등 [TASK 번호 규칙](#task-번호)에 따라 같은 번호를 다시 사용할 수 있는 경우에도, 옛 `task/<번호>`가 새 작업과 갈라져 있으면 conflict로 표시한다. 자동 reset·강제 덮어쓰기는 하지 않는다. 담당자가 옛 PR의 병합 여부·남은 변경·사용 중인 작업을 확인한 뒤, 필요하면 옛 브랜치를 별도 이름으로 보존하고 로컬·원격의 옛 task 브랜치를 정리한다. 그 다음 `mission task-branch <목표ID> --control --new-command`로 새 요청을 보내고 `mission pr`을 다시 조회한다.
+
+미지원·실패·미처리 상태별 조치는 [인계 후 브랜치 복구](delivery-reconciliation.md#인계-후-브랜치-복구)를 따른다.
+
 ## 일시 정지와 재개
 
 ```powershell
@@ -149,9 +165,7 @@ master-agent mission escalations <목표ID>
 master-agent mission stop <목표ID> <시도ID> --mode pause
 ```
 
-mission의 dispatch·continue·verify·handoff·reconcile·reconcile-verification·recover·replan·advance·drive에는 `--control`이 필요하다. 직접 실행과 `--host-cli` 옵션은 제공하지 않는다.
-
-원자적 접수·이벤트 재동기화·재부착·정지·위임 판단·제어권 인계의 조건은 [code-agent 통신 계약 연동](code-agent-control.md)을 따른다.
+명령별 `--control` 조건과 원자적 접수·이벤트 재동기화·재부착·정지·위임 판단·제어권 인계는 [code-agent 통신 계약 연동](code-agent-control.md#명령)을 따른다.
 
 ## 구현 경계
 

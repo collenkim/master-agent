@@ -21,7 +21,7 @@ CLI / 로컬 대시보드
 | packages/orchestrator | 목표·계획·시도·결정, 요청 실행기, 그래프·잠금·복구·재계획 |
 | packages/code-agent-adapter | 설치 탐색, 상태 관측, 페어링·관리 통신·사람 응답 계약 |
 | packages/runner | 관리 호스트, 프로세스 실행·종료, 환경 정리·진단 |
-| packages/verification | 변경 트리·검사 명령·산출물·반영·동의 영수증 대조 |
+| packages/verification | 변경 트리·검사·반영 영수증 대조, 인계 순서·커밋 연결 검사, 읽기 전용 PR 계산, task 브랜치 요청·복구 |
 | packages/storage | node:sqlite 도메인 저장과 체크포인터 어댑터 |
 | packages/simulation | demo와 모의 실행 그래프·러너·결과 처리 |
 
@@ -40,6 +40,8 @@ AI는 계획과 판단을 제안한다. 도메인 코드가 스키마·근거·�
 SQLite의 `records`는 종류·ID·revision·JSON 본문을 저장한다. `events`, `locks`, `requests`, `paths`는 이벤트·프로젝트 잠금·접수 중복·경로 등록을 관리한다. `graph_leases`·`graph_runs`와 체크포인터는 그래프 실행 소유권과 재개 지점을 관리한다.
 
 스키마는 `user_version`에 따라 순차 마이그레이션하며 현재 버전은 2다. 목표별 레코드와 이벤트에 인덱스를 사용한다. DB 트랜잭션에는 동기 저장 작업만 넣고 모델·프로세스 호출은 커밋 이후에 수행한다.
+
+task 브랜치 요청은 기존 `records`의 `control-command`와 이벤트로 추적한다. 인계 증거·delivery-run은 봉인을 유지하고 PR 내용은 조회 시 계산한다. 저장·재전송 계약은 [인계 후 브랜치 복구](delivery-reconciliation.md#인계-후-브랜치-복구)를 따른다.
 
 도메인 저장과 LangGraph 체크포인트는 하나의 분산 트랜잭션이 아니다. 외부 호출 전에 시도와 결정·실행 의도를 저장하고, code-agent의 원자적 접수·같은 실행 ID 재부착으로 중복 실행을 방지한다. 미확인 실행을 새 작업으로 자동 접수하지 않는다. 임대·체크포인트 수명은 [LangGraph](langgraph.md), 운영자 복구는 [복구](recovery.md)를 따른다.
 

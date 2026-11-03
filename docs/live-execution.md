@@ -20,9 +20,11 @@ master-agent mission continue <목표ID> <시도ID> --revision <목표버전> --
 master-agent mission drive <목표ID> --control --provider claude
 ```
 
-code-agent CLI는 자동 탐색한다. 별도 설치는 `--cli <code-agent CLI 경로>`를 지정한다. 개발 호스트 실행 파일과 세션 관리는 code-agent가 담당한다. master-agent의 Claude 직접 실행 경로와 `--host-cli` 옵션은 제공하지 않는다.
+code-agent CLI는 자동 탐색한다. 별도 설치는 `--cli <code-agent CLI 경로>`를 지정한다. 개발 호스트 실행 파일과 세션 관리는 code-agent가 담당한다.
 
 빈 프로젝트에는 `MA-<UUID>` 작업 ID를 발급한다. 기존 작업을 연결할 때는 `--work <code-agent작업ID>`를 지정하고 작업 내용과 계획의 일치를 확인한다. 다른 작업·미완료 접수·열린 동의나 질문·다른 세션 임대가 있으면 새 배정을 거부한다.
+
+같은 목표·프로젝트의 새 작업은 의존 관계와 무관하게 마지막 인계 기준 위에서 시작한다. 커밋 연결 검사와 같은 작업의 기준 재주입 금지는 [작업 연결 계약](code-agent-control.md#같은-목표프로젝트의-작업-연결과-task-브랜치)을 따른다.
 
 계속 실행은 같은 작업과 기록된 세션을 사용한다. 질문·승인은 [공통 요청함](dashboard-interactions.md) 또는 기존 code-agent 호스트에서 처리한다. `mission clarify`는 계획 분석 질문용이다. 실제 작업이 시작된 뒤 새 계획으로 실행 시도를 덮을 수 없다.
 

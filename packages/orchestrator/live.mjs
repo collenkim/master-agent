@@ -8,6 +8,7 @@ import { sealOf } from '../verification/seal.mjs';
 import { predecessorContracts } from '../verification/handoff-contracts.mjs';
 import { taskHeld, relevantSource } from './scope.mjs';
 import { remoteStateSummary } from './remote-state.mjs';
+import { dispatchBase } from '../verification/project-history.mjs';
 
 // 결과가 호스트를 생략하면 저장된 실행 호스트를 사용한다. 둘 다 없는 과거 기록만 기존 Claude 계약을 따른다.
 function leaseOwner(result, attempt) {
@@ -83,6 +84,7 @@ export class LiveExecution {
       requireThat(['planned', 'executing', 'blocked', 'waiting-decision'].includes(m.state) && !m.planningHold && !taskHeld(this.store, m, taskId), 'invalid-state', '현재 목표는 배정할 수 없습니다.');
       requireThat(this.engine.projectVersionsMatch(m, taskId), 'stale-context', '계획 근거가 변경됐습니다. 재계획이 필요합니다.');
       requireThat(task.dependsOn.every(dep => taskState(m, dep).state === 'succeeded'), 'dependency-pending', '선행 작업의 검증된 완료가 필요합니다.');
+      const codeAgentBase = dispatchBase(this.store, m, project, codeAgentWorkId, state);
       const d = this.engine.decision(m, 'dispatch-live', {
         reason: task.rationale, evidence: [...task.references, `code-agent-state:${state.stateVersion}`], alternatives: ['상태 재검토', '설치된 호스트에 배정'],
         nextAction: task.goal, verification: task.verification, codeAgentWorkId, provider: host.name,
@@ -95,7 +97,7 @@ export class LiveExecution {
       this.store.acquire(project.id, id, attempt.id);
       m.attempts.push(attempt); const t = taskState(m, taskId); t.state = 'running'; t.attemptIds.push(attempt.id);
       m.state = 'executing'; m.reason = `개발 호스트에 ${taskId} 배정`;
-      const prepared = { ...attempt, expectedState, task, project, goal: m.goal, criteria: m.criteria, inputContracts: predecessorContracts(this.store, m, task),
+      const prepared = { ...attempt, ...(codeAgentBase ? { codeAgentBase } : {}), expectedState, task, project, goal: m.goal, criteria: m.criteria, inputContracts: predecessorContracts(this.store, m, task),
         inputEvidence: task.dependsOn.flatMap(dep => taskState(m, dep).evidenceIds.map(e => this.store.need('evidence', e))) };
       host.validateTicket?.(prepared);
       this.engine.save(m, 'live-dispatched', { attemptId: attempt.id, decisionId: d.id });

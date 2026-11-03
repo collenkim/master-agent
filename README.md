@@ -36,7 +36,7 @@ npm.cmd install -g --ignore-scripts .
 master-agent help
 ```
 
-`--ignore-scripts`는 의존성의 설치 스크립트를 생략한다. 공식 체크포인터의 전이 의존성인 `better-sqlite3`는 원래 네이티브 설치를 시도하지만 master-agent는 `node:sqlite` 어댑터를 사용한다. `overrides`로 해당 의존성을 설치 스크립트가 없는 로컬 스텁에 연결하므로 플래그 없는 `npm ci`도 네이티브 빌드 없이 설치된다. 스텁은 체크포인터 import만 지원하며 직접 DB 생성은 거부한다. 일반 설치와 CI에는 기존 `--ignore-scripts` 명령을 유지한다.
+`--ignore-scripts`는 의존성의 설치 스크립트를 생략한다. master-agent는 `node:sqlite` 어댑터를 사용하며, 체크포인터의 전이 의존성인 `better-sqlite3`는 `overrides`로 로컬 스텁에 연결한다. 스텁은 체크포인터 import만 지원하고 직접 DB 생성은 거부한다. 설치와 CI는 위의 `--ignore-scripts` 명령을 사용한다.
 
 개발 중에는 전역 설치 대신 `npm.cmd link --ignore-scripts`를 사용할 수 있다. Windows 실행 정책이 `.ps1`을 막으면 `master-agent.cmd`를 사용한다. 명령을 찾지 못하면 `npm.cmd prefix -g`가 PATH에 있는지 확인한다. 제거는 `npm.cmd uninstall -g master-agent`로 한다. 대상 프로젝트의 code-agent 설치·초기화는 별도로 수행한다.
 
@@ -100,11 +100,14 @@ TASK 번호는 [사용법](docs/usage.md#task-번호), host 선택은 [판단 �
 master-agent mission drive <목표ID> --control --provider claude
 master-agent mission progress <목표ID>
 master-agent mission show <목표ID>
+master-agent mission pr <목표ID>
 master-agent mission escalations <목표ID>
 master-agent mission graph <목표ID>
 ```
 
 `progress`는 마지막 저장 관측에서 실행·승인 처리·사람 응답·장애를 구분한다. 작업별 상태와 `counts`를 함께 확인한다. 재부착·정지·사람 답 전달은 [통신 계약](docs/code-agent-control.md)을 따른다.
+
+`pr`은 대시보드와 같은 읽기 전용 계산으로 프로젝트별 실제 PR 브랜치와 squash 메시지를 보여 준다. [목표 완료 후 PR과 브랜치 정리](docs/usage.md#목표-완료-후-pr과-브랜치-정리)를 따른다.
 
 잘못 접수한 목표는 `mission cancel <목표ID> --revision <버전> [--reason <사유>]`로 취소한다. 실행 중 시도는 먼저 종료하며 상세 조건은 [사용법](docs/usage.md#일시-정지와-재개)을 따른다. 재계획 인계 뒤 트리 변경은 `mission replan-refresh`와 [재동기화 절차](docs/replanning.md)를 사용한다. 임대 회수·운영자 리셋은 [복구](docs/recovery.md), 체크포인트·이벤트 정리는 [기록 보존](docs/langgraph.md#기록-보존과-정리)을 따른다.
 

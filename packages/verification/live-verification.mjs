@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { queueTaskBranch, recoverTaskBranches } from './task-branch.mjs';
 import { existsSync } from 'node:fs';
 import { isAbsolute, extname } from 'node:path';
 import { Engine, taskState } from '../orchestrator/engine.mjs';
@@ -193,7 +194,7 @@ export class LiveVerification {
       }
     } else requireThat(tree.digest === run.after.digest, 'stale-evidence', '검증 이후 파일이 변경됐습니다. 인계할 수 없습니다.');
     verifyContractDocuments(run.contracts ?? [], tree, delivery?.details.commit);
-    return this.store.transaction(() => {
+    const handedOff = this.store.transaction(() => {
       const current = this.locate(id, attemptId, expectedRevision);
       const d = this.engine.decision(current.m, 'handoff-live', { reason: '검증된 파일 내용과 code-agent의 활성 작업·임대 없음을 확인해 로컬 산출물을 인계합니다.',
         evidence: [run.id, `tree:${tree.digest}`, `state:${expectedState}`], alternatives: ['인계 보류', '검증된 작업 완료'], nextAction: 'dispatch-ready-task', verification: task.verification });
@@ -206,8 +207,14 @@ export class LiveVerification {
       current.m.liveCheckpoints ??= {}; current.m.liveCheckpoints[project.id] = tree;
       current.m.state = 'planned'; current.m.reason = d.reason;
       this.store.release(project.id, attemptId);
-      return this.engine.save(current.m, 'live-handed-off', { attemptId, evidenceId: evidence.id, decisionId: d.id });
+      const saved = this.engine.save(current.m, 'live-handed-off', { attemptId, evidenceId: evidence.id, decisionId: d.id });
+      queueTaskBranch(this.store, saved, evidence, current.attempt);
+      return saved;
     });
+    // 인계는 이미 완료됐다. 호출·응답 저장 중 종료돼도 영속 요청을 전용 명령으로 복구한다.
+    try { await recoverTaskBranches(this.store, id, host); }
+    catch { /* 저장소까지 쓸 수 없는 실패도 인계 성공을 되돌리지 않는다. pending/sending 기록은 남는다. */ }
+    return handedOff;
   }
   complete(id, expectedRevision) {
     return this.store.transaction(() => {

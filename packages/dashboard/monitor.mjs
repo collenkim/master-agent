@@ -7,6 +7,7 @@ import { preparationIssues } from '../orchestrator/preparation.mjs';
 import { DASHBOARD_CONTROLLER, connectionState, findTrustKey } from '../code-agent-adapter/pairing.mjs';
 import { pairingReceipt } from '../runner/control-pairing.mjs';
 import { terminalMission } from '../storage/retention.mjs';
+import { missionPullRequests } from '../verification/pull-request.mjs';
 
 const text = value => typeof value === 'string' ? value.slice(0, 2000) : '';
 const list = value => Array.isArray(value) ? value : [];
@@ -27,6 +28,7 @@ export function dashboardSnapshot(store, { live = false, refreshing = false, int
       const detail = terminalMission(mission) && cached?.revision === mission.revision ? cached : engine.describe(mission.id);
       if (terminalMission(mission)) completed.set(mission.id, detail); else completed.delete(mission.id);
       return { id: mission.id, goal: text(mission.goal), mode: mission.mode, state: mission.state, ...detail.progress,
+        pullRequests: mission.mode === 'live' ? missionPullRequests(store, mission.id) : null,
         reason: text(requestsById.get(mission.id)?.error?.message ?? mission.reason),
         tasks: detail.progress.tasks.map(task => ({ ...task, goal: text(detail.taskDetails.find(t => t.id === task.taskId)?.goal) })),
         events: detail.events.slice(-12).reverse().map(e => ({ sequence: e.sequence, at: e.at, type: e.eventType ?? e.type, taskId: e.taskId ?? null })) };
