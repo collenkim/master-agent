@@ -34,11 +34,13 @@ master-agent group list
 | `CODE_AGENT_CLI` | code-agent CLI 위치를 지정한다. | PATH·npm 전역 설치·사용자 설치 경로에서 자동 탐색한다. | `packages/code-agent-adapter/discovery.mjs`, `scripts/smoke-full-flow.mjs` |
 | `CODE_AGENT_HOME` | code-agent의 PC 신뢰·제어 키·사람 채널 저장소를 지정한다. | 사용자 홈 아래 `.code-agent`를 사용한다. 프로젝트 내부 폴더와 다르다. | `packages/code-agent-adapter/discovery.mjs` |
 | `CODE_AGENT_DIST` | 계약 시험·PC 신뢰 및 답변 문맥 smoke에 사용할 code-agent 빌드 디렉터리를 지정한다. | 인접 `../code-agent/dist`를 사용한다. 답변 문맥 시험은 `--code-agent-dist`가 우선한다. | `tests/code-agent-control.test.mjs`, `tests/managed-host.test.mjs`, `tests/handoff-contracts.test.mjs`, `scripts/smoke-dashboard-trust.mjs`, `scripts/smoke-answer-context.mjs` |
+| `AGENT_KNOWLEDGE_DIST` | 실제 agent-knowledge 연동 시험에 사용할 빌드 디렉터리를 지정한다. 생산자 실행에는 전달하지 않는다. | 인접 `../agent-knowledge/dist`를 사용하며 `src/cli/main.js`가 없으면 시험을 건너뛴다. | `tests/knowledge-real-cli.test.mjs` |
 | `CODE_AGENT_SOURCE` | 업데이트 smoke가 임시 복사할 code-agent 소스 저장소를 지정한다. | `../code-agent`를 사용한다. | `scripts/smoke-dashboard-updates.mjs` |
 | `CODE_AGENT_RELEASE_HOME` | 전체 흐름 smoke에서 code-agent 릴리스 저장소 설정을 보존하고 재개 시 복원한다. | master-agent가 별도 기본값을 지정하지 않고 code-agent의 설정을 따른다. 업데이트 smoke는 격리된 임시 위치를 사용한다. | `scripts/smoke-full-flow.mjs`, `scripts/smoke-dashboard-updates.mjs` |
 | `CLAUDE_CLI` | 실제 모델 smoke와 smoke 집계에 사용할 Claude 실행 파일 또는 JS 진입점 경로를 지정한다. 셸 래퍼는 직접 지정하지 않는다. 일반 계획 CLI는 `--ai-cli` 또는 자동 탐색을 사용한다. | 모델 smoke 준비·집계에는 필수다. 답변 문맥 시험은 명시한 `--ai-cli`가 우선하며, 준비된 전체 흐름의 조회·실행은 저장된 설정을 사용한다. | `scripts/smoke.mjs`, `scripts/smoke-full-flow.mjs`, `scripts/smoke-answer-context.mjs` |
 | `CHROME_PATH` | 브라우저 smoke의 Chrome 실행 파일을 지정한다. | `C:/Program Files/Google/Chrome/Application/chrome.exe`를 사용한다. 다른 설치 위치와 Linux에서는 명시한다. | `scripts/browser.mjs` |
 | `MASTER_AGENT_SMOKE_ROOT` | smoke 산출물의 상위 폴더를 지정한다. | 실행 작업 폴더의 `.master-agent`를 사용한다. | `scripts/smoke-artifacts.mjs` |
+| `MASTER_AGENT_KNOWLEDGE_CLI`, `MASTER_AGENT_KNOWLEDGE_CONFIG`, `MASTER_AGENT_KNOWLEDGE_DB`, `MASTER_AGENT_KNOWLEDGE_RETRIEVAL_CONFIG`, `MASTER_AGENT_KNOWLEDGE_TIMEOUT_MS` | agent-knowledge CLI·설정·DB·검색 설정·호출 제한 시간을 지정한다. 값의 조건은 [모드와 연결 설정](agent-knowledge.md#모드와-연결-설정)을 따른다. | CLI가 없으면 연결하지 않으며 모든 프로젝트가 기존 경로로 계획한다. | `packages/knowledge/agent-knowledge.mjs` |
 
 ## 서비스 그룹과 단일 프로젝트 요청
 
@@ -166,6 +168,17 @@ master-agent mission stop <목표ID> <시도ID> --mode pause
 ```
 
 명령별 `--control` 조건과 원자적 접수·이벤트 재동기화·재부착·정지·위임 판단·제어권 인계는 [code-agent 통신 계약 연동](code-agent-control.md#명령)을 따른다.
+
+## agent-knowledge 근거 검색
+
+```powershell
+master-agent project knowledge <프로젝트ID>
+master-agent project knowledge-mode <프로젝트ID> shadow --knowledge-project <AK프로젝트>
+master-agent project knowledge-mode <프로젝트ID> enabled --revision <설정버전> [--allow-link <AK프로젝트>:contract,api-catalog | --allow-link none]...
+master-agent project knowledge-mode <프로젝트ID> off --revision <설정버전>
+```
+
+기본값은 off이며 끄기는 연결 정보·기록을 지우지 않는다. `--allow-link none`은 허용 연결을 모두 철회한다. 연결 설정은 프로젝트 revision을 바꾸지 않는다. 모드·범위·실패 처리는 [agent-knowledge 연결](agent-knowledge.md)을 따른다.
 
 ## 구현 경계
 

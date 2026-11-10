@@ -10,6 +10,7 @@ import { missionProgress } from './progress.mjs';
 import { observationIdentity } from '../code-agent-adapter/observe.mjs';
 import { clearMissionCheckpoints, EVENT_RETENTION_DAYS, terminalMission } from '../storage/retention.mjs';
 import { requireThat, string, strings, hash, now, validateMission, validatePlan } from '../domain/contracts.mjs';
+import { keptBundles, planKnowledge, releaseBundles, verifiedBundle } from '../knowledge/evidence.mjs';
 
 const activePlan = mission => mission.plans.at(-1);
 export function taskState(mission, id) {
@@ -75,6 +76,8 @@ export class Engine {
     if (terminalMission(mission)) {
       mission.finishedAt ??= now();
       clearMissionCheckpoints(this.store, mission);
+      // 종료·취소된 목표의 agent-knowledge 묶음 본문은 보존하지 않는다(봉인 해시·요약은 남긴다)
+      releaseBundles(this.store, mission, [], 'mission-finished');
     }
     const saved = this.store.put('mission', mission, mission.revision);
     this.store.event(mission.id, type, payload);
@@ -114,7 +117,10 @@ export class Engine {
           (p.observationIdentity ? observationIdentity(this.store.get('observation', p.id)) === p.observationIdentity :
             (this.store.get('observation', p.id)?.revision ?? 0) === p.observationRevision), 'stale-context', '분석 입력이 변경됐습니다.');
       }
-      validatePlan(copy, mission, projects);
+      // 분석이 agent-knowledge 묶음을 썼으면 봉인 해시를 대조한 뒤 그 항목으로만 작업 지식 참조를 검사한다
+      const bundle = analysis?.knowledge?.bundleId ? verifiedBundle(this.store, analysis.knowledge.bundleId, analysis.knowledge.bundleHash) : null;
+      validatePlan(copy, mission, projects, ...(bundle ? [{ knowledgeItems: bundle.knowledge.items }] : []));
+      const planEvidence = bundle ? planKnowledge(bundle, copy) : null;
       const version = mission.plans.length + 1;
       const snapshots = projects.map(p => ({ id: p.id, revision: p.revision }));
       const decision = this.decision(mission, 'activate-plan', {
@@ -123,9 +129,13 @@ export class Engine {
         nextAction: `계획 ${version} 활성화`, verification: '범위·도메인·의존 관계·완료 조건 검증 통과',
         inputHash: hash({ proposal: copy, projects: snapshots }), projectVersions: snapshots,
         ...(analysis ? { actor: 'ai+validator', analysisId, provider: analysis.provider, model: analysis.model, choices: analysis.result.decisions } : {}),
+        // 지식 참조는 판단 기록일 뿐 evidence가 아니다
+        ...(planEvidence ? { knowledge: { bundleId: planEvidence.bundleId, bundleHash: planEvidence.bundleHash, generation: planEvidence.generation, refs: planEvidence.refs.length } } : {}),
       });
       mission.plans.push({ version, proposal: copy, projectVersions: snapshots, sourceSnapshotIds, decisionId: decision.id,
-        ...(analysis ? { analysisId, observationVersions: analysis.context.projects.map(p => ({ id: p.id, revision: p.observationRevision, identity: p.observationIdentity })) } : {}), at: now() });
+        ...(analysis ? { analysisId, observationVersions: analysis.context.projects.map(p => ({ id: p.id, revision: p.observationRevision, identity: p.observationIdentity })) } : {}),
+        ...(planEvidence ? { knowledge: planEvidence } : {}), at: now() });
+      releaseBundles(this.store, mission, keptBundles(this.store, mission), 'plan-replaced');
       // 첫 단계에서는 증거 재사용을 추측하지 않는다. 새 계획은 모든 작업을 다시 검증한다.
       mission.tasks = copy.tasks.map(t => ({ id: t.id, state: 'queued', attemptIds: [], evidenceIds: [] }));
       mission.verificationRecipes = {}; mission.liveCheckpoints = {};
@@ -169,7 +179,7 @@ export class Engine {
     const records = kind => this.store.list(kind, { missionId: id });
     const decisions = records('decision');
     const evidence = records('evidence');
-    const analyses = records('analysis-run').map(r => ({ id: r.id, status: r.status, provider: r.provider, model: r.model, promptVersion: r.promptVersion, contextHash: r.contextHash, passes: r.passes?.length ?? 0, result: r.result ?? null, error: r.error ?? null }));
+    const analyses = records('analysis-run').map(r => ({ id: r.id, status: r.status, provider: r.provider, model: r.model, promptVersion: r.promptVersion, contextHash: r.contextHash, passes: r.passes?.length ?? 0, result: r.result ?? null, error: r.error ?? null, ...(r.knowledge ? { knowledge: r.knowledge } : {}) }));
     const verifications = records('verification-run').map(r => ({
       id: r.id, attemptId: r.attemptId, state: r.state, decisionId: r.decisionId, changedPaths: r.changedPaths,
       beforeHash: r.before.digest, afterHash: r.after?.digest ?? null, checks: r.checks, artifacts: r.artifacts ?? [], error: r.error ?? null, seal: r.seal ?? null,

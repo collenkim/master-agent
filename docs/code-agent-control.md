@@ -171,6 +171,10 @@ drive는 code-agent 통신 계약 호스트에서 판단기(`--provider`)가 있
 - 반영 영수증은 사람이 고른 응답(observed) 또는 `master-delegation` 위임 영수증이어야 한다. 대조 조건은 [반영 대조](delivery-reconciliation.md)를 따른다.
 - 반영 뒤 남은 지난 작업의 임대(`other-work`)는 인계를 막지 않는다 — code-agent도 다음 진행 명령에서 넘겨받는 기록이다.
 
+## agent-knowledge 근거 인계
+
+계획 작업이 agent-knowledge 항목(`knowledgeRefs`)을 쓰면 배정 전에 봉인 묶음과 원본을 확인한다. code-agent와 합의한 수신 계약·`hello` 기능 공지가 없으므로 인계 블록은 계산해 시도에 기록만 하고(`knowledgeHandoff.status: not-sent`) `submit`에 넣지 않으며 프롬프트 문자열에도 숨겨 보내지 않는다. `submit` 필드, 승인·권한 프로토콜과 도구 권한은 바뀌지 않는다. 블록 형식과 필요한 소비자 변경은 [agent-knowledge 연결](agent-knowledge.md#배정과-code-agent-인계)을 따른다.
+
 ## 제어권 인계
 
 `project handover`는 지금 소유자만 보낸다. code-agent가 실행을 협력 정지로 멈추고 끝난 것을 확인한 뒤 세대를 올려 넘기며, 그 세션의 작업 임대를 푼다. heartbeat 만료나 오래된 임대만으로 넘기지 않는다. 넘어가면 이 연결은 소유자가 아니고 이전 세대의 상태 변경 요청은 `control-fenced`로 거부된다. 새 제어자는 `project accept`로 새 세대를 인수한 뒤 연결을 다시 맺는다 — 인수 전에는 새 제어자의 실행·판단도 받지 않는다. 인계 도중 끊기면 code-agent가 기록한 단계부터 이어 간다.

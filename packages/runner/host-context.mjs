@@ -13,6 +13,9 @@ function evidenceSummary(e) {
     artifacts: e.artifacts ?? [], delivery: e.delivery ? { level: e.delivery.level, ...(e.delivery.commit ? { commit: e.delivery.commit } : {}) } : null, at: e.at };
 }
 
+/** 지식 참조는 code-agent와 합의한 인계 계약이 없어 프롬프트 문자열에 숨겨 보내지 않는다(키 순서 유지, 없으면 원본 그대로) */
+const taskForPrompt = task => task && Object.hasOwn(task, 'knowledgeRefs') ? Object.fromEntries(Object.entries(task).filter(([key]) => key !== 'knowledgeRefs')) : task;
+
 /** code-agent 통신 계약으로 접수한 실행 — 기대 상태는 code-agent가 접수 잠금 안에서 이미 대조했다.
  *  실행이 시작되면 세션 임대·hook 기록으로 상태 버전이 바뀌므로 세션에 다시 대조시키지 않는다. 선행 증거는 요약만 싣는다 */
 export function hostPrompt(ticket) {
@@ -23,7 +26,7 @@ export function hostPrompt(ticket) {
   const context = { missionId: ticket.missionId, planVersion: ticket.planVersion, taskId: ticket.taskId, attemptId: ticket.id,
     ...(ticket.taskNumber === undefined ? {} : { taskNumber: ticket.taskNumber }),
     codeAgentWorkId: ticket.codeAgentWorkId, ...(codeAgentBase ? { codeAgentBase } : {}), goal: ticket.goal, criteria: ticket.criteria,
-    task: ticket.task, inputEvidence: (ticket.inputEvidence ?? []).map(evidenceSummary), recovery: ticket.recovery?.proposal,
+    task: taskForPrompt(ticket.task), inputEvidence: (ticket.inputEvidence ?? []).map(evidenceSummary), recovery: ticket.recovery?.proposal,
     inputContracts: ticket.inputContracts ?? [], ...(dependencyContracts ? { dependencyContracts } : {}),
     ...(contractDocuments.length ? { contractDocuments } : {}), verificationContract: ticket.recipe, ...(ticket.note ? { masterNote: ticket.note } : {}) };
   const check = '이 실행은 code-agent가 기대 상태·작업·임대를 대조한 뒤 접수했습니다. 실행이 시작되면 상태 버전이 바뀌므로 다시 대조하지 말고, code-agent status --json으로 현재 위치만 확인해 이어 가세요. 지정된 codeAgentWorkId가 아닌 다른 작업이 진행 중이면 수정하지 말고 보고하세요.';

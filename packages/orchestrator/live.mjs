@@ -9,6 +9,8 @@ import { predecessorContracts } from '../verification/handoff-contracts.mjs';
 import { taskHeld, relevantSource } from './scope.mjs';
 import { remoteStateSummary } from './remote-state.mjs';
 import { dispatchBase } from '../verification/project-history.mjs';
+import { dispatchEvidence, taskEvidence } from '../knowledge/evidence.mjs';
+import { modeOf } from '../knowledge/retrieval.mjs';
 
 // 결과가 호스트를 생략하면 저장된 실행 호스트를 사용한다. 둘 다 없는 과거 기록만 기존 Claude 계약을 따른다.
 function leaseOwner(result, attempt) {
@@ -79,8 +81,11 @@ export class LiveExecution {
     const recipe = before.verificationRecipes?.[taskId];
     requireThat(!recipe || recipe.planVersion === plan.version, 'stale-recipe', '현재 계획의 검증 계약이 아닙니다.');
     const baseline = recipe ? snapshotTree(project.path) : undefined;
+    // 계획이 agent-knowledge 항목을 근거로 쓴 작업만: 모드와 무관하게 봉인 묶음·연결 범위·원본 변경을 확인하고 인계 블록은 만들되 보내지 않는다(code-agent 계약 없음)
+    const knowledge = task.knowledgeRefs?.length ? dispatchEvidence(this.store, plan, task, project, { mode: modeOf(this.store, project.id) }) : null;
     const ticket = this.store.transaction(() => {
       const m = this.engine.checked(id, expectedRevision);
+      if (knowledge) taskEvidence(this.store, m.plans.at(-1), task);
       requireThat(['planned', 'executing', 'blocked', 'waiting-decision'].includes(m.state) && !m.planningHold && !taskHeld(this.store, m, taskId), 'invalid-state', '현재 목표는 배정할 수 없습니다.');
       requireThat(this.engine.projectVersionsMatch(m, taskId), 'stale-context', '계획 근거가 변경됐습니다. 재계획이 필요합니다.');
       requireThat(task.dependsOn.every(dep => taskState(m, dep).state === 'succeeded'), 'dependency-pending', '선행 작업의 검증된 완료가 필요합니다.');
@@ -89,11 +94,12 @@ export class LiveExecution {
         reason: task.rationale, evidence: [...task.references, `code-agent-state:${state.stateVersion}`], alternatives: ['상태 재검토', '설치된 호스트에 배정'],
         nextAction: task.goal, verification: task.verification, codeAgentWorkId, provider: host.name,
         inputHash: hash({ task, goal: m.goal, state, codeAgentWorkId }),
+        ...(knowledge ? { knowledge: { status: knowledge.status, reason: knowledge.reason, count: knowledge.count, ...(knowledge.hash ? { hash: knowledge.hash, bundleId: knowledge.bundleId } : {}) } } : {}),
       });
       const attempt = { id: randomUUID(), token: randomUUID(), missionId: id, taskId, projectId: project.id, planVersion: plan.version,
         ...(m.taskNumber === undefined ? {} : { taskNumber: m.taskNumber }),
         mode: 'live', state: 'running', invocationId: randomUUID(), codeAgentWorkId, initialState: remoteStateSummary(state), provider: host.name, model: host.model ?? 'cli-default', decisionId: d.id, startedAt: now(), turns: [],
-        ...(recipe ? { recipe: structuredClone(recipe), baseline } : {}) };
+        ...(recipe ? { recipe: structuredClone(recipe), baseline } : {}), ...(knowledge ? { knowledgeHandoff: knowledge } : {}) };
       this.store.acquire(project.id, id, attempt.id);
       m.attempts.push(attempt); const t = taskState(m, taskId); t.state = 'running'; t.attemptIds.push(attempt.id);
       m.state = 'executing'; m.reason = `개발 호스트에 ${taskId} 배정`;
@@ -217,6 +223,8 @@ export class LiveExecution {
       this.continuationInputs(m, project.id, current.taskId);
       if (automatic) current.autoContinuationStates = [...(current.autoContinuationStates ?? []), expectedState];
       const task = m.plans.at(-1).proposal.tasks.find(t => t.id === current.taskId);
+      // 이어 실행은 작업 자신의 변경이 원본을 바꿀 수 있으므로 봉인 묶음·연결 범위만 다시 확인한다(모드와 무관). 수집한 정책 문서의 변경은 위 continuationInputs가 막는다
+      if (task.knowledgeRefs?.length) taskEvidence(this.store, m.plans.at(-1), task);
       const d = this.engine.decision(m, 'continue-live', { reason: '기존 작업 ID와 현재 code-agent 실행 가능 상태를 확인했습니다.', automatic,
         evidence: [current.decisionId, `code-agent-state:${state.stateVersion}`], alternatives: ['현재 상태 유지', '기존 작업 계속'], nextAction: task.goal, verification: task.verification });
       current.invocationId = randomUUID(); current.state = 'running'; taskState(m, current.taskId).state = 'running'; m.state = 'executing'; m.reason = '개발 호스트 계속 실행';

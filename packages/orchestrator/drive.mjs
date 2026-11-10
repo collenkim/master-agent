@@ -15,9 +15,11 @@ const State = Annotation.Root({
   missionId: Annotation(), cursor: Annotation(), order: Annotation(), pending: Annotation(), blockers: Annotation(), route: Annotation(),
   taskId: Annotation(), attemptId: Annotation(), revision: Annotation(), remote: Annotation(), result: Annotation(),
 });
-const expectedBlocks = ['remote-not-ready', 'remote-needs-human', 'remote-busy', 'remote-unapproved', 'missing-remote-evidence', 'handoff-pending', 'out-of-scope-change', 'stale-context', 'stale-contract', 'handoff-context-limit', 'continuation-limit'];
+const expectedBlocks = ['remote-not-ready', 'remote-needs-human', 'remote-busy', 'remote-unapproved', 'missing-remote-evidence', 'handoff-pending', 'out-of-scope-change', 'stale-context', 'stale-contract', 'handoff-context-limit', 'continuation-limit',
+  'knowledge-integrity', 'knowledge-bundle-released', 'knowledge-source-changed', 'knowledge-scope-changed'];
 const faults = new Set(['external-work', 'missing-verification-recipe', 'remote-busy', 'remote-unapproved', 'missing-remote-evidence',
-  'out-of-scope-change', 'stale-context', 'stale-contract', 'handoff-context-limit', 'continuation-limit', 'ownership-conflict', 'unobservable']);
+  'out-of-scope-change', 'stale-context', 'stale-contract', 'handoff-context-limit', 'continuation-limit', 'ownership-conflict', 'unobservable',
+  'knowledge-integrity', 'knowledge-bundle-released', 'knowledge-source-changed', 'knowledge-scope-changed']);
 
 /** LangGraph owns scheduling and all automatic branches. Domain services own effects. */
 export class LiveWorkflow {

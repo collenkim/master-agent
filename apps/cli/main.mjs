@@ -12,6 +12,7 @@ import { runDemo } from '../../packages/simulation/demo.mjs';
 import { observeProject } from '../../packages/code-agent-adapter/observe.mjs';
 import { requireThat } from '../../packages/domain/contracts.mjs';
 import { Knowledge } from '../../packages/knowledge/sources.mjs';
+import { knowledgeStatus, parseLinks, setBinding } from '../../packages/knowledge/retrieval.mjs';
 import { Planner } from '../../packages/reasoning/planner.mjs';
 import { CliProvider } from '../../packages/reasoning/cli-provider.mjs';
 import { LiveExecution } from '../../packages/orchestrator/live.mjs';
@@ -48,6 +49,9 @@ code-agent는 설치된 명령에서 자동 탐색합니다. --cli는 별도 빌
   project collect <ID> <목록JSON> --revision <N>  지정 문서·코드의 근거 스냅샷 수집
   project sources <ID>                현재 근거 출처·해시·경로 조회
   project search <ID> <검색어>         근거에서 문장과 줄 번호 검색
+  project knowledge <ID>              agent-knowledge 연결 모드·환경 변수 연결 상태 조회(검색 호출 없음)
+  project knowledge-mode <ID> off|shadow|enabled [--knowledge-project <AK프로젝트>] [--allow-link <AK프로젝트>:<종류,…>|none]... [--revision <N>]
+                                      프로젝트별 agent-knowledge 검색 모드(기본 off). 기존 설정은 그 --revision이 필요하고 off는 기록을 지우지 않음
   project control <ID> [--cli <경로>] --controller <이름> --token-file <절대경로>
                                       사람이 켠 code-agent 연동에 제어자로 연결(연결은 승인 권한이 아님)
   project snapshot <ID> [--cli <경로>]    code-agent 실행·소유·이벤트 위치·상태 한 번에 조회
@@ -139,7 +143,7 @@ async function main() {
     force: { type: 'boolean' }, 'wait-ms': { type: 'string' }, 'poll-ms': { type: 'string' }, 'follow-timeout-ms': { type: 'string' },
     port: { type: 'string' }, 'refresh-ms': { type: 'string' },
     saved: { type: 'boolean' }, description: { type: 'string' }, input: { type: 'string' }, reason: { type: 'string' }, confirm: { type: 'boolean' },
-    criterion: { type: 'string', multiple: true }, 'request-key': { type: 'string' }, 'launch-id': { type: 'string' }, 'task-number': { type: 'string' }, host: { type: 'string' }, main: { type: 'string' },
+    criterion: { type: 'string', multiple: true }, 'knowledge-project': { type: 'string' }, 'allow-link': { type: 'string', multiple: true }, 'request-key': { type: 'string' }, 'launch-id': { type: 'string' }, 'task-number': { type: 'string' }, host: { type: 'string' }, main: { type: 'string' },
   } });
   if (values.help || !args.length || args[0] === 'help') { console.log(help); return; }
   if (args[0] === 'dashboard') {
@@ -158,7 +162,7 @@ async function main() {
   const eventPrune = args[0] === 'mission' && args[1] === 'events' && args[2] === 'prune';
   const [category, action, id, file, extra] = eventPrune ? ['mission', 'events-prune', args[3]] : args;
   const counts = { demo: 1, 'project add': 3, 'project update': 4, 'project list': 2, 'project observe': 3, 'group save': 3, 'group list': 2,
-    'project collect': 4, 'project sources': 3, 'project search': 4, 'mission analyze': 3, 'mission clarify': 4,
+    'project collect': 4, 'project sources': 3, 'project search': 4, 'project knowledge': 3, 'project knowledge-mode': 4, 'mission analyze': 3, 'mission clarify': 4,
     'mission dispatch': 4, 'mission continue': 4, 'mission recover': 4, 'mission replan': 4, 'mission replan-refresh': 3, 'mission reconcile': 4,
     'mission stop-analysis': 4, 'mission reconcile-verification': 4, 'mission verification-template': 4,
     'mission verification': 4, 'mission verify': 4, 'mission handoff': 4, 'mission complete': 3,
@@ -175,6 +179,7 @@ async function main() {
     requireThat(values.control === true, 'usage', '개발 실행은 code-agent 관리 연결을 사용합니다. --control이 필요합니다.');
   if (key === 'mission task-branch') requireThat(values.control === true && !values.simulate, 'usage', 'task 브랜치 복구에는 --control이 필요합니다.');
   if (values['new-command']) requireThat(key === 'mission task-branch', 'usage', '--new-command는 task 브랜치 복구에서만 사용합니다.');
+  if (values['knowledge-project'] !== undefined || values['allow-link'] !== undefined) requireThat(key === 'project knowledge-mode', 'usage', '--knowledge-project·--allow-link는 project knowledge-mode에서만 사용합니다.');
   const revision = values.revision === undefined ? undefined : Number(values.revision);
   if (values.revision !== undefined) requireThat(Number.isSafeInteger(revision) && revision > 0, 'usage', '--revision은 양의 정수입니다.');
   if (['mission cancel', 'mission replan-refresh', 'mission events-prune'].includes(key)) requireThat(revision, 'usage', '--revision이 필요합니다.');
@@ -228,6 +233,9 @@ async function main() {
         result = { id: snapshot.id, projectId: id, collectedAt: snapshot.collectedAt, sources: snapshot.sources.map(({ content, actual, ...source }) => source) }; break;
       }
       case 'project search': result = new Knowledge(store).search(id, file); break;
+      case 'project knowledge': result = knowledgeStatus(store, id); break;
+      case 'project knowledge-mode': result = setBinding(store, id, { mode: file, knowledgeProject: values['knowledge-project'],
+        allowedLinks: parseLinks(values['allow-link']), revision }); break;
       case 'project control': result = await bindControl(store, id, { cliPath: values.cli, controller: values.controller, tokenFile: resolve(values['token-file']) }); break;
       case 'project pair': {
         const controller = values.controller ?? DASHBOARD_CONTROLLER;

@@ -45,8 +45,9 @@ export function validateMission(input) {
   strings(input.criteria.map(c => c.id), 'criteria.id', true);
 }
 
-/** 계획의 의미적 타당성은 이후 AI 평가와 프로젝트 분석이 보완한다. 여기서는 실행 불변식을 검사한다. */
-export function validatePlan(plan, mission, projects) {
+/** 계획의 의미적 타당성은 이후 AI 평가와 프로젝트 분석이 보완한다. 여기서는 실행 불변식을 검사한다.
+ *  knowledgeItems는 분석 근거 묶음의 agent-knowledge 항목이다. 묶음이 없는 계획에는 작업 knowledgeRefs를 허용하지 않는다(기존 계획은 키가 없다). */
+export function validatePlan(plan, mission, projects, { knowledgeItems } = {}) {
   object(plan, 'plan');
   requireThat(plan.schemaVersion === 1, 'unsupported-version', '계획 스키마 버전 1이 필요합니다.');
   string(plan.summary, 'summary');
@@ -69,6 +70,17 @@ export function validatePlan(plan, mission, projects) {
     requireThat(t.references.every(ref => project.references.includes(ref)), 'unknown-reference', `${t.id}: 등록된 근거가 아닙니다.`);
     requireThat(t.criteria.every(c => criteria.has(c)), 'unknown-criterion', `${t.id}: 정의되지 않은 완료 조건입니다.`);
     requireThat(t.dependsOn.every(id => tasks.has(id) && id !== t.id), 'invalid-dependency', `${t.id}: 선행 작업이 잘못됐습니다.`);
+    if (Object.hasOwn(t, 'knowledgeRefs')) {
+      strings(t.knowledgeRefs, 'task.knowledgeRefs');
+      requireThat(Array.isArray(knowledgeItems), 'unknown-knowledge-reference', `${t.id}: 근거 묶음이 없는 계획에는 지식 참조를 쓸 수 없습니다.`);
+      for (const ref of t.knowledgeRefs) {
+        const item = knowledgeItems.find(i => i.ref === ref);
+        requireThat(item, 'unknown-knowledge-reference', `${t.id}: 이번 분석에서 검색한 지식 항목이 아닙니다: ${ref}`);
+        requireThat(item.forProject === t.projectId, 'knowledge-reference-scope', `${t.id}: 다른 프로젝트 검색으로 얻은 지식 항목은 작업 근거로 쓸 수 없습니다: ${ref}`);
+        // 분석 때 원본이 이미 바뀐 확정 항목은 배정에서 막힌다 — 계획 단계에서 거부해 재분석이 같은 상태로 돌아오지 않게 한다
+        requireThat(!(item.confirmed && ['changed', 'missing'].includes(item.sourceState)), 'knowledge-source-stale', `${t.id}: 색인 뒤 원본이 바뀐 확정 지식은 작업 근거로 쓸 수 없습니다: ${ref}`);
+      }
+    }
     if (project.currentPlans.length) {
       strings(t.planAcknowledgements, 'planAcknowledgements', true);
       requireThat(project.currentPlans.every(p => t.planAcknowledgements.includes(p)), 'plan-conflict', `${t.id}: 기존 계획 대조가 필요합니다.`);

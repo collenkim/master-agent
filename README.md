@@ -130,6 +130,7 @@ PC 신뢰·프로젝트 페어링·기존 터미널 연결은 [제어 연결(페
 | [CLI 사용법](docs/usage.md) | 등록·목표·실행·조회 명령·환경 변수 |
 | [LangGraph 구조](docs/langgraph.md) | 그래프·SQLite·재시작·기록 보존 |
 | [AI 계획](docs/ai-planning.md) | 근거 수집·계획·교차 검증 |
+| [agent-knowledge 연결](docs/agent-knowledge.md) | 선택적 근거 검색·참조 검증·묶음 보존·배정 확인 |
 | [실제 개발 호스트 연결](docs/live-execution.md) | 관리 실행 배정·계속 실행·임대 소유권 |
 | [실제 검증](docs/live-verification.md) | 검증 계약·템플릿·인계 |
 | [자동 진행](docs/autonomous-progress.md) | 작업별 보류·승인 후 재개 |

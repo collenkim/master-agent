@@ -26,9 +26,19 @@ export const analysisSchema = obj({
   plan: planSchema,
 });
 
+/** agent-knowledge 항목을 실은 context에서만 판단·질문·작업에 knowledgeRefs를 요구한다. 파일 근거 references는 그대로다. */
+function withKnowledgeRefs(schema, refs) {
+  for (const target of [schema.properties.decisions.items, schema.properties.issues.items, schema.properties.plan.properties.tasks.items]) {
+    target.properties.knowledgeRefs = structuredClone(refs); target.required = [...target.required, 'knowledgeRefs'];
+  }
+  return schema;
+}
+/** 수신 경계 형식 검사용 — enum 대신 분석 검증기가 ref를 대조한다 */
+export const knowledgeAnalysisSchema = withKnowledgeRefs(structuredClone(analysisSchema), texts);
+
 /** 계획 근거는 이번에 읽은 소스 ID만 선택한다. 등록 정보의 참조는 문서 근거가 아니다. */
 export function analysisSchemaFor(context) {
-  const schema = structuredClone(analysisSchema);
+  const schema = context.knowledge ? withKnowledgeRefs(structuredClone(analysisSchema), array(choice(context.knowledge.items.map(i => i.ref)))) : structuredClone(analysisSchema);
   const ids = [...new Set(context.projects.flatMap(p => p.sources.map(s => s.id)))];
   if (!ids.length) return schema; // 빈 근거의 유효성은 분석 검증기가 판단한다.
   for (const key of ['assessments', 'decisions', 'issues']) schema.properties[key].items.properties.references = array(choice(ids));
