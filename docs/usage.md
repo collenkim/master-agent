@@ -33,14 +33,14 @@ master-agent group list
 | --- | --- | --- | --- |
 | `CODE_AGENT_CLI` | code-agent CLI 위치를 지정한다. | PATH·npm 전역 설치·사용자 설치 경로에서 자동 탐색한다. | `packages/code-agent-adapter/discovery.mjs`, `scripts/smoke-full-flow.mjs` |
 | `CODE_AGENT_HOME` | code-agent의 PC 신뢰·제어 키·사람 채널 저장소를 지정한다. | 사용자 홈 아래 `.code-agent`를 사용한다. 프로젝트 내부 폴더와 다르다. | `packages/code-agent-adapter/discovery.mjs` |
-| `CODE_AGENT_DIST` | 계약 시험·PC 신뢰 및 답변 문맥 smoke에 사용할 code-agent 빌드 디렉터리를 지정한다. | 인접 `../code-agent/dist`를 사용한다. 답변 문맥 시험은 `--code-agent-dist`가 우선한다. | `tests/code-agent-control.test.mjs`, `tests/managed-host.test.mjs`, `tests/handoff-contracts.test.mjs`, `scripts/smoke-dashboard-trust.mjs`, `scripts/smoke-answer-context.mjs` |
-| `AGENT_KNOWLEDGE_DIST` | 실제 agent-knowledge 연동 시험에 사용할 빌드 디렉터리를 지정한다. 생산자 실행에는 전달하지 않는다. | 인접 `../agent-knowledge/dist`를 사용하며 `src/cli/main.js`가 없으면 시험을 건너뛴다. | `tests/knowledge-real-cli.test.mjs` |
+| `CODE_AGENT_DIST` | 계약 시험·세 저장소 지식 연동 시험·PC 신뢰 및 답변 문맥 smoke에 사용할 code-agent 빌드 디렉터리를 지정한다. | 인접 `../code-agent/dist`를 사용한다. 답변 문맥 시험은 `--code-agent-dist`가 우선한다. 지식 연동 시험은 CLI·가짜 호스트·지식 진행 게이트 빌드가 없으면 건너뛴다. | `tests/code-agent-control.test.mjs`, `tests/managed-host.test.mjs`, `tests/handoff-contracts.test.mjs`, `tests/knowledge-integration.test.mjs`, `scripts/smoke-dashboard-trust.mjs`, `scripts/smoke-answer-context.mjs` |
+| `AGENT_KNOWLEDGE_DIST` | 실제 agent-knowledge 연동 시험에 사용할 빌드 디렉터리를 지정한다. 생산자 실행에는 전달하지 않는다. | 인접 `../agent-knowledge/dist`를 사용하며 `src/cli/main.js`가 없으면 시험을 건너뛴다. 세 저장소 지식 연동 시험은 agent-knowledge `config/retrieval.yaml`도 필요하다. | `tests/knowledge-real-cli.test.mjs`, `tests/knowledge-integration.test.mjs` |
 | `CODE_AGENT_SOURCE` | 업데이트 smoke가 임시 복사할 code-agent 소스 저장소를 지정한다. | `../code-agent`를 사용한다. | `scripts/smoke-dashboard-updates.mjs` |
 | `CODE_AGENT_RELEASE_HOME` | 전체 흐름 smoke에서 code-agent 릴리스 저장소 설정을 보존하고 재개 시 복원한다. | master-agent가 별도 기본값을 지정하지 않고 code-agent의 설정을 따른다. 업데이트 smoke는 격리된 임시 위치를 사용한다. | `scripts/smoke-full-flow.mjs`, `scripts/smoke-dashboard-updates.mjs` |
 | `CLAUDE_CLI` | 실제 모델 smoke와 smoke 집계에 사용할 Claude 실행 파일 또는 JS 진입점 경로를 지정한다. 셸 래퍼는 직접 지정하지 않는다. 일반 계획 CLI는 `--ai-cli` 또는 자동 탐색을 사용한다. | 모델 smoke 준비·집계에는 필수다. 답변 문맥 시험은 명시한 `--ai-cli`가 우선하며, 준비된 전체 흐름의 조회·실행은 저장된 설정을 사용한다. | `scripts/smoke.mjs`, `scripts/smoke-full-flow.mjs`, `scripts/smoke-answer-context.mjs` |
 | `CHROME_PATH` | 브라우저 smoke의 Chrome 실행 파일을 지정한다. | `C:/Program Files/Google/Chrome/Application/chrome.exe`를 사용한다. 다른 설치 위치와 Linux에서는 명시한다. | `scripts/browser.mjs` |
 | `MASTER_AGENT_SMOKE_ROOT` | smoke 산출물의 상위 폴더를 지정한다. | 실행 작업 폴더의 `.master-agent`를 사용한다. | `scripts/smoke-artifacts.mjs` |
-| `MASTER_AGENT_KNOWLEDGE_CLI`, `MASTER_AGENT_KNOWLEDGE_CONFIG`, `MASTER_AGENT_KNOWLEDGE_DB`, `MASTER_AGENT_KNOWLEDGE_RETRIEVAL_CONFIG`, `MASTER_AGENT_KNOWLEDGE_TIMEOUT_MS` | agent-knowledge CLI·설정·DB·검색 설정·호출 제한 시간을 지정한다. 값의 조건은 [모드와 연결 설정](agent-knowledge.md#모드와-연결-설정)을 따른다. | CLI가 없으면 연결하지 않으며 모든 프로젝트가 기존 경로로 계획한다. | `packages/knowledge/agent-knowledge.mjs` |
+| `MASTER_AGENT_KNOWLEDGE_CLI`, `MASTER_AGENT_KNOWLEDGE_CONFIG`, `MASTER_AGENT_KNOWLEDGE_DB`, `MASTER_AGENT_KNOWLEDGE_RETRIEVAL_CONFIG`, `MASTER_AGENT_KNOWLEDGE_TIMEOUT_MS` | agent-knowledge CLI·설정·DB·검색 설정·호출 제한 시간을 지정한다. 값의 조건은 [모드와 연결 설정](agent-knowledge.md#모드와-연결-설정)을 따른다. | CLI가 없으면 연결하지 않으며 모든 프로젝트가 agent-knowledge 근거 없이 계획한다. | `packages/knowledge/agent-knowledge.mjs` |
 
 ## 서비스 그룹과 단일 프로젝트 요청
 
@@ -50,7 +50,7 @@ master-agent group list
 
 웹의 프로젝트 등록·그룹 생성 및 편집은 [대시보드](ui.md#프로젝트와-서비스-그룹)를 따른다. 아래는 같은 카탈로그를 사용하는 CLI와 실제 실행 준비 절차다.
 
-그룹은 서비스 유지보수 범위다. `group create <ID> <이름> --description <범위>`로 만들고 `group add/remove <그룹ID> <프로젝트ID> --revision <그룹버전>`으로 소속을 바꾼다. `group show <ID>`에서 최신 버전을 확인한다. 기존 `group save <JSON> --revision <N>`도 지원하며 JSON은 id, name, description, projectIds다. 빈 그룹 저장은 가능하지만 실행 요청은 거부한다.
+그룹은 서비스 유지보수 범위다. `group create <ID> <이름> --description <범위>`로 만들고 `group add/remove <그룹ID> <프로젝트ID> --revision <그룹버전>`으로 소속을 바꾼다. `group show <ID>`에서 최신 버전을 확인한다. `group save <JSON> [--revision <N>]`로 JSON 하나에서 생성하거나 기대 버전으로 수정할 수도 있으며 JSON은 id, name, description, projectIds다. 빈 그룹 저장은 가능하지만 실행 요청은 거부한다.
 
 ```powershell
 master-agent group request commerce "주문 취소 오류 수정" --task-number UZRF-392 --criterion "취소 회귀 통과" --host both --main claude --request-key cancel-fix-001
@@ -74,9 +74,9 @@ master-agent request continue <요청ID> --revision <요청버전>
 1. 각 code-agent 프로젝트를 대시보드의 수동 등록 또는 `project add`로 등록한다. 요청 실행기는 최초 계획 전 표준 문서·빌드 설정을 수집하고, 해당 파일이 없으면 실제 최상위 폴더 목록을 관측한다. 상세 정책·코드는 `project collect`로 별도 지정할 수 있다. 수집 범위와 제한은 [AI 계획](ai-planning.md)을 따른다.
 2. 프로젝트 연결과 위임 권한은 [제어 연결(페어링)](code-agent-control.md#제어-연결페어링)을 따른다. 자동 탐색은 설치 경로만 찾으며 제어 권한을 대신 부여하지 않는다.
 3. 요청의 완료 조건·작업 범위·검사 명령에 맞는 templates를 전달하거나 계획 후 `mission verification` / `mission verification-template`으로 보완한다.
-4. 그룹·단일 요청을 보내면 별도 실행기가 근거·설치·제어 연결을 점검하고 AI 계획·검증 계약 연결·개발·검증·인계를 진행한다. 준비가 부족하면 `waiting`과 `실행 준비 필요`로 표시하며 공통 요청함에서 대상별 조치·보류·재점검을 제공한다. 초기 준비 오류로 실패했던 요청도 같은 요청함에 연결한다. 보완 후 요청함의 재점검 또는 `request continue`로 동일 목표를 이어간다. 업무 분석 질문은 공통 요청함 또는 `mission clarify`, code-agent 질문은 공통 요청함 또는 기존 relay로 답한다.
+4. 그룹·단일 요청을 보내면 별도 실행기가 근거·설치·제어 연결을 점검하고 AI 계획·검증 계약 연결·개발·검증·인계를 진행한다. 준비가 부족하면 `waiting`과 `실행 준비 필요`로 표시하며 공통 요청함에서 대상별 조치·보류·재점검을 제공한다. 초기 준비 오류로 실패했던 요청도 같은 요청함에 연결한다. 보완 후 요청함의 재점검 또는 `request continue`로 동일 목표를 이어간다. 업무 분석 질문은 공통 요청함 또는 `mission clarify`, code-agent 질문은 공통 요청함 또는 `mission relay`로 답한다.
 
-대시보드 종료는 접수한 작업을 중지하지 않는다. 실행 중인 작업의 중지는 기존 `mission stop`·`mission pause`를 사용한다. 실행기 로그는 DB 디렉터리의 request-logs에 저장한다. 프로세스가 사라진 요청은 interrupted로 표시하며 자동 재접수하지 않는다. 이어 실행도 기존 그래프 소유권과 프로젝트 잠금을 검사한다.
+대시보드 종료는 접수한 작업을 중지하지 않는다. 실행 중인 작업의 중지는 `mission stop`·`mission pause`를 사용한다. 실행기 로그는 DB 디렉터리의 request-logs에 저장한다. 프로세스가 사라진 요청은 interrupted로 표시하며 자동 재접수하지 않는다. 이어 실행도 그래프 소유권과 프로젝트 잠금을 검사한다.
 
 ## 직접 목표와 계획 입력
 
@@ -95,7 +95,7 @@ master-agent mission run <목표ID> --simulate
 
 계획에는 모든 작업의 프로젝트·도메인·배정 이유·근거·선행 작업·완료 조건·허용 범위·산출물·검증 방법이 필요하다. 등록된 근거 ID에 없는 참조, 도메인 불일치, 미지원 기능, 순환 의존, 후행 검증 누락을 거부한다. 여러 프로젝트 계획에는 전체 작업과 완료 조건을 연결하는 통합 검증 작업이 필요하다.
 
-프로젝트에 currentPlans가 있으면 관련 작업에 `planAcknowledgements`로 기존 계획 참조를 넣고 `coordination`으로 조정 내용을 설명한다. 규칙 검사는 참조와 설명의 존재를 확인한다. AI 분석은 수집된 근거로 조정 내용을 판단하며, 실제 프로젝트 작업과의 호환성 검증은 개발 실행 연결 단계에서 보완해야 한다.
+프로젝트에 currentPlans가 있으면 그 프로젝트의 작업마다 `planAcknowledgements`에 기존 계획을 모두 넣고 `coordination`으로 조정 내용을 설명한다. 규칙 검사는 참조 누락(`plan-conflict`)과 빈 설명만 거부한다. 조정 내용은 AI 분석이 수집된 근거로 판단하며, 기존 계획과 실제 프로젝트 작업의 호환성은 규칙 검사가 판정하지 않는다.
 
 모호함을 나타내는 unresolved가 비어 있지 않으면 계획 활성화를 거부한다. 직접 입력한 계획은 보완하고, AI 분석에서는 검증 오류와 미해결 사항을 모델에 전달해 재검토한다. 일반 정보 부족과 중대한 사람 판단을 구분하며 모든 계획에 사람 승인을 요구하지 않는다.
 
@@ -129,9 +129,9 @@ revision은 오래된 조작을 거부하는 상태 버전이며 승인 값이 �
 
 `mission cancel`은 종료 전 목표를 `cancelled`로 마감한다. 실행 중 시도는 먼저 `mission stop`으로 종료를 확인하거나 `mission unknown`으로 미확인을 기록한다. 취소는 해당 목표의 잠금을 모두 해제하고 진행 중 분석·복구 기록과 보류를 정리하며 결정과 사유를 보존한다. `--reason`을 생략하면 기본 취소 사유를 기록한다. 이미 종료한 목표의 취소는 거부한다. 취소한 목표의 TASK 번호는 새 요청에서 재사용할 수 있고 프로젝트 등록 해제를 막지 않는다.
 
-실패가 확인된 모의 작업은 `mission retry <목표ID> <작업ID> --revision <버전>`으로 다시 대기 상태에 넣을 수 있다. 실제 목표는 [자동 복구 절차](recovery.md)를 사용한다. 성공한 다른 작업은 반복하지 않는다. 새 계획은 `mission plan`으로 적용하며 이전 계획·시도·증거를 보존하되 모든 작업을 새로 검증한다. 영향받지 않은 증거를 골라 재사용하는 최적화는 아직 없다.
+실패가 확인된 모의 작업은 `mission retry <목표ID> <작업ID> --revision <버전>`으로 다시 대기 상태에 넣을 수 있다. 실제 목표는 [자동 복구 절차](recovery.md)를 사용한다. 성공한 다른 작업은 반복하지 않는다. 새 계획은 `mission plan`으로 적용하며 이전 계획·시도·증거를 보존하되 모든 작업을 새로 검증한다. 영향받지 않은 증거만 골라 재사용하지는 않는다.
 
-프로젝트 지식은 `project update <프로젝트ID> <JSON> --revision <버전>`으로 변경한다. 갱신 가능한 항목은 domains, capabilities, constraints, currentPlans, references다. 이 정보가 계획 이후 바뀌면 실행 전 재계획을 요구한다. 현재는 보수적으로 대상 스냅샷 안의 프로젝트 버전을 모두 비교한다.
+프로젝트 지식은 `project update <프로젝트ID> <JSON> --revision <버전>`으로 변경한다. 갱신 가능한 항목은 domains, capabilities, constraints, currentPlans, references다. 이 정보가 계획 이후 바뀌면 실행 전 재계획을 요구한다. 변경 판단은 보수적으로 대상 스냅샷 안의 프로젝트 버전을 모두 비교한다.
 
 프로세스 중단 후 남은 running 상태는 자동 재실행하지 않는다. `mission unknown <목표ID> <시도ID> --revision <버전>`으로 미확인을 기록할 수 있다. 호스트 반환 기록이 있는 일부 unknown 작업은 mission reconcile로 검증 단계에 복구한다. 목표를 폐기할 때는 `mission cancel`로 잠금을 해제한다. 상태 파일을 직접 바꾸는 복구 방식은 제공하지 않는다.
 
@@ -150,7 +150,7 @@ master-agent project observe <프로젝트ID>
 실제 CLI와의 읽기 계약 시험은 임시 Git 저장소에서 실행할 수 있다.
 
 ```powershell
-node scripts/smoke-code-agent.mjs
+node scripts/smoke-code-agent.mjs <code-agent CLI 절대 경로>
 ```
 
 이 시험은 상태 조회 전후 파일이 바뀌지 않는지 확인한다. 실제 호스트 설치·개발·승인 전달 시험은 아니다.
@@ -174,11 +174,11 @@ master-agent mission stop <목표ID> <시도ID> --mode pause
 ```powershell
 master-agent project knowledge <프로젝트ID>
 master-agent project knowledge-mode <프로젝트ID> shadow --knowledge-project <AK프로젝트>
-master-agent project knowledge-mode <프로젝트ID> enabled --revision <설정버전> [--allow-link <AK프로젝트>:contract,api-catalog | --allow-link none]...
+master-agent project knowledge-mode <프로젝트ID> enabled --revision <설정버전> [--allow-link <AK프로젝트>:contract,api-catalog | --allow-link none]... [--ranker legacy|bm25|default] [--segments on|off|default]
 master-agent project knowledge-mode <프로젝트ID> off --revision <설정버전>
 ```
 
-기본값은 off이며 끄기는 연결 정보·기록을 지우지 않는다. `--allow-link none`은 허용 연결을 모두 철회한다. 연결 설정은 프로젝트 revision을 바꾸지 않는다. 모드·범위·실패 처리는 [agent-knowledge 연결](agent-knowledge.md)을 따른다.
+기본값은 off이며 끄기는 연결 정보·기록을 지우지 않는다. 처음 연결할 때는 `--revision`을 주지 않고 이후 변경에는 현재 설정 버전을 준다. `--allow-link none`은 허용 연결을 모두 철회한다. `--ranker`·`--segments`는 형식 2 생산자에서만 쓰는 프로젝트별 검색 선택이며 생략하면 유지한다. 연결 설정은 프로젝트 revision을 바꾸지 않는다. 모드·범위·실패 처리는 [agent-knowledge 연결](agent-knowledge.md)을 따른다.
 
 ## 구현 경계
 

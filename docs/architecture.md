@@ -16,7 +16,7 @@ CLI / 로컬 대시보드
 | --- | --- |
 | apps/cli | 명령 입력·검증과 엔진 호출 |
 | apps/dashboard, packages/dashboard | 화면, 로컬 HTTP, 관측·요청함·타임라인·설치 업데이트 |
-| packages/catalog, packages/knowledge | 프로젝트·그룹·경로 등록, 정책·코드·문서 근거 수집, 선택적 agent-knowledge 검색·응답 검증·봉인 묶음 |
+| packages/catalog, packages/knowledge | 프로젝트·그룹·경로 등록, 정책·코드·문서 근거 수집, 선택적 agent-knowledge 검색·응답 검증·봉인 묶음·근거 세대 임대·code-agent 지식 인계 결정 |
 | packages/reasoning | CLI 모델 호출, 계획·재검토·질문 응답과 근거 검증 |
 | packages/orchestrator | 목표·계획·시도·결정, 요청 실행기, 그래프·잠금·복구·재계획 |
 | packages/code-agent-adapter | 설치 탐색, 상태 관측, 페어링·관리 통신·사람 응답 계약 |
@@ -41,9 +41,9 @@ SQLite의 `records`는 종류·ID·revision·JSON 본문을 저장한다. `event
 
 스키마는 `user_version`에 따라 순차 마이그레이션하며 현재 버전은 2다. 목표별 레코드와 이벤트에 인덱스를 사용한다. DB 트랜잭션에는 동기 저장 작업만 넣고 모델·프로세스 호출은 커밋 이후에 수행한다.
 
-agent-knowledge 연결은 기존 `records`의 `agent-knowledge-binding`(프로젝트별 모드), `agent-knowledge-bundle`(분석별 봉인 묶음), `agent-knowledge-shadow`(비교 기록)를 사용하며 스키마 버전을 올리지 않는다. 검색 본문은 분석별 묶음 하나에만 두고 목표 종료·계획 교체 때 해제한다. [agent-knowledge 연결](agent-knowledge.md#봉인-묶음과-보존)을 따른다.
+agent-knowledge 연결은 `records`의 `agent-knowledge-binding`(프로젝트별 모드), `agent-knowledge-bundle`(분석별 봉인 묶음과 근거 세대 임대), `agent-knowledge-shadow`(비교 기록)를 사용하며 별도 테이블을 두지 않는다. 검색 본문은 분석별 묶음 하나에만 두고 분석 대체·계획 교체·목표 종료 때 해제한다. 작업별 인계 결과는 시도 기록의 `knowledgeHandoff`에 남긴다. [agent-knowledge 연결](agent-knowledge.md#봉인-묶음과-보존)을 따른다.
 
-task 브랜치 요청은 기존 `records`의 `control-command`와 이벤트로 추적한다. 인계 증거·delivery-run은 봉인을 유지하고 PR 내용은 조회 시 계산한다. 저장·재전송 계약은 [인계 후 브랜치 복구](delivery-reconciliation.md#인계-후-브랜치-복구)를 따른다.
+task 브랜치 요청은 `records`의 `control-command`와 이벤트로 추적한다. 인계 증거·delivery-run은 봉인을 유지하고 PR 내용은 조회 시 계산한다. 저장·재전송 계약은 [인계 후 브랜치 복구](delivery-reconciliation.md#인계-후-브랜치-복구)를 따른다.
 
 도메인 저장과 LangGraph 체크포인트는 하나의 분산 트랜잭션이 아니다. 외부 호출 전에 시도와 결정·실행 의도를 저장하고, code-agent의 원자적 접수·같은 실행 ID 재부착으로 중복 실행을 방지한다. 미확인 실행을 새 작업으로 자동 접수하지 않는다. 임대·체크포인트 수명은 [LangGraph](langgraph.md), 운영자 복구는 [복구](recovery.md)를 따른다.
 
@@ -51,7 +51,7 @@ task 브랜치 요청은 기존 `records`의 `control-command`와 이벤트로 �
 
 관측은 code-agent의 구조화한 상태 조회, 개발 실행은 관리 통신 계약을 사용한다. 지원 기능·준비 상태·소유권을 확인한 뒤 접수하고, 결과·질문·동의는 각각의 공개 계약으로 대조한다. 상세 내용은 [code-agent 통신 계약](code-agent-control.md)을 따른다.
 
-agent-knowledge는 프로젝트 모드가 off가 아니고 환경 변수로 CLI를 지정했을 때만 `search`를 셸 없이 호출한다. 색인·재색인은 agent-knowledge가 소유하며 master-agent는 응답을 검증해 계획 입력에만 쓴다. 상세 내용은 [agent-knowledge 연결](agent-knowledge.md)을 따른다.
+agent-knowledge CLI는 환경 변수로 지정했을 때만 셸 없이 호출한다. off가 아닌 프로젝트의 분석에서 `capabilities`·`status`로 형식을 협의한 뒤 `search`를 부르고, enabled 프로젝트가 형식 2 결과를 계획에 쓰면 근거 세대 `lease`를 잡아 배정·이어 실행 때 연장한다. master가 잡은 임대를 놓는 것은 모드와 무관하다. 색인·재색인은 agent-knowledge가 소유한다. master-agent는 응답을 검증해 계획 입력에 쓰고, 작업이 인용한 참조만 code-agent 새 실행 접수에 구조화 필드로 인계한다. 필수 근거의 검증 여부는 code-agent 진행 게이트가 상태 조회(`state.knowledge`)로 알린 결과로만 판단한다. 상세 내용은 [agent-knowledge 연결](agent-knowledge.md)을 따른다.
 
 대시보드는 loopback에 바인딩하고 Host·Origin·요청 토큰·JSON 입력을 검사한다. 경로와 응답은 [로컬 HTTP 계약](ui.md#로컬-http-계약)을 정본으로 한다. `POST /api/project-candidates`는 알려진 작업 위치를 탐색하며 요청 본문으로 탐색 경로를 받지 않는다.
 
@@ -64,3 +64,4 @@ agent-knowledge는 프로젝트 모드가 off가 아니고 환경 변수로 CLI�
 - 호스트 정보: `src/agent/hosts.ts`
 - 관리 통신: `doc/master-control.md`
 - 공통 요청함: `doc/dashboard-interactions.md`
+- 지식 인계 수신: `src/agent/master/protocol.ts`(`knowledgeHandoffOf`). 송신 결정과 진행 게이트는 [인계 계약](agent-knowledge.md#인계-계약)을 따른다.

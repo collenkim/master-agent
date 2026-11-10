@@ -26,11 +26,14 @@ export const analysisSchema = obj({
   plan: planSchema,
 });
 
-/** agent-knowledge 항목을 실은 context에서만 판단·질문·작업에 knowledgeRefs를 요구한다. 파일 근거 references는 그대로다. */
+/** agent-knowledge 항목을 실은 context에서만 판단·질문·작업에 knowledgeRefs를 요구한다. 파일 근거 references는 그대로다.
+ *  작업에는 그중 작업 진행에 검증이 필요한 필수 의존(knowledgeRequired, knowledgeRefs의 부분집합)도 명시하게 한다 */
 function withKnowledgeRefs(schema, refs) {
   for (const target of [schema.properties.decisions.items, schema.properties.issues.items, schema.properties.plan.properties.tasks.items]) {
     target.properties.knowledgeRefs = structuredClone(refs); target.required = [...target.required, 'knowledgeRefs'];
   }
+  const task = schema.properties.plan.properties.tasks.items;
+  task.properties.knowledgeRequired = structuredClone(refs); task.required = [...task.required, 'knowledgeRequired'];
   return schema;
 }
 /** 수신 경계 형식 검사용 — enum 대신 분석 검증기가 ref를 대조한다 */

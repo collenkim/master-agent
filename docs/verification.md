@@ -4,20 +4,27 @@
 
 ## 최신 검증
 
-Windows·Node.js 24.19.0과 로컬 code-agent 빌드 기준이다. 필수 검사 결과만 유지하며 선택 실행은 아래 재현 절차에서 구분한다.
+Windows·Node.js 24.19.0과 아래 로컬 빌드에서 얻은 결과다. 필수 검사 결과만 기록하며 선택 실행은 아래 재현 절차에서 구분한다.
 
 | 검사 | 결과 | 재현 |
 | --- | --- | --- |
-| 전체 자동 회귀 | 547건 통과, 실패·건너뜀 0 | `npm.cmd test` |
-| 구문·문서 링크·앵커 | JavaScript 154개·Markdown 20개 통과 | `npm.cmd run check` |
+| 전체 자동 회귀 | 596건 통과, 실패·건너뜀 0 | `npm.cmd test` |
+| 구문·문서 링크·앵커 | JavaScript 159개·Markdown 20개 통과 | `npm.cmd run check` |
 | 린트 | 미사용 변수·import와 미정의 이름 검사 통과 | `npm.cmd run lint` |
 | 변경 공백 검사 | 통과 | `git diff --check` |
+| 실제 3개 프로젝트 지식 인계 | 10건 통과(전체 자동 회귀에 포함) | `node --test tests/knowledge-integration.test.mjs` |
+
+실제 지식 인계 시험에 쓴 저장소 기준은 다음과 같다. 계획 AI와 관리 실행 호스트는 고정 대역이며 실제 모델을 부르지 않는다.
+
+| 저장소 | 기준 |
+| --- | --- |
+| master-agent | `217f37f` 작업 트리 |
+| agent-knowledge | `1d1fdba` 로컬 빌드(커밋과 같은 산출물, 생산자 응답 형식 1·2, 세대 임대) |
+| code-agent | `7ef02d0` 로컬 빌드(커밋과 같은 산출물, 필수 근거 진행 게이트 포함) |
 
 회귀 시험은 격리된 임시 프로젝트에서 수행한다. 모델·개발 호스트는 모의 응답이며 파일·Git·SQLite·자식 프로세스와 code-agent 통신은 실제 실행한다. 외부 빌드가 필요한 시험은 빌드가 없으면 건너뛰므로 skipped 수를 함께 확인한다. PC 신뢰 시험은 사용자 홈의 경로를 조회하므로 해당 읽기 권한이 있는 환경에서 실행한다. 브라우저·실제 모델 smoke와 원격 CI는 위 결과에 포함하지 않는다.
 
-확인한 code-agent 소스 기준은 `182d49f48257d0c37bedb1907562b70f747e734c`다. 이 커밋의 master 계약에는 task-branch가 없으므로, 해당 명령의 생성·전진·응답 유실은 계약 대역으로 검증한다. 지원 구현과의 실제 통합 검증은 남아 있다. 미지원 경로는 작업 연결·PR 메시지를 유지하고 실제 작업 브랜치를 안내한다.
-
-실제 agent-knowledge 연동 시험은 소스 `695de23` 작업 트리(미커밋 변경 포함)의 로컬 빌드에서 `search` 기본 응답 판(v1)으로 수행했다.
+code-agent `7ef02d0`의 master 계약에는 task-branch 명령이 없다. 그래서 task-branch의 생성·전진·응답 유실은 계약 대역으로 검증하며, 지원 구현과의 실제 통합 검증은 [남은 작업](implementation.md#남은-작업)이다. 미지원 수신자에게는 작업 연결·PR 메시지를 유지하고 실제 작업 브랜치를 안내한다.
 
 ## 자동 회귀의 확인 범위
 
@@ -35,12 +42,12 @@ Windows·Node.js 24.19.0과 로컬 code-agent 빌드 기준이다. 필수 검사
 | HTTP·입력 보호 | 인증·Host/Origin·cross-site 거부, 비도메인 오류의 고정 500 응답, 원격 숫자·답변 타입 검증 |
 | 요청함·타임라인 | 응답 중복·버전 대조, 재기동 후 sending 결과 확인, gap 계약 위반 거부와 커서 복구 |
 | 프로세스·파일 | 호스트 표지 제거·프로세스 트리 종료, 손상 외부 JSON, npm Claude JS 진입점 탐색 |
-| agent-knowledge 연결 | off·연결 해제의 생산자 무호출·입력 무변경, shadow 입력·상태 동일성, 범위·세대·해시·폐기·경로 검증과 항목 거부, 적중·필수 자료만·빈 결과·장애·시간 초과 구분, 예산·설정 해시, 봉인 묶음 보존·해제·변조, 배정 전 묶음·원본 확인과 다른 작업 진행, 인계 블록 미전송 |
+| agent-knowledge 연결 | off·연결 해제의 생산자 무호출·입력 무변경, shadow 입력·상태 동일성, 범위·세대·해시·폐기·경로 검증과 항목 거부, 적중·필수 자료만·빈 결과·장애·시간 초과 구분, 예산·설정 해시, 봉인 묶음 보존·해제·변조, 배정 전 묶음·원본 확인과 다른 작업 진행, 생산자 형식 2 협의·세대 임대, 공통 계약 정본 사례(송신 결정 19건·수신 33건), 실제 인계·접수 영수증·작업 고정·게이트 판정·한 번의 재검증, 보낼 수 없는 필수 근거의 작업별 보류 |
 | 모듈·개발 도구 | 범위·진행·재계획 보호·위임·명령·seal·복구 스키마·카탈로그, 문서 앵커·smoke 보존 정책 |
 
 시험 파일은 `tests/*.test.mjs`이며 `node --test`로 실행한다. 브라우저와 실제 모델 smoke의 실행 전제는 [개발 검사와 선택 실행](../README.md#개발-검사와-선택-실행)을 따른다.
 
-agent-knowledge 연결은 `knowledge-retrieval.test.mjs`(대역 생산자), `knowledge-dispatch.test.mjs`(모의 code-agent 통신), `knowledge-real-cli.test.mjs`가 확인한다. 마지막 시험은 실제 agent-knowledge CLI로 임시 Git 저장소를 색인·검색·재색인하고 세대 정리 뒤 로컬 묶음 검증을 확인하며, 빌드가 없으면 건너뛴다. 계획 AI는 모든 시험에서 고정 응답이므로 계획 품질은 검증하지 않는다. 지식 인계 블록은 code-agent 수신 계약이 없어 보내지 않으며 실제 통합은 미검증이다.
+agent-knowledge 연결은 `knowledge-retrieval.test.mjs`·`knowledge-v2.test.mjs`(대역 생산자, 형식 2 협의·임대), `knowledge-handoff.test.mjs`(인계 규칙과 공통 계약 정본 사례 복사본 `tests/fixtures/agent-knowledge-handoff-cases.json`), `knowledge-dispatch.test.mjs`(모의 code-agent 통신), `knowledge-real-cli.test.mjs`(실제 agent-knowledge CLI로 임시 Git 저장소의 색인·검색·재색인, 세대 정리 뒤 로컬 묶음 검증, 임대의 고정 세대 보호, 원본이 바뀐 확정 항목 거부), `knowledge-integration.test.mjs`가 확인한다. 마지막 시험은 master-agent를 호스트로 실제 agent-knowledge CLI(임시 DB·설정)·실제 code-agent CLI(임시 홈·등록·저장소)·실제 통신 계약으로 분석·임대·배정·접수·작업 고정·게이트 검증·재검증·거부·호환·수명을 확인한다. code-agent 빌드(`CODE_AGENT_DIST`, 기본 `../code-agent/dist` — 진행 게이트와 가짜 호스트 포함)나 agent-knowledge 빌드(`AGENT_KNOWLEDGE_DIST`, 기본 `../agent-knowledge/dist`)·`config/retrieval.yaml`이 하나라도 없으면 건너뛴다. 관리 실행 호스트는 code-agent의 가짜 호스트이고 계획 AI는 고정 응답(대역)이므로 실제 모델을 부르지 않으며 계획 품질은 검증하지 않는다. `KNOWLEDGE_INTEGRATION_RECORD=<파일>`을 주면 실제 hello·submit `knowledge`·접수 영수증·임대 기록을 그 파일에 남긴다.
 
 작업 연결·브랜치 복구·PR 조회는 `project-history.test.mjs`, `task-branch.test.mjs`, `pull-request.test.mjs`가 확인한다. 관리 실행·임대·위임은 `live.test.mjs`·`control.test.mjs`, 실제 code-agent CLI의 접수·페어링·PC 신뢰는 `code-agent-control.test.mjs`가 확인한다.
 

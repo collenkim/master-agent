@@ -12,7 +12,8 @@ import { runDemo } from '../../packages/simulation/demo.mjs';
 import { observeProject } from '../../packages/code-agent-adapter/observe.mjs';
 import { requireThat } from '../../packages/domain/contracts.mjs';
 import { Knowledge } from '../../packages/knowledge/sources.mjs';
-import { knowledgeStatus, parseLinks, setBinding } from '../../packages/knowledge/retrieval.mjs';
+import { knowledgeStatus, parseLinks, parseRetrievalChoice, setBinding } from '../../packages/knowledge/retrieval.mjs';
+import { settleLeases } from '../../packages/knowledge/lease.mjs';
 import { Planner } from '../../packages/reasoning/planner.mjs';
 import { CliProvider } from '../../packages/reasoning/cli-provider.mjs';
 import { LiveExecution } from '../../packages/orchestrator/live.mjs';
@@ -50,8 +51,9 @@ code-agent는 설치된 명령에서 자동 탐색합니다. --cli는 별도 빌
   project sources <ID>                현재 근거 출처·해시·경로 조회
   project search <ID> <검색어>         근거에서 문장과 줄 번호 검색
   project knowledge <ID>              agent-knowledge 연결 모드·환경 변수 연결 상태 조회(검색 호출 없음)
-  project knowledge-mode <ID> off|shadow|enabled [--knowledge-project <AK프로젝트>] [--allow-link <AK프로젝트>:<종류,…>|none]... [--revision <N>]
+  project knowledge-mode <ID> off|shadow|enabled [--knowledge-project <AK프로젝트>] [--allow-link <AK프로젝트>:<종류,…>|none]... [--ranker legacy|bm25|default] [--segments on|off|default] [--revision <N>]
                                       프로젝트별 agent-knowledge 검색 모드(기본 off). 기존 설정은 그 --revision이 필요하고 off는 기록을 지우지 않음
+                                      --ranker·--segments는 형식 2 생산자에서만 쓰는 이 프로젝트만의 선택(생략은 유지, default는 생산자 기본값)
   project control <ID> [--cli <경로>] --controller <이름> --token-file <절대경로>
                                       사람이 켠 code-agent 연동에 제어자로 연결(연결은 승인 권한이 아님)
   project snapshot <ID> [--cli <경로>]    code-agent 실행·소유·이벤트 위치·상태 한 번에 조회
@@ -143,7 +145,7 @@ async function main() {
     force: { type: 'boolean' }, 'wait-ms': { type: 'string' }, 'poll-ms': { type: 'string' }, 'follow-timeout-ms': { type: 'string' },
     port: { type: 'string' }, 'refresh-ms': { type: 'string' },
     saved: { type: 'boolean' }, description: { type: 'string' }, input: { type: 'string' }, reason: { type: 'string' }, confirm: { type: 'boolean' },
-    criterion: { type: 'string', multiple: true }, 'knowledge-project': { type: 'string' }, 'allow-link': { type: 'string', multiple: true }, 'request-key': { type: 'string' }, 'launch-id': { type: 'string' }, 'task-number': { type: 'string' }, host: { type: 'string' }, main: { type: 'string' },
+    criterion: { type: 'string', multiple: true }, 'knowledge-project': { type: 'string' }, 'allow-link': { type: 'string', multiple: true }, ranker: { type: 'string' }, segments: { type: 'string' }, 'request-key': { type: 'string' }, 'launch-id': { type: 'string' }, 'task-number': { type: 'string' }, host: { type: 'string' }, main: { type: 'string' },
   } });
   if (values.help || !args.length || args[0] === 'help') { console.log(help); return; }
   if (args[0] === 'dashboard') {
@@ -179,7 +181,7 @@ async function main() {
     requireThat(values.control === true, 'usage', '개발 실행은 code-agent 관리 연결을 사용합니다. --control이 필요합니다.');
   if (key === 'mission task-branch') requireThat(values.control === true && !values.simulate, 'usage', 'task 브랜치 복구에는 --control이 필요합니다.');
   if (values['new-command']) requireThat(key === 'mission task-branch', 'usage', '--new-command는 task 브랜치 복구에서만 사용합니다.');
-  if (values['knowledge-project'] !== undefined || values['allow-link'] !== undefined) requireThat(key === 'project knowledge-mode', 'usage', '--knowledge-project·--allow-link는 project knowledge-mode에서만 사용합니다.');
+  if (values['knowledge-project'] !== undefined || values['allow-link'] !== undefined || values.ranker !== undefined || values.segments !== undefined) requireThat(key === 'project knowledge-mode', 'usage', '--knowledge-project·--allow-link·--ranker·--segments는 project knowledge-mode에서만 사용합니다.');
   const revision = values.revision === undefined ? undefined : Number(values.revision);
   if (values.revision !== undefined) requireThat(Number.isSafeInteger(revision) && revision > 0, 'usage', '--revision은 양의 정수입니다.');
   if (['mission cancel', 'mission replan-refresh', 'mission events-prune'].includes(key)) requireThat(revision, 'usage', '--revision이 필요합니다.');
@@ -235,7 +237,7 @@ async function main() {
       case 'project search': result = new Knowledge(store).search(id, file); break;
       case 'project knowledge': result = knowledgeStatus(store, id); break;
       case 'project knowledge-mode': result = setBinding(store, id, { mode: file, knowledgeProject: values['knowledge-project'],
-        allowedLinks: parseLinks(values['allow-link']), revision }); break;
+        allowedLinks: parseLinks(values['allow-link']), revision, ...parseRetrievalChoice({ ranker: values.ranker, segments: values.segments }) }); break;
       case 'project control': result = await bindControl(store, id, { cliPath: values.cli, controller: values.controller, tokenFile: resolve(values['token-file']) }); break;
       case 'project pair': {
         const controller = values.controller ?? DASHBOARD_CONTROLLER;
@@ -352,6 +354,8 @@ async function main() {
     return result;
     };
     const result = await execute();
+    // 목표 명령 뒤 해제 대기 중인 생산자 임대를 놓는다(최선 노력 — 남은 임대는 기간이 지나면 생산자가 지운다)
+    if (category === 'mission' && typeof id === 'string') await settleLeases(store, { missionId: id }).catch(() => []);
     console.log(JSON.stringify(result, null, 2));
   } finally { store.close(); }
 }

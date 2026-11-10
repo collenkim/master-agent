@@ -51,7 +51,7 @@ master-agent mission list --db .master-agent/demo.db
 
 ## 개발 검사와 선택 실행
 
-기본 검사는 `npm.cmd run check`, `npm.cmd run lint`, `npm.cmd test`로 실행한다. check는 구문·문서 링크와 앵커를, lint는 미사용 변수·import와 미정의 이름을 검사한다. 테스트 파일은 프로세스·파일 경합을 줄이기 위해 최대 4개씩 실행한다. CI는 Windows·Ubuntu의 Node 24.x에서 `npm ci --ignore-scripts` 후 같은 검사를 실행한다. 외부 code-agent 빌드가 필요한 계약 시험은 빌드가 없는 환경에서 건너뛴다.
+기본 검사는 `npm.cmd run check`, `npm.cmd run lint`, `npm.cmd test`로 실행한다. check는 구문·문서 링크와 앵커를, lint는 미사용 변수·import와 미정의 이름을 검사한다. 테스트 파일은 프로세스·파일 경합을 줄이기 위해 최대 4개씩 실행한다. CI는 Windows·Ubuntu의 Node 24.x에서 `npm ci --ignore-scripts` 후 같은 검사를 실행한다. 외부 code-agent·agent-knowledge 빌드가 필요한 계약·연동 시험은 빌드가 없는 환경에서 건너뛴다. 빌드 위치 지정은 [환경 변수](docs/usage.md#환경-변수)를 따른다.
 
 다음 smoke는 CI에서 실행하지 않으며 묶음 안의 스크립트를 순차 실행한다. `-- --list`는 실행 목록만 조회한다.
 
@@ -113,7 +113,7 @@ master-agent mission graph <목표ID>
 
 ## code-agent 제어 연결
 
-PC 신뢰·프로젝트 페어링·기존 터미널 연결은 [제어 연결(페어링)](docs/code-agent-control.md#제어-연결페어링), 연결 상태 배지는 [프로젝트 연결 상태](docs/ui.md#프로젝트-연결-상태)를 따른다.
+PC 신뢰·프로젝트 페어링·터미널 연결 절차는 [제어 연결(페어링)](docs/code-agent-control.md#제어-연결페어링), 연결 상태 배지는 [프로젝트 연결 상태](docs/ui.md#프로젝트-연결-상태)를 따른다.
 
 ## 공통 질문·승인 요청함
 

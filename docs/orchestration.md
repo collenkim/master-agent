@@ -22,7 +22,8 @@ AI 계획은 수집한 정책·계약·코드·테스트를 근거로 프로젝�
 | allowedChanges, exclusions | 허용·제외 변경 범위 |
 | outputs, verification | 요구 산출물과 검증 설명 |
 | requiredCapabilities, references | 실행 기능과 등록된 근거 |
-| knowledgeRefs | 지식 항목을 쓴 분석에서만 있는 같은 프로젝트의 agent-knowledge 항목 참조. 없는 기존 계획도 그대로 유효하다 |
+| knowledgeRefs | 지식 항목을 쓴 분석의 작업에만 있는 같은 프로젝트의 agent-knowledge 항목 참조. 키가 없는 계획도 유효하다 |
+| knowledgeRequired | knowledgeRefs 중 내용이 계획 때와 같아야 진행할 수 있는 필수 의존. 키가 없는 계획은 인용한 항목을 모두 필수로 다룬다([필수 의존](agent-knowledge.md#필수-의존)) |
 | planAcknowledgements, coordination | 프로젝트에 기존 계획이 있을 때의 대조·조정 |
 
 모든 완료 조건에 검증 작업이 필요하며 일반 작업의 조건은 후행 검증에 연결해야 한다. 여러 프로젝트가 참여하면 전체 작업을 선행 관계로 묶는 통합 검증이 필요하다. 실행 전에는 [독립 검증 계약](live-verification.md)을 등록한다.
@@ -50,7 +51,9 @@ LangGraph는 체크포인트와 실행 임대로 흐름을 관리한다. 외부 
 | 실행·반영 여부 미확인 | 저장된 반환·원격 상태·산출물을 대조한다. 확인 전 중복 배정을 막는다. |
 | 계약·범위 변경 필요 | 기존 실행을 정리한 뒤 재계획 인계와 근거 수집을 수행한다. |
 | 인계 뒤 파일·HEAD 변경 | stale-replan으로 막고 명시적 replan-refresh 후 재분석한다. |
-| 지식 묶음 변조·해제, 연결 범위 변경, 확정 지식 원본 변경 | 모드와 무관하게 해당 작업 배정만 `knowledge-integrity`·`knowledge-bundle-released`·`knowledge-scope-changed`·`knowledge-source-changed`로 막고 `mission analyze`로 새 검색·계획을 만든다. |
+| 지식 묶음 변조·해제, 연결 범위 변경, 확정·필수 지식 원본 변경 | 모드와 무관하게 해당 작업 배정만 `knowledge-integrity`·`knowledge-bundle-released`·`knowledge-scope-changed`·`knowledge-source-changed`로 막고 `mission analyze`로 새 검색·계획을 만든다. |
+| 필수 지식 참조를 code-agent에 인계할 수 없음, 근거 세대 소실·색인 DB 불일치·임대 실패 | 시도·잠금을 만들지 않고 해당 작업의 배정(이어 실행이면 그 시도)만 막는다. 다른 작업은 계속한다. 코드는 [보류 코드](agent-knowledge.md#보류-코드)를 따른다. |
+| 지식 인계 접수 거부·미확인, code-agent 진행 게이트 미통과 | 거부는 시도를 unknown에 두고 같은 호출을 다시 보내지 않는다. 필수 참조를 보낸 시도는 접수 미확인·저장 불일치·게이트 미통과면 blocked에 두고 이어 실행·검증·인계를 막는다. 재검증 판정은 `mission drive`가 같은 참조의 재검증을 시도마다 한 번 요청한다. 코드별 안내는 [보류 코드](agent-knowledge.md#보류-코드)를 따른다. |
 | 사람 판단 필요 | 질문과 근거를 보존하고 해당 응답 경로에서 처리한다. |
 
 새 계획을 활성화할 때 이전 성공 증거를 그대로 재사용하지 않는다. 새 계획의 검증 계약과 인계 조건을 다시 확인한다. [복구](recovery.md)·[재계획](replanning.md)·[중단 처리](interruption.md)의 조건을 따른다.

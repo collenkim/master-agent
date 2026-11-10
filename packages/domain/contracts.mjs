@@ -81,6 +81,15 @@ export function validatePlan(plan, mission, projects, { knowledgeItems } = {}) {
         requireThat(!(item.confirmed && ['changed', 'missing'].includes(item.sourceState)), 'knowledge-source-stale', `${t.id}: 색인 뒤 원본이 바뀐 확정 지식은 작업 근거로 쓸 수 없습니다: ${ref}`);
       }
     }
+    // 작업의 필수 지식 의존 — 인용한 항목의 부분집합이다. 키가 없는 기존 계획은 의존을 모르는 것이며 배정에서 모두 필수로 다룬다
+    if (Object.hasOwn(t, 'knowledgeRequired')) {
+      strings(t.knowledgeRequired, 'task.knowledgeRequired');
+      requireThat(t.knowledgeRequired.every(ref => (t.knowledgeRefs ?? []).includes(ref)), 'knowledge-required-unreferenced', `${t.id}: 필수 지식 의존은 그 작업의 knowledgeRefs 안에서만 고릅니다.`);
+      for (const ref of t.knowledgeRequired) {
+        const item = knowledgeItems.find(i => i.ref === ref);
+        requireThat(!['changed', 'missing'].includes(item.sourceState), 'knowledge-source-stale', `${t.id}: 색인 뒤 원본이 바뀐 지식은 필수 의존으로 쓸 수 없습니다: ${ref}`);
+      }
+    }
     if (project.currentPlans.length) {
       strings(t.planAcknowledgements, 'planAcknowledgements', true);
       requireThat(project.currentPlans.every(p => t.planAcknowledgements.includes(p)), 'plan-conflict', `${t.id}: 기존 계획 대조가 필요합니다.`);

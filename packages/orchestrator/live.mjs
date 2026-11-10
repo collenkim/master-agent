@@ -2,15 +2,49 @@ import { logHostError } from '../runner/diagnostics.mjs';
 import { randomUUID } from 'node:crypto';
 import { Engine, taskState } from './engine.mjs';
 import { Knowledge } from '../knowledge/sources.mjs';
-import { hash, now, requireThat, string } from '../domain/contracts.mjs';
+import { DomainError, hash, now, requireThat, string } from '../domain/contracts.mjs';
 import { snapshotTree } from '../verification/tree.mjs';
 import { sealOf } from '../verification/seal.mjs';
 import { predecessorContracts } from '../verification/handoff-contracts.mjs';
 import { taskHeld, relevantSource } from './scope.mjs';
 import { remoteStateSummary } from './remote-state.mjs';
 import { dispatchBase } from '../verification/project-history.mjs';
-import { dispatchEvidence, taskEvidence } from '../knowledge/evidence.mjs';
+import { KNOWLEDGE_GUIDANCE, deliveryBlock, dispatchEvidence, leaseHold, taskEvidence } from '../knowledge/evidence.mjs';
 import { modeOf } from '../knowledge/retrieval.mjs';
+import { gateVerification, receiverCapability } from '../knowledge/handoff.mjs';
+import { renewForTask } from '../knowledge/lease.mjs';
+
+/** 지식 인계 배정 사전 확인 — 근거가 걸린 작업만 hello 공지를 보고 임대를 연장한다(트랜잭션 밖, 시도를 만들기 전). 보류는 코드로 던진다 */
+async function knowledgePreflight(store, plan, task, project, host, options = {}) {
+  const mode = modeOf(store, project.id);
+  // hello 공지(통신 계약 호스트만). 공지 조회 실패는 미지원과 구별한다(receiver-unreachable)
+  const hello = typeof host.knowledgeHello === 'function' ? await host.knowledgeHello(project) : null;
+  const capability = receiverCapability(hello);
+  const lease = await renewForTask(store, plan.knowledge?.bundleId, mode, options);
+  try { return dispatchEvidence(store, plan, task, project, { mode, capability, lease }); }
+  catch (error) {
+    if (error.handoff) store.transaction(() => store.event(plan.missionId ?? task.missionId ?? project.id, 'knowledge-handoff-held', { taskId: task.id, projectId: project.id, code: error.code,
+      required: error.handoff.required, optional: error.handoff.optional, receiver: error.handoff.receiver }));
+    throw error;
+  }
+}
+/**
+ * 접수 결과를 시도의 인계 기록에 옮긴다(첫 회차만). 접수(accepted)는 수신자가 참조를 받아 저장했다는 뜻일 뿐 근거 검증 통과가 아니다.
+ * 필수 참조가 있는데 접수·저장을 확인하지 못했거나 code-agent 진행 게이트가 막았으면 그 시도를 막힘으로 둔다(완료 판정·자동 계속 금지)
+ */
+function deliveryOf(handoff, result, error) {
+  const k = result?.control?.knowledge;
+  const state = k?.state ?? (error?.code === 'knowledge-handoff-rejected' ? 'rejected' : error ? 'unconfirmed' : 'unreported');
+  return { state, runId: result?.control?.runId ?? null, acceptedRefs: k?.acceptedRefs ?? null, stored: k?.stored ?? 'unchecked',
+    verification: k?.verification ?? { state: 'not-reported' }, ...(k?.rejected ? { rejected: k.rejected } : {}), at: now() };
+}
+/** 진행 게이트를 공지한 수신자의 최신 판정(상태 조회의 knowledge)으로 시도의 검증 관찰을 갱신한다 — 같은 작업·같은 인계일 때만 */
+function refreshedHandoff(handoff, state, workId) {
+  if (handoff?.status !== 'prepared' || !handoff.delivery || !handoff.receiver?.gate || !state?.knowledge || state.work?.id !== workId) return handoff;
+  const verification = gateVerification(state.knowledge, handoff, workId);
+  return verification.state === 'not-reported' ? handoff : { ...handoff, delivery: { ...handoff.delivery, verification } };
+}
+
 
 // 결과가 호스트를 생략하면 저장된 실행 호스트를 사용한다. 둘 다 없는 과거 기록만 기존 Claude 계약을 따른다.
 function leaseOwner(result, attempt) {
@@ -52,7 +86,7 @@ function ready(state, workId, fresh, owner, delegated = false, revising = false)
 
 /** 호스트 한 회차의 배정·관측 계약. 호스트 종료는 개발 완료 증거가 아니다. */
 export class LiveExecution {
-  constructor(store) { this.store = store; this.engine = new Engine(store); }
+  constructor(store, { env = process.env } = {}) { this.store = store; this.engine = new Engine(store); this.env = env; }
   continuationInputs(mission, projectId, taskId) {
     const plan = mission.plans.at(-1);
     requireThat(plan.projectVersions.every(p => this.store.need('project', p.id).revision === p.revision), 'stale-context', '프로젝트 카탈로그가 변경됐습니다.');
@@ -81,8 +115,9 @@ export class LiveExecution {
     const recipe = before.verificationRecipes?.[taskId];
     requireThat(!recipe || recipe.planVersion === plan.version, 'stale-recipe', '현재 계획의 검증 계약이 아닙니다.');
     const baseline = recipe ? snapshotTree(project.path) : undefined;
-    // 계획이 agent-knowledge 항목을 근거로 쓴 작업만: 모드와 무관하게 봉인 묶음·연결 범위·원본 변경을 확인하고 인계 블록은 만들되 보내지 않는다(code-agent 계약 없음)
-    const knowledge = task.knowledgeRefs?.length ? dispatchEvidence(this.store, plan, task, project, { mode: modeOf(this.store, project.id) }) : null;
+    // 계획이 agent-knowledge 항목을 근거로 쓴 작업만: 모드와 무관하게 봉인 묶음·연결 범위·원본 변경을 확인하고, 수신자 공지·임대로 인계를 정한다.
+    // 필수 근거를 보낼 수 없으면 시도를 만들지 않고 그 작업만 막는다. 근거가 없는 작업은 hello·생산자를 부르지 않는다(기존 경로 그대로)
+    const knowledge = task.knowledgeRefs?.length ? await knowledgePreflight(this.store, { ...plan, missionId: id }, task, project, host, { env: this.env }) : null;
     const ticket = this.store.transaction(() => {
       const m = this.engine.checked(id, expectedRevision);
       if (knowledge) taskEvidence(this.store, m.plans.at(-1), task);
@@ -94,7 +129,8 @@ export class LiveExecution {
         reason: task.rationale, evidence: [...task.references, `code-agent-state:${state.stateVersion}`], alternatives: ['상태 재검토', '설치된 호스트에 배정'],
         nextAction: task.goal, verification: task.verification, codeAgentWorkId, provider: host.name,
         inputHash: hash({ task, goal: m.goal, state, codeAgentWorkId }),
-        ...(knowledge ? { knowledge: { status: knowledge.status, reason: knowledge.reason, count: knowledge.count, ...(knowledge.hash ? { hash: knowledge.hash, bundleId: knowledge.bundleId } : {}) } } : {}),
+        ...(knowledge ? { knowledge: { status: knowledge.status, ...(knowledge.reason ? { reason: knowledge.reason } : {}), count: knowledge.count, required: knowledge.required, bundleId: knowledge.bundleId,
+          ...(knowledge.status === 'prepared' ? { version: knowledge.version, hash: knowledge.hash, sent: knowledge.sent, sentRequired: knowledge.sentRequired } : {}) } } : {}),
       });
       const attempt = { id: randomUUID(), token: randomUUID(), missionId: id, taskId, projectId: project.id, planVersion: plan.version,
         ...(m.taskNumber === undefined ? {} : { taskNumber: m.taskNumber }),
@@ -117,6 +153,8 @@ export class LiveExecution {
     const m = this.store.need('mission', id), attempt = m.attempts.find(a => a.id === attemptId);
     requireThat(m.mode === 'live' && attempt?.mode === 'live' && attempt.state === 'running' && this.store.lock(attempt.projectId)?.attempt_id === attemptId, 'invalid-state', '실행 중으로 기록된 현재 시도만 다시 붙습니다.');
     const task = m.plans.at(-1).proposal.tasks.find(t => t.id === attempt.taskId);
+    // 실행 중인 시도의 근거 세대를 계속 붙잡는다(최선 노력 — 실행은 이미 code-agent에 있다)
+    if (attempt.knowledgeHandoff?.status === 'prepared') await renewForTask(this.store, m.plans.at(-1).knowledge?.bundleId, modeOf(this.store, attempt.projectId), { env: this.env }).catch(() => null);
     const ticket = { ...attempt, expectedState: attempt.turns.at(-1)?.state?.stateVersion ?? attempt.initialState?.stateVersion, sessionId: attempt.turns.at(-1)?.result?.sessionId,
       task, project: this.store.need('project', attempt.projectId), goal: m.goal, criteria: m.criteria, inputEvidence: [] };
     if (wait || !this.store.events(id).some(e => e.type === 'live-reattach' && e.invocationId === attempt.invocationId)) {
@@ -174,6 +212,20 @@ export class LiveExecution {
           state.resume?.code === 'unobservable' || state.resume?.code === 'ownership-conflict' ? 'unknown' :
             result.status === 'blocked' || denialsBlock(result) || state.resume?.code !== 'ready' ? 'blocked' : 'awaiting-verification';
       if (state && !ownsLease(state, leaseOwner(result, attempt))) disposition = 'unknown';
+      // 첫 회차(start)만 인계를 실었다 — 이어 실행은 code-agent가 처음 실행의 인계를 그대로 쓴다
+      // 첫 회차가 접수 뒤 응답·추적을 잃어 미확인으로 남았으면(재부착이 같은 실행의 접수 기록을 돌려준다) 그 기록으로 고친다
+      const prior = attempt.knowledgeHandoff?.delivery;
+      if (attempt.knowledgeHandoff?.status === 'prepared' && !ticket.sessionId && (!prior || ['unconfirmed', 'unreported'].includes(prior.state) && result?.control?.knowledge)) {
+        const delivery = deliveryOf(attempt.knowledgeHandoff, result, error);
+        attempt.knowledgeHandoff = { ...attempt.knowledgeHandoff, delivery };
+        this.store.event(m.id, 'knowledge-handoff-recorded', { attemptId: attempt.id, state: delivery.state, stored: delivery.stored, verification: delivery.verification.state, hash: attempt.knowledgeHandoff.hash });
+      }
+      // 회차마다 code-agent 진행 게이트의 최신 판정을 반영한다. 필수 근거가 막히면(접수·저장 미확인, 재검증 필요, 재계획 판정) 그 시도만 막힘으로 둔다
+      if (attempt.knowledgeHandoff?.delivery) {
+        attempt.knowledgeHandoff = refreshedHandoff(attempt.knowledgeHandoff, state, attempt.codeAgentWorkId);
+        // 필수 근거 인계를 확인하지 못한 시도는 동의·질문 대기여도 막는다 — 위임 판단이 그 근거 위의 동의를 처리하지 않게 한다(결과 미확인 unknown 은 그대로)
+        if (deliveryBlock(attempt.knowledgeHandoff) && disposition !== 'unknown') disposition = 'blocked';
+      }
       const turn = { id: randomUUID(), at: now(), expectedState: ticket.expectedState, state: remoteStateSummary(state, result?.control?.runId), result: result ?? null, error: error ?? null, disposition };
       attempt.turns.push(turn); attempt.state = disposition; attempt.hostReturnedAt = now();
       if (['claude', 'codex'].includes(result?.control?.hostKind)) attempt.executionHost = result.control.hostKind;
@@ -186,6 +238,51 @@ export class LiveExecution {
       if (m.state !== 'paused') m.state = m.tasks.some(t => t.state === 'running') ? 'executing' : disposition === 'waiting-decision' ? 'waiting-decision' : 'blocked';
       m.reason = d.reason;
       this.engine.save(m, 'live-observed', { attemptId: attempt.id, turnId: turn.id, disposition, decisionId: d.id });
+      return this.engine.describe(m.id);
+    });
+  }
+  /**
+   * 이어 실행 전 지식 인계 확인 — 새 근거를 싣지 않는다(code-agent가 처음 실행의 인계를 그대로 쓴다). 필수 근거를 실은 시도만:
+   * 접수·저장을 확인하지 못했거나 재확인 실패가 기록됐으면 같은 근거로 이어 가지 않는다. enabled면 세대 임대를 연장하고, 세대가 사라졌으면 막는다(재계획 필요)
+   */
+  async knowledgeContinuation(mission, attempt, project, state = null) {
+    // 사람이 code-agent 에서 다시 검증했을 수 있다 — 지금 상태 조회의 게이트 판정이 있으면 그것으로 판단한다
+    const handoff = refreshedHandoff(attempt?.knowledgeHandoff, state, attempt?.codeAgentWorkId);
+    if (handoff?.status !== 'prepared' || !handoff.sentRequired) return;
+    const failed = deliveryBlock(handoff);
+    if (failed) throw new DomainError(failed, KNOWLEDGE_GUIDANCE[failed]);
+    const mode = modeOf(this.store, project.id);
+    const block = leaseHold(await renewForTask(this.store, mission.plans.at(-1).knowledge?.bundleId, mode, { env: this.env }));
+    if (block && (block !== 'knowledge-lease-failed' || mode === 'enabled')) throw new DomainError(block, KNOWLEDGE_GUIDANCE[block]);
+  }
+  /**
+   * code-agent 진행 게이트가 인계 필수 근거를 아직 검증하지 못해(knowledge-blocked · knowledge-reverify) 멈춘 작업을 같은 참조로 한 번 다시 검증하게 한다.
+   * 새 검색·새 참조·required 낮추기는 하지 않는다. 시도마다 한 번만(같은 commandId — 응답을 잃어도 다시 실행되지 않는다). 그래도 막히면 그 작업만 막힘으로 두고
+   * 사람·재계획을 기다린다(무한 재시도 금지). 근거가 지금 근거와 맞지 않는 판정(knowledge-replan)은 재검증하지 않는다
+   */
+  async reverifyKnowledge(id, attemptId, host, { expectedRevision, expectedState } = {}) {
+    requireThat(typeof host?.knowledgeVerify === 'function' && typeof host.inspect === 'function', 'invalid-runner', '인계 근거 재검증을 지원하는 관리 실행 호스트가 필요합니다.');
+    const before = this.engine.checked(id, expectedRevision), attempt = before.attempts.find(a => a.id === attemptId);
+    const handoff = attempt?.knowledgeHandoff;
+    requireThat(attempt?.mode === 'live' && ['blocked', 'waiting-decision', 'awaiting-verification'].includes(attempt.state) && handoff?.status === 'prepared' && handoff.sentRequired > 0, 'invalid-state', '필수 인계 근거를 보낸 막힌 시도만 재검증합니다.');
+    requireThat(handoff.receiver?.commands?.includes('verify'), 'knowledge-verification-pending', KNOWLEDGE_GUIDANCE['knowledge-verification-pending']);
+    requireThat(!handoff.reverify, 'knowledge-verification-pending', KNOWLEDGE_GUIDANCE['knowledge-verification-pending']);
+    const project = this.store.need('project', attempt.projectId);
+    const state = await host.inspect(project, expectedState, attempt.turns.at(-1)?.result?.sessionId);
+    if (expectedState) requireThat(state.stateVersion === expectedState, 'stale-remote-state', '상태 버전이 다릅니다.');
+    requireThat(state.resume?.code === 'knowledge-blocked' && state.work?.id === attempt.codeAgentWorkId && state.knowledge?.action === 'knowledge-reverify' && state.knowledge.digest === handoff.digest,
+      'remote-not-ready', '같은 인계의 재검증으로 풀리는 근거 게이트가 아닙니다.');
+    const commandId = `kv-${attempt.id}`;
+    let result, error;
+    try { result = await host.knowledgeVerify(project, attempt.codeAgentWorkId, commandId); } catch (e) { error = e; }
+    return this.store.transaction(() => {
+      const m = this.engine.checked(id, expectedRevision), current = m.attempts.find(a => a.id === attemptId);
+      const verification = result ? gateVerification(result.knowledge, current.knowledgeHandoff, current.codeAgentWorkId) : null;
+      current.knowledgeHandoff = { ...current.knowledgeHandoff, reverify: { at: now(), commandId, state: verification?.state ?? 'error', resume: result?.resume?.code ?? null,
+        ...(error ? { error: { code: error.controlCode ?? error.code ?? 'error', message: String(error.message ?? '').slice(0, 300) } } : {}) },
+        ...(verification && current.knowledgeHandoff.delivery ? { delivery: { ...current.knowledgeHandoff.delivery, verification } } : {}) };
+      this.store.event(m.id, 'knowledge-reverified', { attemptId, commandId, state: verification?.state ?? 'error', resume: result?.resume?.code ?? null });
+      this.engine.save(m, 'knowledge-reverified', { attemptId, state: verification?.state ?? 'error' });
       return this.engine.describe(m.id);
     });
   }
@@ -212,6 +309,7 @@ export class LiveExecution {
         'remote-unapproved', '자동 계속 실행에는 기존 요구 확정·승인(또는 그 회차의 위임 판단 처리)·권한 확인이 필요합니다.');
       requireThat((attempt.autoContinuationStates ?? []).length < 8 && !(attempt.autoContinuationStates ?? []).includes(expectedState), 'continuation-limit', '동일 상태 반복 또는 자동 계속 실행 한도입니다.');
     }
+    await this.knowledgeContinuation(before, attempt, project, state);
     const recovery = recoveryRunId ? this.store.need('recovery-run', recoveryRunId) : undefined;
     if (recovery) requireThat(recovery.missionId === id && recovery.attemptId === attemptId && recovery.sourceVerificationRunId === attempt.verificationRunId &&
       recovery.state === 'executing' && recovery.verdict.allowed && recovery.proposal.action === 'repair' && snapshotTree(project.path).digest === recovery.tree.digest,

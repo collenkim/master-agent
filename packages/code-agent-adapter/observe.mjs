@@ -7,7 +7,8 @@ import { findCodeAgent } from './discovery.mjs';
 import { recordObservation } from '../dashboard/history.mjs';
 
 import { childEnv, spawnArgs, execFileTree as runFile } from '../runner/process.mjs';
-const resumeCodes = new Set(['stale-request', 'unobservable', 'no-work', 'ownership-conflict', 'wait', 'needs-human', 'replan-required', 'reapproval-required', 'limit-reached', 'ready']);
+// knowledge-blocked: master 인계 필수 근거가 검증 전이거나 실패한 작업(code-agent 진행 게이트) — 모르는 코드로 상태 전체를 버리지 않는다
+const resumeCodes = new Set(['stale-request', 'unobservable', 'no-work', 'ownership-conflict', 'wait', 'needs-human', 'knowledge-blocked', 'replan-required', 'reapproval-required', 'limit-reached', 'ready']);
 
 /** Poll timestamps advance independently of the code-agent concurrency contract. */
 export function observationIdentity(observation) {

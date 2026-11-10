@@ -8,7 +8,7 @@ import { childEnv, killTree, spawnArgs } from '../runner/process.mjs';
 /** code-agent 의 master 통신 계약(code-agent/doc/master-control.md). 같은 PC 의 CLI 호출 한 번이 요청 한 건이다. */
 export const PROTOCOL = 'code-agent.master';
 export const PROTOCOL_VERSION = 1;
-const MUTATING = new Set(['submit', 'pause', 'cancel', 'resume', 'decide', 'answer', 'handover', 'reconcile', 'policy', 'revoke', 'interaction.respond', 'pair', 'task-branch']);
+const MUTATING = new Set(['submit', 'pause', 'cancel', 'resume', 'decide', 'answer', 'handover', 'reconcile', 'policy', 'revoke', 'interaction.respond', 'pair', 'task-branch', 'knowledge']);
 /** 요청 한 건 → 응답 한 건. 프로세스가 응답 JSON 을 내지 못하면 통신 실패(control-unavailable)다 — 명령의 실패가 아니다 */
 export function callOnce(cliPath, projectPath, request, { timeoutMs = 60000 } = {}) {
   return new Promise((resolve, reject) => {

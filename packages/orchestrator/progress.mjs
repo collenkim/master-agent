@@ -1,5 +1,15 @@
 import { hostname } from 'node:os';
 import { alive } from '../runner/process.mjs';
+import { KNOWLEDGE_GUIDANCE, deliveryBlock } from '../knowledge/evidence.mjs';
+
+/** 진행 화면의 지식 인계 요약 — 근거 본문·payload 없이 상태만 */
+function knowledgeOf(handoff) {
+  if (!handoff) return null;
+  return { status: handoff.status, ...(handoff.reason ? { reason: handoff.reason } : {}), ...(handoff.version ? { version: handoff.version } : {}), required: handoff.required ?? null,
+    ...(handoff.sent !== undefined ? { sent: handoff.sent } : {}), ...(handoff.delivery ? { delivery: handoff.delivery.state, stored: handoff.delivery.stored, verification: handoff.delivery.verification?.state ?? 'not-reported',
+      ...(handoff.delivery.verification?.action ? { action: handoff.delivery.verification.action } : {}) } : {}),
+    ...(handoff.reverify ? { reverify: handoff.reverify.state } : {}) };
+}
 
 const actions = {
   completed: 'none', cancelled: 'none', paused: 'resume', running: 'wait-for-host',
@@ -42,6 +52,7 @@ export function missionProgress(store, mission, tasks, events) {
     }
     else if (human.length) { status = 'human-input'; reason = human.map(e => e.reason).join('; '); }
     else if (fault) { status = 'blocked'; reason = fault.code; }
+    else if (task.state === 'blocked' && deliveryBlock(attempt?.knowledgeHandoff)) { status = 'blocked'; reason = deliveryBlock(attempt.knowledgeHandoff); }
     else if (['unknown', 'verification-failed', 'failed'].includes(task.state) || task.waitingFor.some(r => ['recovery-held', 'project-knowledge-changed'].includes(r))) {
       status = 'blocked'; reason = turn?.error?.code ?? (task.waitingFor.join(',') || task.state);
     } else if (activity?.turnId === turn?.id && processing(activity)) { status = 'approval-processing'; reason = 'delegation-running'; }
@@ -71,7 +82,8 @@ export function missionProgress(store, mission, tasks, events) {
     const lastProgressAt = [attempt?.startedAt, turn?.at, run?.updatedAt, activity?.at, fault?.at, ...related.map(e => e.at), ...control.map(e => e.at)].filter(Boolean).sort().at(-1) ?? mission.createdAt;
     return { taskId: task.id, projectId: task.projectId, attemptId: attempt?.id ?? null, state: task.state, status, reason,
       phase, executionHost: run?.hostKind ?? attempt?.executionHost ?? null, runId: run?.id ?? null, lastProgressAt,
-      nextAction: actions[status] ?? 'review-blockers', escalations: human.map(e => e.id) };
+      nextAction: actions[status] ?? 'review-blockers', escalations: human.map(e => e.id),
+      ...(attempt?.knowledgeHandoff ? { knowledge: knowledgeOf(attempt.knowledgeHandoff) } : {}), ...(KNOWLEDGE_GUIDANCE[reason] ? { guidance: KNOWLEDGE_GUIDANCE[reason] } : {}) };
   });
   const request = store.get('target-request', mission.id);
   const status = ['succeeded', 'simulation-complete'].includes(mission.state) ? 'completed' : mission.state === 'cancelled' ? 'cancelled' :

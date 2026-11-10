@@ -14,26 +14,28 @@ master-agent의 자동 진행, AI 계획 검토, 실패 복구, 재계획과 모
 
 | 그래프 | 주요 노드 |
 | --- | --- |
-| Mission | refresh → select → analyze / delegate / ready / observe / dispatch / continue / reattach / poll-wait / verify / handoff / recover / replan / complete |
+| Mission | refresh → select → analyze / delegate / ready / template / observe / dispatch / continue / reverify / reattach / poll-wait / verify / handoff / recover / replan / complete → after, 진행할 수 없으면 wait |
 | 분석 | prepare → generate → validate → record-review → next-pass 또는 finish |
 | 복구 | inspect-failure → reserve-review → review → authorize → held 또는 reserve-execution → repair / reverify → finish |
 | 재계획 | inspect-settlement → preserve-and-refresh → analyze |
 | 모의 실행 | select → prepare → execute → accept → after → select, 또는 complete |
 
-모의 실행의 그래프·실행 수용·완료 판정·재시도와 고정 runner·demo는 `packages/simulation/`에서 관리한다. Engine의 기존 메서드와 `demo` 명령은 이 모듈을 호출한다. 실패가 확인된 모의 작업의 재시도는 현재 revision·계획·근거를 다시 확인하며 실제 목표의 복구와 구분한다.
+모의 실행의 그래프·실행 수용·완료 판정·재시도와 고정 runner·demo는 `packages/simulation/`에서 관리한다. Engine의 모의 실행 메서드와 `demo` 명령은 이 모듈을 호출한다. 실패가 확인된 모의 작업의 재시도는 현재 revision·계획·근거를 다시 확인하며 실제 목표의 복구와 구분한다.
 
-자동 진행의 분기와 반복은 LangGraph가 담당합니다. `drive --control`은 배정 가능한 대기 작업부터 접수합니다. dispatch·continue는 code-agent의 접수와 실행 ID 저장 후 반환하고, reattach는 같은 invocationId의 결과를 한 번 조회합니다. 아직 실행 중이면 다른 작업을 선택하고, 처리할 일이 없고 실행만 남았으면 poll-wait에서 잠시 기다린 뒤 다시 조회합니다. 독립 프로젝트의 외부 실행은 겹치지만 DB 변경·위임 판단·독립 검사는 순차 처리합니다. 같은 프로젝트의 잠금과 의존성 검사는 계속 적용합니다.
+자동 진행의 분기와 반복은 LangGraph가 담당한다. `drive --control`은 배정 가능한 대기 작업부터 접수한다. 검증 계약이 없는 대기 작업은 맞는 템플릿 후보가 하나일 때만 template에서 적용하고, 아니면 `missing-verification-recipe`로 막는다. dispatch·continue는 code-agent의 접수와 실행 ID 저장 후 반환하고, reattach는 같은 invocationId의 결과를 한 번 조회한다. 아직 실행 중이면 다른 작업을 선택하고, 처리할 일이 없고 실행만 남았으면 poll-wait에서 잠시 기다린 뒤 다시 조회한다. 독립 프로젝트의 외부 실행은 겹치지만 DB 변경·위임 판단·독립 검사는 순차 처리한다. 같은 프로젝트의 잠금과 의존성 검사는 계속 적용한다.
+
+observe가 code-agent 지식 진행 게이트의 재검증 판정(재개 코드 `knowledge-blocked`, 다음 동작 `knowledge-reverify`)을 보면 reverify가 같은 참조의 재검증(`knowledge` verify, commandId `kv-<시도ID>`)을 시도마다 한 번만 요청한다. 그 밖의 지식 코드는 예상된 막힘으로 관찰에 남기고 다른 작업을 계속한다. 상세 내용은 [인계 상태](agent-knowledge.md#인계-상태)를 따른다.
 
 ## 상태 저장
 
-SQLite 저장소는 migrations 배열을 버전 순서대로 적용하며 현재 user_version은 2다. v1의 records·events·locks와 기존 graph_runs·graph_leases를 보존하고 임대 시각 열을 추가한다. 그래프 테이블 생성도 버전 마이그레이션에서 처리한다. 알 수 없는 상위 버전은 거부한다. checkpoints·writes는 최초 체크포인터 사용 때 생성한다. v2에는 목표별 레코드·이벤트 조회용 생성 열과 인덱스도 포함한다.
+SQLite 저장소는 migrations 배열을 버전 순서대로 적용하며 현재 user_version은 2다. v1 저장소를 v2로 올릴 때 records·events·locks·requests·paths와 이미 있는 graph_runs·graph_leases를 보존하고 임대 시각 열을 더한다. 그래프 테이블 생성도 버전 마이그레이션에서 처리한다. 알 수 없는 상위 버전은 거부한다. checkpoints·writes는 최초 체크포인터 사용 때 생성한다. v2에는 목표별 레코드·이벤트 조회용 생성 열과 인덱스도 포함한다.
 
 - 그래프 체크포인트: 실행 경로, 다음 단계에 필요한 값, 대기 정보.
 - 도메인 저장소: Mission·Attempt·계획·증거·권한·프로젝트 잠금의 기준 상태.
 - graph_runs: 그래프 호출의 시작·대기·완료·오류 기록.
 - graph_leases: 같은 실행 스레드를 동시에 진행하지 못하게 하는 프로세스 소유권.
 
-현재 상태는 도메인 저장소에서 읽습니다. 그래프에 저장된 오래된 사본으로 권한·계획 버전·외부 상태를 덮어쓰지 않습니다. 체크포인트에서 모델·호스트 객체나 인증 토큰을 재구성하지 않으며 재개 명령이 해당 어댑터를 다시 제공합니다.
+현재 상태는 도메인 저장소에서 읽는다. 그래프에 저장된 오래된 사본으로 권한·계획 버전·외부 상태를 덮어쓰지 않는다. 체크포인트에서 모델·호스트 객체나 인증 토큰을 재구성하지 않으며 재개 명령이 해당 어댑터를 다시 제공한다.
 
 ## 대기와 재시작
 
@@ -41,21 +43,21 @@ SQLite 저장소는 migrations 배열을 버전 순서대로 적용하며 현재
 
 `master-agent mission unlock <목표ID> --revision <버전> --confirm`으로 TTL 전에 목표 그래프 임대를 회수할 수 있다. 같은 호스트의 살아 있는 pid는 거부하며 결정과 이벤트를 기록한다. 프로젝트 실행 잠금과 미확인 시도의 상태는 유지한다. 임대 해제가 개발 작업의 종료나 재실행 승인은 아니다.
 
-진행할 수 없는 Mission은 wait 노드의 interrupt로 중단합니다. 다시 advance/drive를 실행하면 Command.resume으로 wait를 깨운 뒤 최신 도메인·외부 상태를 재검사합니다. 이 신호 자체는 질문 답변이나 승인이 아닙니다. 실제 답변·동의·grant는 기존 검증 경로를 거쳐야 합니다. 한 프로젝트의 판단 대기가 독립 프로젝트의 진행을 즉시 차단하지 않도록 선택 가능한 작업을 먼저 확인합니다.
+진행할 수 없는 Mission은 wait 노드의 interrupt로 중단한다. 다시 advance/drive를 실행하면 Command.resume으로 wait를 깨운 뒤 최신 도메인·외부 상태를 재검사한다. 이 신호 자체는 질문 답변이나 승인이 아니다. 실제 답변·동의·grant는 해당 검증 경로를 거쳐야 한다. 한 프로젝트의 판단 대기가 독립 프로젝트의 진행을 즉시 차단하지 않도록 선택 가능한 작업을 먼저 확인한다.
 
-`advance --control`은 접수 또는 완료 관측 같은 한 단계의 진행 뒤 반환할 수 있습니다. 접수 직후 `running`은 정상입니다. 모든 실행이 아직 진행 중이면 interrupt로 반환하고 다음 advance/drive에서 다시 관측합니다. `drive`는 실행이 남아 있는 동안 관측을 반복합니다. pause는 새 접수를 막고 기존 실행·잠금은 보존합니다. 관측 시간 초과나 불확실한 결과는 unknown으로 남기며 재접수하지 않습니다.
+`advance --control`은 접수 또는 완료 관측 같은 한 단계의 진행 뒤 반환할 수 있다. 접수 직후 `running`은 정상이다. 모든 실행이 아직 진행 중이면 interrupt로 반환하고 다음 advance/drive에서 다시 관측한다. `drive`는 실행이 남아 있는 동안 관측을 반복한다. pause는 새 접수를 막고 진행 중인 실행·잠금은 보존한다. 관측 시간 초과나 불확실한 결과는 unknown으로 남기며 재접수하지 않는다.
 
-정상적인 wait 이외의 프로세스 중단에서는 미완료 노드에 null을 전달해 재실행하지 않습니다. START에서 기존 시도·잠금을 다시 확인합니다. code-agent 통신 계약의 실행 중 시도는 같은 invocationId로 재부착합니다. 실행 여부가 불명확한 시도는 기존 reconcile·stop-analysis 등 복구 절차를 사용하며 새 작업으로 자동 제출하지 않습니다.
+정상적인 wait 이외의 프로세스 중단에서는 미완료 노드에 null을 전달해 재실행하지 않는다. START에서 남아 있는 시도·잠금을 다시 확인한다. code-agent 통신 계약의 실행 중 시도는 같은 invocationId로 재부착한다. 실행 여부가 불명확한 시도는 reconcile·stop-analysis 등 복구 절차를 사용하며 새 작업으로 자동 제출하지 않는다.
 
-SQLite 도메인 트랜잭션과 LangGraph 체크포인트 사이에는 단일 분산 트랜잭션이 없습니다. 외부 실행의 정확히 한 번 수행을 체크포인터만으로 보장한다고 주장하지 않습니다. 외부 호출 전 시도 저장, 기대 버전 검사, 프로젝트 잠금과 code-agent 원자적 접수 계약이 중복 실행을 막습니다.
+SQLite 도메인 트랜잭션과 LangGraph 체크포인트 사이에는 단일 분산 트랜잭션이 없다. 외부 실행의 정확히 한 번 수행을 체크포인터만으로 보장한다고 주장하지 않는다. 외부 호출 전 시도 저장, 기대 버전 검사, 프로젝트 잠금과 code-agent 원자적 접수 계약이 중복 실행을 막는다.
 
-분석·복구·재계획의 단계 기록은 남지만, 중간 모델 호출을 임의로 재생해 이어가지는 않습니다. 중단된 도메인 기록을 정리한 뒤 새 분석·복구를 요청합니다.
+분석·복구·재계획의 단계 기록은 남지만, 중간 모델 호출을 임의로 재생해 이어가지는 않는다. 중단된 도메인 기록을 정리한 뒤 새 분석·복구를 요청한다.
 
 ## 적용 범위와 검증
 
 체크포인트가 없는 Mission은 현재 도메인 상태에서 시작한다. 변경된 그래프 정의를 호환되지 않는 체크포인트에 연결하는 마이그레이션은 지원하지 않는다.
 
-회귀 테스트는 기존 권한·검증·재계획 계약과 함께 SQLite 재열기, 대기 재개, 같은 스레드의 동시 실행 차단, 프로세스 강제 종료 후 중복 배정 차단, 체크포인트 저장 실패를 검사합니다. 실제 AI를 호출하는 운영 환경 전체 사이클은 별도 검증 대상입니다.
+회귀 테스트는 권한·검증·재계획 계약과 함께 SQLite 재열기, 대기 재개, 같은 스레드의 동시 실행 차단, 프로세스 강제 종료 후 중복 배정 차단, 체크포인트 저장 실패를 검사한다. 실제 AI를 호출하는 운영 환경 전체 사이클은 별도 검증 대상이다.
 
 ## 기록 보존과 정리
 
@@ -65,11 +67,11 @@ SQLite 도메인 트랜잭션과 LangGraph 체크포인트 사이에는 단일 �
 
 목표가 `succeeded`·`cancelled`·`simulation-complete`로 저장되면 해당 Mission·모의 실행 thread의 checkpoints·writes를 삭제한다. 마지막 체크포인트의 ID·시각만 목표의 `lastCheckpoint`에 남긴다. 종료 이후 도착한 그래프 저장도 같은 thread를 다시 만들지 않는다. 실행 중인 목표의 대기 체크포인트는 재개를 위해 유지한다.
 
-분석 레코드의 `context`에는 프로젝트·관측 버전, 지식 스냅샷 ID, 소스 ID·바이트 수만 저장하고 전체 입력은 `contextHash`로 식별한다. 근거 본문은 지식 스냅샷을 참조하며 재검토 때 실제 파일을 다시 수집하고 전체 해시를 대조한다. 근거나 요청이 달라졌으면 기존 판단을 재사용하지 않는다. 분석 그래프 frame에도 근거 본문을 복제하지 않는다.
+분석 레코드의 `context`에는 프로젝트·관측 버전, 근거 스냅샷(`knowledge-snapshot`) ID, 소스 ID·바이트 수만 저장하고 전체 입력은 `contextHash`로 식별한다. 근거 본문은 근거 스냅샷을 참조하며 재검토 때 실제 파일을 다시 수집하고 전체 해시를 대조한다. agent-knowledge 발췌는 분석 레코드에 복제하지 않고 봉인 묶음 ID·해시로 참조한다. 근거나 요청이 달라졌으면 이전 판단을 재사용하지 않는다. 분석 그래프 frame에도 근거 본문을 복제하지 않는다.
 
 실행 회차의 원격 상태는 상태 버전·진행 단계·실행 ID·관측 시각·해시와 진척 표시에 필요한 개수만 보존한다. 권한과 재개 가능 여부는 실행 직전에 다시 관측한다. 전체 원격 state JSON을 회차마다 누적하지 않는다.
 
-이벤트는 자동 삭제하지 않는다. 종료 후 기본 30일이 지난 목표에서 아래 명령을 실행하면 30일보다 오래된 이벤트만 정리하고 삭제 건수·기준 시각을 결정 레코드에 남긴다. 다른 목표와 최근 이벤트, 결정·분석·검증 원본은 보존한다. 기존 목표에 종료 시각이 없으면 종료 이벤트의 시각을 사용하며 시각을 확인하지 못하면 거부한다.
+이벤트는 자동 삭제하지 않는다. 종료 후 기본 30일이 지난 목표에서 아래 명령을 실행하면 30일보다 오래된 이벤트만 정리하고 삭제 건수·기준 시각을 결정 레코드에 남긴다. 다른 목표와 최근 이벤트, 결정·분석·검증 원본은 보존한다. 목표에 종료 시각(`finishedAt`)이 없으면 마지막 종료 이벤트의 시각을 사용하며 시각을 확인하지 못하면 거부한다.
 
 ```powershell
 master-agent mission events prune <목표ID> --revision <버전>

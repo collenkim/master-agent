@@ -10,16 +10,23 @@ import { activeHolds, taskHeld } from './scope.mjs';
 import { VerificationTemplates } from '../verification/templates.mjs';
 import { DecisionDelegation } from './decisions.mjs';
 import { checkpointer, invokeGraph } from './graph-runtime.mjs';
+import { settleLeases } from '../knowledge/lease.mjs';
 
 const State = Annotation.Root({
   missionId: Annotation(), cursor: Annotation(), order: Annotation(), pending: Annotation(), blockers: Annotation(), route: Annotation(),
   taskId: Annotation(), attemptId: Annotation(), revision: Annotation(), remote: Annotation(), result: Annotation(),
 });
 const expectedBlocks = ['remote-not-ready', 'remote-needs-human', 'remote-busy', 'remote-unapproved', 'missing-remote-evidence', 'handoff-pending', 'out-of-scope-change', 'stale-context', 'stale-contract', 'handoff-context-limit', 'continuation-limit',
-  'knowledge-integrity', 'knowledge-bundle-released', 'knowledge-source-changed', 'knowledge-scope-changed'];
+  'knowledge-integrity', 'knowledge-bundle-released', 'knowledge-source-changed', 'knowledge-scope-changed',
+  'knowledge-handoff-unsupported', 'knowledge-handoff-ungated', 'knowledge-handoff-version', 'knowledge-handoff-not-accepted', 'knowledge-handoff-scope', 'knowledge-handoff-unrepresentable', 'knowledge-handoff-limit',
+  'knowledge-receiver-unreachable', 'knowledge-generation-expired', 'knowledge-index-mismatch', 'knowledge-lease-failed', 'knowledge-handoff-unconfirmed', 'knowledge-handoff-rejected', 'knowledge-verification-failed',
+  'knowledge-verification-pending', 'knowledge-blocked'];
 const faults = new Set(['external-work', 'missing-verification-recipe', 'remote-busy', 'remote-unapproved', 'missing-remote-evidence',
   'out-of-scope-change', 'stale-context', 'stale-contract', 'handoff-context-limit', 'continuation-limit', 'ownership-conflict', 'unobservable',
-  'knowledge-integrity', 'knowledge-bundle-released', 'knowledge-source-changed', 'knowledge-scope-changed']);
+  'knowledge-integrity', 'knowledge-bundle-released', 'knowledge-source-changed', 'knowledge-scope-changed',
+  'knowledge-handoff-unsupported', 'knowledge-handoff-ungated', 'knowledge-handoff-version', 'knowledge-handoff-not-accepted', 'knowledge-handoff-scope', 'knowledge-handoff-unrepresentable', 'knowledge-handoff-limit',
+  'knowledge-receiver-unreachable', 'knowledge-generation-expired', 'knowledge-index-mismatch', 'knowledge-lease-failed', 'knowledge-handoff-unconfirmed', 'knowledge-handoff-rejected', 'knowledge-verification-failed',
+  'knowledge-verification-pending', 'knowledge-blocked']);
 
 /** LangGraph owns scheduling and all automatic branches. Domain services own effects. */
 export class LiveWorkflow {
@@ -110,11 +117,15 @@ export class LiveWorkflow {
         if (status.state === 'verified') return { remote, route: control && remote.work?.id === attempt.codeAgentWorkId && (remote.work.phase !== 'deliver' && remote.resume?.code === 'ready' || revisingTurn(store, attempt, remote)) ? 'continue' : 'handoff' };
         if (attempt?.recipe && (!control || remote.work?.phase === 'deliver') && remote.work?.id === attempt.codeAgentWorkId && remote.verification?.bound?.valid && remote.verification.phases?.check?.passed && remote.verification.phases?.test?.passed) return { remote, route: 'verify' };
         if (attempt && ['blocked', 'waiting-decision', 'awaiting-verification'].includes(attempt.state) && (remote.resume?.code === 'ready' || control && revisingTurn(store, attempt, remote)) && !attempt.reconciliationPending) return { remote, route: 'continue' };
+        // 인계 필수 근거를 아직 검증하지 못한 작업(재검증으로 풀리는 게이트)은 시도마다 한 번만 같은 참조를 다시 검증하게 한다. 재계획 판정·두 번째부터는 막힘으로 둔다
+        if (control && ['blocked', 'waiting-decision', 'awaiting-verification'].includes(attempt?.state) && remote.resume?.code === 'knowledge-blocked' && remote.work?.id === attempt.codeAgentWorkId && remote.knowledge?.action === 'knowledge-reverify' &&
+          attempt.knowledgeHandoff?.receiver?.commands?.includes('verify') && !attempt.knowledgeHandoff.reverify && typeof host.knowledgeVerify === 'function') return { remote, route: 'reverify' };
         return blocked(s, remote.resume.code);
       }))
       .addNode('template', s => finished(s, new VerificationTemplates(store).apply(s.missionId, s.taskId, s.revision)))
       .addNode('dispatch', effect(async s => finished(s, await this.live.dispatch(s.missionId, s.taskId, host, options(s)))))
       .addNode('continue', effect(async s => finished(s, await this.live.continue(s.missionId, s.attemptId, host, { ...options(s), automatic: true }))))
+      .addNode('reverify', effect(async s => finished(s, await this.live.reverifyKnowledge(s.missionId, s.attemptId, host, { expectedRevision: s.revision, expectedState: s.remote.stateVersion }))))
       .addNode('verify', effect(async s => finished(s, await this.verifier.verify(s.missionId, s.attemptId, host, options(s)))))
       .addNode('handoff', effect(async s => finished(s, await this.verifier.handoff(s.missionId, s.attemptId, host, options(s)))))
       .addNode('reattach', async s => {
@@ -148,8 +159,8 @@ export class LiveWorkflow {
       refresh: ['select'],
       select: ['analyze', 'wait', 'poll-wait', END, 'replan', 'complete', 'select', 'recover', 'reattach', 'delegate', 'ready'],
       analyze: ['after'], delegate: ['after', 'ready'], ready: ['select', 'template', 'observe'],
-      observe: ['select', 'dispatch', 'continue', 'handoff', 'verify'], template: ['after'],
-      dispatch: ['select', 'after'], continue: ['select', 'after'], verify: ['select', 'after'], handoff: ['select', 'after'],
+      observe: ['select', 'dispatch', 'continue', 'handoff', 'verify', 'reverify'], template: ['after'],
+      dispatch: ['select', 'after'], continue: ['select', 'after'], reverify: ['select', 'after'], verify: ['select', 'after'], handoff: ['select', 'after'],
       reattach: ['after', 'select'], 'poll-wait': ['refresh'], recover: ['after'], replan: ['after', 'wait'], complete: ['after'], after: ['refresh', END],
     };
     for (const [node, targets] of Object.entries(edges)) builder.addConditionalEdges(node, s => s.route, targets);
@@ -158,6 +169,8 @@ export class LiveWorkflow {
   }
   async execute(id, host, provider, all) {
     const result = await invokeGraph(this.store, this.graph(host, provider, all), 'mission', id, { missionId: id }, { resumeWait: true });
+    // 완료·재계획으로 해제된 묶음의 생산자 임대를 놓는다(최선 노력)
+    await settleLeases(this.store, { missionId: id }).catch(() => []);
     return result.result;
   }
   advance(id, host, provider) { return this.execute(id, host, provider, false); }

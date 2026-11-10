@@ -11,6 +11,7 @@ import { Knowledge } from '../knowledge/sources.mjs';
 import { relevantSource } from '../orchestrator/scope.mjs';
 import { validateDelivery, verifyDelivery, inspectDelivery } from './delivery.mjs';
 import { validateExports, bindExports, verifyContractDocuments } from './handoff-contracts.mjs';
+import { KNOWLEDGE_GUIDANCE, deliveryBlock } from '../knowledge/evidence.mjs';
 
 const activePlan = m => m.plans.at(-1);
 
@@ -68,6 +69,9 @@ export class LiveVerification {
     const m = this.engine.checked(id, revision), attempt = m.attempts.find(a => a.id === attemptId);
     requireThat(m.mode === 'live' && !m.planningHold && m.state !== 'paused' && attempt?.mode === 'live' && attempt.planVersion === activePlan(m).version &&
       taskState(m, attempt.taskId).attemptIds.at(-1) === attempt.id && this.store.lock(attempt.projectId)?.attempt_id === attempt.id, 'invalid-state', '현재 계획의 잠금을 가진 live 시도만 검증할 수 있습니다.');
+    // 필수 지식 근거를 실은 시도는 접수·저장이 확인되고 code-agent 진행 게이트가 막지 않을 때만 검증·반영한다(게이트 통과는 완료 증거가 아니다)
+    const knowledgeBlock = deliveryBlock(attempt.knowledgeHandoff);
+    requireThat(!knowledgeBlock, knowledgeBlock ?? 'knowledge-handoff-unconfirmed', KNOWLEDGE_GUIDANCE[knowledgeBlock] ?? '');
     return { m, attempt, task: activePlan(m).proposal.tasks.find(t => t.id === attempt.taskId), project: this.store.need('project', attempt.projectId) };
   }
   remoteReady(state, attempt) {

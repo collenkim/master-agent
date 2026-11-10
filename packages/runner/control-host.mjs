@@ -4,13 +4,17 @@ import { join } from 'node:path';
 import { ControlClient, ControlError } from '../code-agent-adapter/control.mjs';
 import { findCodeAgent } from '../code-agent-adapter/discovery.mjs';
 import { hostPrompt, inspectState } from './host-context.mjs';
-import { hash, now, requireThat, string } from '../domain/contracts.mjs';
+import { DomainError, hash, now, requireThat, string } from '../domain/contracts.mjs';
+import { gateVerification, receiptOf, sameStoredRefs } from '../knowledge/handoff.mjs';
 
 /** master 기록에 남길 code-agent 이벤트 — 진척·질문·동의·검증·실행·연결. 나머지는 커서만 넘긴다 */
 const RECORDED = new Set(['run.accepted', 'run.started', 'run.stop-requested', 'run.finished', 'run.abandoned', 'run.orphaned', 'run.unknown',
   'master.disconnected', 'master.reconnected', 'phase.changed', 'attempt.changed', 'resume.changed', 'question.opened', 'consent.opened', 'consent.closed',
   'verification.recorded', 'decision.applied', 'decision.rejected', 'answer.recorded', 'handover.stopped', 'handover.transferred', 'handover.accepted']);
 
+/** start 접수 거부 중 지식 인계 때문인 것 — 형식 거부·미수락·작업 고정 충돌 */
+const knowledgeRejection = error => error instanceof ControlError && (typeof error.detail?.reason === 'string' && error.detail.reason.startsWith('knowledge-') ||
+  error.controlCode === 'conflict' && typeof error.detail?.workId === 'string' || error.controlCode === 'invalid-request' && /knowledge/i.test(error.message ?? ''));
 const small = value => { const text = JSON.stringify(value ?? null); return text.length <= 2000 ? value ?? null : { truncated: true, hash: hash(value) }; };
 
 // The supervisor owns selection, installation/trust validation and the frozen host profile.
@@ -113,6 +117,11 @@ export class ControlHost {
       generation: binding.generation ?? undefined, timeoutMs: this.callTimeoutMs });
   }
   inspect(project, expectedState, sessionId) { return inspectState(this.cliPath, project, expectedState, sessionId); }
+  /** 지식 인계 기능 공지(hello). 통신 실패는 미지원과 구별해 돌려준다 — 공지를 추측하지 않는다 */
+  async knowledgeHello(project) {
+    try { return await this.client(project).result('hello'); }
+    catch (error) { if (error.code === 'control-unavailable') return { unreachable: true }; throw error; }
+  }
   validateTicket(ticket) {
     const prompt = hostPrompt(ticket);
     requireThat(prompt.length <= 20000, 'handoff-context-limit', '배정 입력이 code-agent 접수 한도 20000자를 넘습니다. 계약·범위를 나눠 다시 계획하세요. 계약을 잘라 보내지 않습니다.');
@@ -131,18 +140,31 @@ export class ControlHost {
     const client = this.client(ticket.project), commandId = `inv-${ticket.invocationId}`;
     // 요청에서 고른 host 는 새 실행에만 보낸다 — 이어 실행은 code-agent 가 이전 실행의 선택을 그대로 쓴다
     const execution = ticket.sessionId ? null : this.store.get('target-request', ticket.missionId)?.execution ?? null;
+    // 지식 인계는 새 실행(start)에만 싣는다 — 이어 실행은 code-agent 가 처음 실행의 인계를 쓴다(continue 에 knowledge 를 보내면 거부한다).
+    // payload 는 배정 때 시도에 고정한 값 그대로다 — 같은 commandId 재전송이 같은 내용이 된다
+    const handoff = !ticket.sessionId && ticket.knowledgeHandoff?.status === 'prepared' ? ticket.knowledgeHandoff : null;
+    if (handoff) this.store.transaction(() => this.store.event(ticket.missionId, 'knowledge-handoff-sent', { attemptId: ticket.id, invocationId: ticket.invocationId, commandId,
+      version: handoff.version, hash: handoff.hash, refs: handoff.sent, required: handoff.sentRequired }));
     let accepted;
+    const sentAt = now();
     try {
       accepted = await client.result('submit', { commandId, expect: { stateVersion: ticket.expectedState }, payload: {
         mode: ticket.sessionId ? 'continue' : 'start', ...(ticket.sessionId ? { sessionId: ticket.sessionId } : {}), ...(execution ? { execution } : {}), prompt,
-        links: { missionId: ticket.missionId, taskId: ticket.taskId, attemptId: ticket.id, planVersion: String(ticket.planVersion), invocationId: ticket.invocationId } } });
+        links: { missionId: ticket.missionId, taskId: ticket.taskId, attemptId: ticket.id, planVersion: String(ticket.planVersion), invocationId: ticket.invocationId },
+        ...(handoff ? { knowledge: handoff.payload } : {}) } });
     } catch (error) {
+      if (handoff && knowledgeRejection(error)) {
+        // 실행을 만들지 않았다. 같은 commandId 는 같은 거부를 되돌려주므로 다시 보내지 않는다 — 원인을 고친 뒤 새 배정(새 호출)으로 한다
+        this.store.transaction(() => this.store.event(ticket.missionId, 'knowledge-handoff-rejected', { attemptId: ticket.id, invocationId: ticket.invocationId, commandId,
+          code: error.controlCode, reason: typeof error.detail?.reason === 'string' ? error.detail.reason : null }));
+        throw new DomainError('knowledge-handoff-rejected', `code-agent 가 지식 인계를 거부했습니다(${error.controlCode}${error.detail?.reason ? `: ${error.detail.reason}` : ''}) — 실행되지 않았습니다.`);
+      }
       // code-agent 가 응답으로 거부했다(ok:false) — 실행을 만들지 않았다는 확인이다. 이어 실행이면 같은 세션의 막힘으로 돌려준다(미확인이 아니다).
       // 통신 실패이거나 이어 갈 세션이 없는 첫 실행은 그대로 실패로 둔다
       if (!(error instanceof ControlError) || !ticket.sessionId) throw error;
       return this.rejected(ticket, error, commandId);
     }
-    this.recordRun(ticket, accepted, commandId);
+    this.recordRun(ticket, accepted, commandId, handoff, sentAt);
     return wait ? this.follow(ticket.project, accepted.runId, ticket) : { status: 'pending', runId: accepted.runId };
   }
   rejected(ticket, error, commandId) {
@@ -160,7 +182,7 @@ export class ControlHost {
     requireThat(known.status === 'accepted' && known.response?.ok && known.response.result?.runId, 'control-not-started',
       `이 호출은 실행되지 않았습니다(${known.status}${known.response?.error ? `: ${known.response.error.code}` : ''}).`);
     const runId = known.response.result.runId;
-    if (!this.store.get('control-run', runId)) this.recordRun(ticket, known.response.result, commandId);
+    if (!this.store.get('control-run', runId)) this.recordRun(ticket, known.response.result, commandId, !ticket.sessionId && ticket.knowledgeHandoff?.status === 'prepared' ? ticket.knowledgeHandoff : null, known.response.at ?? known.receivedAt);
     return wait ? this.follow(ticket.project, runId, ticket) : this.poll(ticket.project, runId, ticket);
   }
   /** One observation only: independent projects can run while this invocation is pending. */
@@ -171,19 +193,57 @@ export class ControlHost {
     this.updateRun(runId, view.run);
     if (view.final) {
       await this.pump(project, client, ticket.missionId);
+      await this.checkKnowledge(project, client, runId, ticket);
       return this.outcome(view, runId);
     }
     requireThat(Date.now() - Date.parse(this.store.need('control-run', runId).acceptedAt) < this.followTimeoutMs,
       'control-follow-timeout', '실행 관측 시간이 초과됐습니다. 실행 여부를 대조한 뒤 다시 연결하세요.');
     return { status: 'pending', runId };
   }
-  recordRun(ticket, accepted, commandId) {
+  recordRun(ticket, accepted, commandId, handoff = null, sentAt = null) {
     this.store.transaction(() => {
       const previous = this.store.get('control-run', accepted.runId);
+      // 접수 영수증: 수신자가 돌려준 참조 수와 보낸 수를 대조한다. 접수는 저장일 뿐 근거 검증이 아니다
+      const knowledge = handoff ? previous?.knowledge ?? { version: handoff.version, hash: handoff.hash, sent: handoff.sent, sentRequired: handoff.sentRequired, ...(sentAt ? { sentAt } : {}), ...receiptOf(handoff, accepted) } : undefined;
       this.store.put('control-run', { id: accepted.runId, projectId: ticket.projectId ?? ticket.project.id, missionId: ticket.missionId, attemptId: ticket.id,
-        invocationId: ticket.invocationId, commandId, sessionId: accepted.sessionId, mode: accepted.mode, state: accepted.state, acceptedAt: previous?.acceptedAt ?? now(), updatedAt: now() }, previous?.revision ?? 0);
+        invocationId: ticket.invocationId, commandId, sessionId: accepted.sessionId, mode: accepted.mode, state: accepted.state, acceptedAt: previous?.acceptedAt ?? now(), updatedAt: now(),
+        ...(knowledge ? { knowledge } : {}) }, previous?.revision ?? 0);
       if (!previous) this.store.event(ticket.missionId, 'control-run-accepted', { runId: accepted.runId, attemptId: ticket.id, invocationId: ticket.invocationId, sessionId: accepted.sessionId });
+      if (!previous && knowledge) this.store.event(ticket.missionId, 'knowledge-handoff-accepted', { runId: accepted.runId, attemptId: ticket.id, state: knowledge.state, acceptedRefs: knowledge.acceptedRefs, hash: knowledge.hash });
     });
+  }
+  /**
+   * 실행이 끝난 뒤 인계 저장을 확인한다 — snapshot 의 작업 연결(works[].knowledge)이 보낸 참조와 같은지(저장 확인이지 내용 검증이 아니다).
+   * 연결이 없으면(작업을 열지 않은 실행) unbound 다. 검증 판정은 진행 게이트를 공지한 수신자의 상태 조회(state.knowledge)에서만 읽는다.
+   */
+  async checkKnowledge(project, client, runId, ticket) {
+    const record = this.store.get('control-run', runId);
+    const handoff = ticket?.knowledgeHandoff;
+    if (!record?.knowledge || record.knowledge.stored || handoff?.status !== 'prepared') return;
+    let stored = 'unbound', workId = null, view = null;
+    try {
+      const snapshot = await client.result('snapshot');
+      const runIdOf = r => typeof r === 'string' ? r : r?.runId;
+      const work = (snapshot.works ?? []).find(w => w?.bound !== false && (w.runId === runId || (w.runs ?? []).some(r => runIdOf(r) === runId)));
+      if (work) { workId = work.workId ?? null; stored = work.knowledge === undefined ? 'missing' : sameStoredRefs(handoff.payload, work.knowledge) ? 'matched' : 'mismatch'; }
+      view = snapshot.state?.knowledge ?? null;
+    } catch { stored = 'unchecked'; }
+    // 진행 게이트를 공지한 수신자는 판정을 통신 계약(상태 조회)으로 낸다 — 그것만 쓴다(code-agent 진단 기록은 근거가 아니다).
+    // 게이트가 없는 수신자(3c5bbac)에게는 필수 참조를 보내지 않는다(송신 결정) — 선택 참조의 확인 결과는 통신 계약에 없으므로 보고 없음이다
+    const verification = handoff.receiver?.gate ? (workId ? gateVerification(view, handoff, workId) : { state: 'not-reported', source: 'code-agent-gate', reason: 'no-work' })
+      : { state: 'not-reported', source: 'none', reason: 'receiver-without-gate' };
+    this.store.transaction(() => {
+      const current = this.store.need('control-run', runId);
+      this.store.put('control-run', { ...current, knowledge: { ...current.knowledge, stored, ...(workId ? { workId } : {}), verification }, updatedAt: now() }, current.revision);
+      this.store.event(ticket.missionId, 'knowledge-handoff-checked', { runId, attemptId: ticket.id, stored, workId, verification: verification.state });
+    });
+  }
+  /**
+   * 작업에 고정된 인계 근거를 같은 참조로 다시 검증하게 한다(code-agent `knowledge` verify — 새 검색 없음, 지금 작업만).
+   * 회복 명령을 공지한 수신자에게만 보낸다. 같은 commandId 는 같은 응답을 되돌려준다
+   */
+  async knowledgeVerify(project, workId, commandId) {
+    return this.client(project).result('knowledge', { commandId, payload: { action: 'verify', workId } });
   }
   /** 실행이 끝 상태가 될 때까지 기다린다. 연결이 끊겨도 실행은 code-agent 에서 계속된다 — 여기서 기다림을 멈추는 것은 실패 판정이 아니다 */
   async follow(project, runId, ticket) {
@@ -193,7 +253,7 @@ export class ControlHost {
       const view = await client.result('result', { payload: { runId } });
       this.updateRun(runId, view.run);
       // 끝 상태는 실행 기록에 먼저 남고 run.finished 이벤트가 뒤따른다 — 끝을 본 뒤 한 번 더 받아 마지막 이벤트까지 남긴다
-      if (view.final) { await this.pump(project, client, ticket?.missionId); return this.outcome(view, runId); }
+      if (view.final) { await this.pump(project, client, ticket?.missionId); await this.checkKnowledge(project, client, runId, ticket); return this.outcome(view, runId); }
       requireThat(Date.now() - started < this.followTimeoutMs, 'control-follow-timeout', '실행이 끝나기를 기다리는 시간이 지났습니다 — 실행은 code-agent 에서 계속될 수 있습니다. mission reattach 로 다시 붙습니다.');
       await this.sleep(this.pollMs);
     }
@@ -258,7 +318,8 @@ export class ControlHost {
       control: { runId, state: run.state, hostKind: run.hostKind ?? null, sessionConfirmed: run.sessionConfirmed ?? null, sessionAlias: run.sessionAlias ?? null,
         outcome: run.outcome ?? null, stop: run.stop ?? null, stateBefore: result?.state?.before ?? null, stateAfter: result?.state?.after ?? null,
         resume: result?.state?.resume ?? null, commits: result?.changes?.commits ?? [], files: (result?.changes?.files ?? []).slice(0, 500),
-        verification: result?.verification ? { bound: result.verification.bound ?? null, evidence: result.verification.evidence ?? null } : null },
+        verification: result?.verification ? { bound: result.verification.bound ?? null, evidence: result.verification.evidence ?? null } : null,
+        ...(this.store.get('control-run', runId)?.knowledge ? { knowledge: this.store.get('control-run', runId).knowledge } : {}) },
     };
   }
   /** 정지·취소 — 요청 접수와 실제 정지를 가른다(stopped). 대상은 이 시도의 실행 하나다 */

@@ -34,10 +34,10 @@ master-agent mission reconcile-verification <목표ID> <시도ID> --revision <�
 
 대조는 현재 검증 실행의 **모든 등록 명령**에 대해 계약과 일치하는 정상 반환 기록이 하나씩 있을 때만 허용한다. code-agent 작업·승인·검증 상태·세션·비활성 임대, 최초 검증 입력과 현재 파일·HEAD·선행 산출물의 일치도 확인한다. 명령 누락·중복·미반환·변조·계약 불일치·파일 변경은 보류한다.
 
-통과하면 이전 검증을 `reconciled`로 정리하고 시도를 `awaiting-verification`으로 이동한다. 기존 결과를 성공 증거로 재사용하지 않는다. 프로젝트 잠금은 유지하고, `continue`는 막은 채 `mission verify` 또는 drive로 새 독립 검증을 수행한다. 예전 검증이 늦게 돌아와도 현재 실행 ID와 다르면 결과를 폐기한다. 새 명령을 시작할 때도 현재 시도 상태와 검증 ID를 대조한다.
+통과하면 이전 검증을 `reconciled`로 정리하고 시도를 `awaiting-verification`으로 이동한다. 기존 결과를 성공 증거로 재사용하지 않는다. 프로젝트 잠금은 유지하고, `continue`는 막은 채 `mission verify` 또는 drive로 새 독립 검증을 수행한다. 이전 검증 실행이 늦게 반환되어도 현재 실행 ID와 다르면 결과를 폐기한다. 새 명령을 시작할 때도 현재 시도 상태와 검증 ID를 대조한다.
 
 ## 관제와 현재 경계
 
-`mission show`의 `analyses`·`recoveries`에서 분석 중단을, `commands`에서 명령별 반환을, `reconciliations`에서 대조 판단을 확인한다. 기록 없는 과거 버전의 실행은 소급 확인하지 않는다.
+`mission show`의 `analyses`·`recoveries`에서 분석 중단을, `commands`에서 명령별 반환을, `reconciliations`에서 대조 판단을 확인한다. 명령 반환 기록이 없는 실행은 소급 확인하지 않는다.
 
-code-agent 통신 경로의 실행 중 정지·취소는 [mission stop](code-agent-control.md)으로 제공한다. 미반환 명령·중단된 반영 검사 정리와 분석 예약의 자동 만료는 지원하지 않는다. DB를 직접 수정하거나 저장된 PID로 프로세스를 종료하는 우회 절차는 제공하지 않는다. 중단·복구를 포함한 실제 모델 연속 시험은 [남은 작업](implementation.md#남은-작업)에 남아 있다.
+code-agent 통신 경로의 실행 중 정지·취소는 [mission stop](code-agent-control.md)으로 제공한다. 미반환 명령·중단된 반영 검사 정리와 분석 예약의 자동 만료는 지원하지 않는다. DB를 직접 수정하거나 저장된 PID로 프로세스를 종료하는 우회 절차는 제공하지 않는다. 중단·복구를 포함한 실제 모델 연속 시험은 [남은 작업](implementation.md#남은-작업)을 따른다.

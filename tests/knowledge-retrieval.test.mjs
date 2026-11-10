@@ -65,7 +65,7 @@ function recorder(build = answerFor) {
       const items = args.context.knowledge.items;
       data.decisions = data.decisions.map(d => ({ ...d, knowledgeRefs: items.filter(i => i.confirmed).map(i => i.ref).slice(0, 2) }));
       data.issues = data.issues.map(i => ({ ...i, knowledgeRefs: [] }));
-      data.plan.tasks = data.plan.tasks.map(t => ({ ...t, knowledgeRefs: items.filter(i => i.forProject === t.projectId).map(i => i.ref).slice(0, 2) }));
+      data.plan.tasks = data.plan.tasks.map(t => { const refs = items.filter(i => i.forProject === t.projectId).map(i => i.ref).slice(0, 2); return { ...t, knowledgeRefs: refs, knowledgeRequired: refs.slice(0, 1) }; });
     }
     return { data };
   } } };
@@ -105,7 +105,11 @@ test('enabled는 AI 호출 전에 프로젝트·질의마다 검색하고 검증
   const f = enabledSetup(t);
   const r = recorder();
   const result = await f.planner.analyze(f.mission.id, r.provider, { expectedRevision: f.mission.revision });
-  const calls = callsOf(f.ak.log);
+  // 검색 전에 생산자 기능을 한 번 묻는다(형식 2 협의). 형식 1만 아는 생산자이므로 형식 1로 검색한다
+  assert.deepEqual(callsOf(f.ak.log).filter(c => c.command !== 'search').map(c => c.command), ['capabilities']);
+  assert.equal(result.analysis.knowledge.contract, 'agent-knowledge.search@1');
+  assert.equal(result.analysis.knowledge.negotiation.reason, 'search-v2-unsupported');
+  const calls = callsOf(f.ak.log).filter(c => c.command === 'search');
   assert.equal(calls.length, 3 * 2, '프로젝트 3개 × 질의 2개(목표·완료 조건)');
   assert.ok(calls.every(c => c.command === 'search' && c.request.profile === 'master' && c.request.scope.projects.length === 1 && c.request.limit === LIMITS.perQuery));
   assert.ok(!calls[0].request.version && calls.slice(1).every(c => c.request.version.generation === 7), '첫 응답 세대로 고정한다');
@@ -123,14 +127,14 @@ test('enabled는 AI 호출 전에 프로젝트·질의마다 검색하고 검증
   assert.equal(context.knowledge.retrieval.generation, 7);
   assert.ok(context.knowledge.retrieval.projects.every(p => p.sources.every(s => s.relation === 'unknown')), '저장소가 아닌 경로의 관계는 unknown');
   assert.ok(Object.hasOwn(context.projects[0], 'sources') && context.projects[0].sources.length, '파일 근거 수집을 유지한다');
-  assert.match(r.calls[0].prompt, /PROMPT_VERSION=master-planner-v6\+knowledge-2/);
+  assert.match(r.calls[0].prompt, /PROMPT_VERSION=master-planner-v6\+knowledge-3/);
   assert.match(r.calls[0].prompt, /테스트 통과·승인·완료 증거가 아니다/);
   const taskSchema = r.calls[0].schema.properties.plan.properties.tasks.items;
   assert.deepEqual(taskSchema.properties.knowledgeRefs.items.enum, items.map(i => i.ref));
   assert.ok(taskSchema.required.includes('knowledgeRefs'));
   // 기록: run 요약·묶음 봉인·계획 지식 요약. 지식 ref는 결정 evidence에 넣지 않는다
   const run = result.analysis;
-  assert.equal(run.promptVersion, 'master-planner-v6+knowledge-2');
+  assert.equal(run.promptVersion, 'master-planner-v6+knowledge-3');
   assert.equal(run.knowledge.outcome, 'used'); assert.equal(run.knowledge.items, items.length);
   assert.equal(run.contextHash, hash(context));
   const bundle = verifiedBundle(f.store, run.knowledge.bundleId, run.knowledge.bundleHash);
@@ -150,7 +154,7 @@ test('분석·계획 검증은 모르는 ID·다른 프로젝트 ID·미확정 �
   const r = recorder();
   await f.planner.analyze(f.mission.id, r.provider, { expectedRevision: f.mission.revision });
   const context = r.calls[0].context, items = context.knowledge.items;
-  const valid = () => { const a = answerFor(context); a.decisions = a.decisions.map(d => ({ ...d, knowledgeRefs: [] })); a.plan.tasks = a.plan.tasks.map(x => ({ ...x, knowledgeRefs: [] })); return a; };
+  const valid = () => { const a = answerFor(context); a.decisions = a.decisions.map(d => ({ ...d, knowledgeRefs: [] })); a.plan.tasks = a.plan.tasks.map(x => ({ ...x, knowledgeRefs: [], knowledgeRequired: [] })); return a; };
   assert.doesNotThrow(() => validateAnalysis(valid(), context));
   const code = fn => { try { fn(); return 'ok'; } catch (e) { return e.code; } };
   let a = valid(); a.plan.tasks[0].knowledgeRefs = ['kitem:test-order:0000000000000000'];
@@ -270,8 +274,8 @@ test('질의 적중 항목을 필수 자료보다 먼저 고르고, 버려진 �
   const long = { ...ITEMS[0], id: `order:docs/policy.md#${'긴-제목'.repeat(200)}`, title: '긴 제목 '.repeat(300) };
   out = await run({ items: [long] });
   assert.equal(out.summary.outcome, 'used'); assert.equal(out.knowledge.items[0].itemId, long.id);
-  // 전체 기한: 남은 시간을 각 호출의 제한 시간으로 넘기고, 1초 미만이면 호출하지 않는다
-  for (const [step, expected, deadline] of [[57000, [5000, 3000], 0], [59500, [5000], 1]]) {
+  // 전체 기한: 남은 시간을 각 호출의 제한 시간으로 넘기고, 1초 미만이면 호출하지 않는다. 첫 호출은 생산자 기능 협의(capabilities)라 같은 기한을 쓴다
+  for (const [step, expected, deadline] of [[57000, [5000, 3000], 1], [59500, [5000], 2]]) {
     let now = 0;
     const timeouts = [];
     const call = async (connection, command, request, options) => { timeouts.push(options.timeoutMs); now += step; return callKnowledge(connection, command, request, options); };

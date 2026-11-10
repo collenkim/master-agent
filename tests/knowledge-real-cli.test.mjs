@@ -13,7 +13,8 @@ import { Knowledge } from '../packages/knowledge/sources.mjs';
 import { Planner } from '../packages/reasoning/planner.mjs';
 import { KnowledgeRetrieval, setBinding } from '../packages/knowledge/retrieval.mjs';
 import { callKnowledge, knowledgeConnection } from '../packages/knowledge/agent-knowledge.mjs';
-import { dispatchEvidence, sourceState, taskEvidence, verifiedBundle } from '../packages/knowledge/evidence.mjs';
+import { BUNDLE_KIND, dispatchEvidence, sourceState, taskEvidence, verifiedBundle } from '../packages/knowledge/evidence.mjs';
+import { receiverCapability } from '../packages/knowledge/handoff.mjs';
 
 /**
  * 실제 agent-knowledge CLI(빌드 산출물)와 임시 git 저장소·임시 DB로 하는 연동 시험. AI provider는 고정 응답 대역이다.
@@ -86,7 +87,8 @@ const provider = calls => ({ name: 'fixture', async generate(args) {
     const usable = items.filter(i => i.confirmed && !['changed', 'missing'].includes(i.sourceState));
     data.decisions = data.decisions.map(d => ({ ...d, knowledgeRefs: usable.map(i => i.ref).slice(0, 2) }));
     data.issues = data.issues.map(i => ({ ...i, knowledgeRefs: [] }));
-    data.plan.tasks = data.plan.tasks.map(task => ({ ...task, knowledgeRefs: usable.filter(i => i.forProject === task.projectId).map(i => i.ref).slice(0, 2) }));
+    // 첫 참조만 필수 의존이다(나머지는 참고) — 필수 여부는 확정 여부와 별개로 계획이 명시한다
+    data.plan.tasks = data.plan.tasks.map(task => { const refs = usable.filter(i => i.forProject === task.projectId).map(i => i.ref).slice(0, 2); return { ...task, knowledgeRefs: refs, knowledgeRequired: refs.slice(0, 1) }; });
   }
   return { data };
 } });
@@ -126,20 +128,29 @@ test('실제 agent-knowledge: 다중 프로젝트 검색 → 항목 검증 → �
   assert.ok(knowledge.items.some(i => i.path === 'docs/crlf.md'), 'BOM·CRLF 문서 항목도 검증을 통과한다');
 });
 
-test('실제 agent-knowledge: 재색인·세대 정리 뒤에도 계획 묶음은 로컬로 검증되고 고정 세대를 최신으로 바꾸지 않는다', { skip: !available && 'agent-knowledge CLI 빌드 산출물 없음' }, async t => {
+/** code-agent 3c5bbac 의 hello 지식 인계 공지(형식 1, 상한 20) */
+/** 진행 게이트 빌드의 색인 대조 등록 공지 — 필수 근거는 형식 2로만 간다(공통 계약 송신 결정) */
+const RECEIVER = receiverCapability({ knowledge: { schemaVersion: 1, mode: 'enabled', refs: { supported: true, accepted: true, max: 20, versions: [1, 2], maxBytes: 32768, requiredGate: true } } });
+
+test('실제 agent-knowledge: 재색인·세대 정리 뒤에도 계획 묶음은 로컬로 검증되고 고정 세대를 최신으로 바꾸지 않는다 — 임대가 고정 세대를 지키고 재계획이 놓는다', { skip: !available && 'agent-knowledge CLI 빌드 산출물 없음' }, async t => {
   const f = realSetup(t, { retainGenerations: 1 }), calls = [];
   await f.planner.analyze(f.mission.id, provider(calls), { expectedRevision: f.mission.revision });
   const pinned = calls[0].context.knowledge.retrieval.generation;
   const m = f.store.need('mission', f.mission.id), plan = m.plans.at(-1);
   const task = plan.proposal.tasks.find(x => x.projectId === 'alpha' && x.knowledgeRefs.length);
   assert.ok(task, 'alpha 작업이 확정 지식을 참조한다');
-  // 원본 수정 → 재색인 2회(보존 1세대) → 고정 세대는 생산자에서 사라진다
+  // 분석이 고정 세대의 생산자 임대를 잡았다(형식 2 생산자) — code-agent 가 같은 세대를 다시 조회할 수 있게 보존된다
+  const first = f.store.need(BUNDLE_KIND, plan.knowledge.bundleId);
+  assert.equal(first.lease.state, 'held');
+  assert.equal(first.lease.generation, pinned);
+  assert.equal(first.lease.holder, `master-agent:${f.mission.id}`);
+  // 원본 수정 → 재색인 2회(보존 1세대). 임대가 있으므로 고정 세대는 정리되지 않는다
   write(f.repos.alpha, { 'docs/business-rules.md': ALPHA['docs/business-rules.md'].replace('24시간', '48시간') });
   git(f.repos.alpha, 'commit', '-q', '-am', 'alpha v2');
   f.index(); f.index();
   const connection = knowledgeConnection(f.env);
-  await assert.rejects(callKnowledge(connection, 'search', { profile: 'master', query: '주문 취소', scope: { projects: ['alpha'] }, version: { generation: pinned } }),
-    e => e.code === 'knowledge-producer-error' && e.producerCode === 'index-missing' && e.reason === 'generation-not-found');
+  const kept = await callKnowledge(connection, 'search', { profile: 'master', query: '주문 취소', scope: { projects: ['alpha'] }, version: { generation: pinned } });
+  assert.equal(kept.index.generation, pinned, '임대 중인 고정 세대는 재색인 뒤에도 조회된다');
   // 계획 묶음은 생산자 없이 검증된다(로컬 정본)
   assert.doesNotThrow(() => taskEvidence(f.store, plan, task));
   // 확정 항목의 원본이 바뀌었으므로 배정은 그 작업만 재검토로 보낸다
@@ -154,6 +165,14 @@ test('실제 agent-knowledge: 재색인·세대 정리 뒤에도 계획 묶음�
   assert.ok(again[0].context.knowledge.retrieval.generation > pinned);
   assert.notEqual(second.analysis.knowledge.bundleId, plan.knowledge.bundleId);
   assert.ok(again[0].context.knowledge.items.some(i => i.excerpt.includes('48시간')));
+  // 재계획이 이전 묶음을 해제하고 그 임대를 놓았다 → 다음 재색인에서 고정 세대가 정리된다(새 묶음은 새 세대 임대)
+  const released = f.store.need(BUNDLE_KIND, plan.knowledge.bundleId);
+  assert.equal(released.lease.state, 'released');
+  assert.equal(f.store.need(BUNDLE_KIND, second.analysis.knowledge.bundleId).lease.state, 'held');
+  assert.ok(f.store.events(f.mission.id).some(e => e.type === 'knowledge-lease-released'));
+  f.index();
+  await assert.rejects(callKnowledge(connection, 'search', { profile: 'master', query: '주문 취소', scope: { projects: ['alpha'] }, version: { generation: pinned } }),
+    e => e.code === 'knowledge-producer-error' && e.producerCode === 'index-missing' && e.reason === 'generation-not-found');
 });
 
 test('실제 agent-knowledge: 재색인 전에 원본이 바뀐 확정 항목은 분석 때 표시되고 작업 근거로 거부되어 재분석이 수렴한다', { skip: !available && 'agent-knowledge CLI 빌드 산출물 없음' }, async t => {
@@ -167,7 +186,7 @@ test('실제 agent-knowledge: 재색인 전에 원본이 바뀐 확정 항목은
   // 바뀐 항목을 작업 근거로 고집하는 응답은 계획이 되지 않는다
   const insist = { name: 'fixture', async generate(args) {
     const out = await provider([]).generate(args), item = args.context.knowledge.items.find(i => i.itemId === BR);
-    out.data.plan.tasks = out.data.plan.tasks.map(task => task.projectId === 'alpha' ? { ...task, knowledgeRefs: [item.ref] } : task);
+    out.data.plan.tasks = out.data.plan.tasks.map(task => task.projectId === 'alpha' ? { ...task, knowledgeRefs: [item.ref], knowledgeRequired: [] } : task);
     return out;
   } };
   let m = f.store.need('mission', f.mission.id);
@@ -186,6 +205,9 @@ test('실제 agent-knowledge: 재색인 전에 원본이 바뀐 확정 항목은
   const plan = f.store.need('mission', f.mission.id).plans.at(-1);
   assert.ok(plan.proposal.tasks.every(task => !(task.knowledgeRefs ?? []).includes(stale.ref)));
   for (const task of plan.proposal.tasks.filter(x => x.knowledgeRefs?.length)) {
-    assert.doesNotThrow(() => dispatchEvidence(f.store, plan, task, f.store.need('project', task.projectId), { mode: 'enabled' }));
+    // 필수 근거가 있으므로 진행 게이트·형식 2를 받는 수신자일 때만 배정된다(형식 2 준비)
+    const decision = dispatchEvidence(f.store, plan, task, f.store.need('project', task.projectId), { mode: 'enabled', capability: RECEIVER });
+    assert.equal(decision.status, 'prepared');
+    assert.ok(decision.payload.refs.every(r => r.itemId !== BR));
   }
 });

@@ -6,7 +6,7 @@ import { DomainError, requireThat } from '../domain/contracts.mjs';
 import { execFileTree, spawnArgs } from '../runner/process.mjs';
 
 /**
- * agent-knowledge 로컬 CLI 호출 경계. 생산자 계약은 agent-knowledge docs/retrieval.md 의 search·get v1 이다.
+ * agent-knowledge 로컬 CLI 호출 경계. 생산자 계약은 agent-knowledge docs/integration.md·retrieval.md 의 search·get(형식 1·2)·capabilities·status·verify·lease 다.
  * stdout JSON 문서 하나와 종료 코드를 함께 읽는다(오류 문서도 stdout). 오류 원문·로컬 경로는 저장하지 않고 코드만 남긴다.
  * 연결은 MASTER_AGENT_KNOWLEDGE_* 환경 변수 한 곳에서만 읽는다 — 프로젝트별 사용 여부는 binding 레코드(retrieval.mjs)가 정한다.
  */
@@ -66,16 +66,38 @@ function document(stdout) {
   try { return JSON.parse(text); } catch { return fail('knowledge-invalid-output', 'agent-knowledge 출력 JSON을 읽을 수 없습니다.'); }
 }
 
-/** search·get 요청 한 건. 요청은 임시 파일(--request)로 넘긴다 — 자식 stdin은 닫혀 있고 질의를 명령줄에 싣지 않는다 */
-export async function callKnowledge(connection, command, request, { timeoutMs = connection.timeoutMs, maxBytes = 2 * 1024 * 1024 } = {}) {
-  requireThat(['search', 'get'].includes(command), 'invalid-input', '지원하지 않는 agent-knowledge 명령입니다.');
+/**
+ * 호출할 수 있는 명령과 기대 응답. search·get은 요청의 responseVersion(없으면 1)과 같은 schemaVersion만 받는다.
+ * lease·status·capabilities는 플래그로 부른다(요청 파일 없음). verify는 요청 파일만 받는다.
+ */
+const COMMANDS = Object.freeze({
+  search: { schema: SEARCH_SCHEMA, statuses: { ok: 0, 'no-results': 3 }, request: true },
+  get: { schema: GET_SCHEMA, statuses: { ok: 0 }, request: true },
+  verify: { schema: 'agent-knowledge.verify', statuses: { ok: 0 }, request: true, version: 1 },
+  capabilities: { schema: 'agent-knowledge.capabilities', statuses: { ok: 0 }, request: false, version: 1 },
+  status: { schema: 'agent-knowledge.status', statuses: { ok: 0 }, request: false, version: 2, args: ['--response-version', '2'] },
+  lease: { schema: 'agent-knowledge.lease', statuses: { ok: 0 }, request: false, version: 1 },
+});
+const LEASE_ACTIONS = new Set(['acquire', 'renew', 'release', 'list']);
+const leaseArgs = args => {
+  requireThat(Array.isArray(args) && LEASE_ACTIONS.has(args[0]) && args.every(a => typeof a === 'string' && a.length <= 256 && !/[\x00-\x1f]/.test(a)), 'invalid-input', 'lease 인자가 잘못됐습니다.');
+  return args;
+};
+
+/**
+ * 생산자 명령 한 건. 요청이 있는 명령은 임시 파일(--request)로 넘긴다 — 자식 stdin은 닫혀 있고 질의를 명령줄에 싣지 않는다.
+ * lease는 args(동작과 플래그)만 받는다. 셸 없이 인자 배열로 실행한다.
+ */
+export async function callKnowledge(connection, command, request, { timeoutMs = connection.timeoutMs, maxBytes = 2 * 1024 * 1024, args: extra = [] } = {}) {
+  const spec = COMMANDS[command];
+  requireThat(spec, 'invalid-input', '지원하지 않는 agent-knowledge 명령입니다.');
   const parent = realpathSync(tmpdir()), root = realpathSync(mkdtempSync(join(parent, 'master-agent-knowledge-')));
   try {
     const file = join(root, 'request.json');
-    writeFileSync(file, JSON.stringify(request));
+    if (spec.request) writeFileSync(file, JSON.stringify(request));
     const { executable, prefix } = spawnArgs(connection.cli);
-    const args = [...prefix, command, ...(connection.config ? ['--config', connection.config] : []), ...(connection.db ? ['--db', connection.db] : []),
-      '--retrieval-config', connection.retrievalConfig, '--quiet', '--request', file];
+    const args = [...prefix, command, ...(command === 'lease' ? leaseArgs(extra) : spec.args ?? []), ...(connection.config ? ['--config', connection.config] : []), ...(connection.db ? ['--db', connection.db] : []),
+      '--retrieval-config', connection.retrievalConfig, '--quiet', ...(spec.request ? ['--request', file] : [])];
     let stdout, exitCode = 0;
     try {
       // 생산자가 읽는 주변 환경 변수는 빈 값으로 덮는다(빈 값은 무시된다) — 명시한 경로만 쓴다
@@ -94,10 +116,9 @@ export async function callKnowledge(connection, command, request, { timeoutMs = 
       const reason = typeof doc.error?.detail?.reason === 'string' && KEBAB.test(doc.error.detail.reason) ? doc.error.detail.reason : null;
       fail('knowledge-producer-error', 'agent-knowledge가 요청을 처리하지 못했습니다.', { producerCode, reason });
     }
-    const schema = command === 'search' ? SEARCH_SCHEMA : GET_SCHEMA;
-    if (doc?.schema !== schema || doc.schemaVersion !== 1) fail('knowledge-unsupported-version', `지원하지 않는 agent-knowledge 응답 형식입니다(${schema} v1 필요).`);
-    const statuses = command === 'search' ? { ok: 0, 'no-results': 3 } : { ok: 0 };
-    if (doc.ok !== true || !Object.hasOwn(statuses, doc.status) || statuses[doc.status] !== exitCode) fail('knowledge-invalid-output', 'agent-knowledge 응답 상태와 종료 코드가 맞지 않습니다.');
+    const version = spec.version ?? request?.responseVersion ?? 1;
+    if (doc?.schema !== spec.schema || doc.schemaVersion !== version) fail('knowledge-unsupported-version', `지원하지 않는 agent-knowledge 응답 형식입니다(${spec.schema} v${version} 필요).`);
+    if (doc.ok !== true || !Object.hasOwn(spec.statuses, doc.status) || spec.statuses[doc.status] !== exitCode) fail('knowledge-invalid-output', 'agent-knowledge 응답 상태와 종료 코드가 맞지 않습니다.');
     return doc;
   } finally {
     requireThat(dirname(root) === parent && basename(root).startsWith('master-agent-knowledge-'), 'invalid-temp-path', '임시 경로 경계 오류');
